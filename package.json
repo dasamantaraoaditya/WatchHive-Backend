@@ -11,7 +11,7 @@
         "db:generate": "drizzle-kit generate",
         "db:push": "drizzle-kit push",
         "db:studio": "drizzle-kit studio",
-        "test": "jest",
+        "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
         "test:watch": "jest --watch",
         "lint": "eslint src --ext .ts"
     },

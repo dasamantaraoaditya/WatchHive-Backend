@@ -16,7 +16,10 @@ const pool = new Pool({
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 30000,
-    ssl: connectionString.includes('supabase.co') || connectionString.includes('supabase.com') || connectionString.includes('neon.tech')
+    ssl: connectionString.includes('supabase') ||
+        connectionString.includes('neon.tech') ||
+        connectionString.includes('render.com') ||
+        connectionString.includes('railway.app')
         ? { rejectUnauthorized: false }
         : false
 });
