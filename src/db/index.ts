@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { sql } from 'drizzle-orm';
 
 const { Pool } = pg;
+// Required for Supabase/Neon connection with self-signed certificates in some environments
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const connectionString = config.database.url;

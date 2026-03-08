@@ -30,7 +30,11 @@ app.use(helmet({
 
 // CORS — allow both production URL and localhost for development
 const allowedOrigins: string[] = [];
-if (config.cors.origin) allowedOrigins.push(config.cors.origin);
+if (config.cors.origin) {
+    // Support comma-separated origins in FRONTEND_URL
+    const origins = config.cors.origin.split(',').map(o => o.trim());
+    allowedOrigins.push(...origins);
+}
 if (config.nodeEnv === 'development') {
     allowedOrigins.push('http://localhost:3000', 'http://localhost:5173');
 }
