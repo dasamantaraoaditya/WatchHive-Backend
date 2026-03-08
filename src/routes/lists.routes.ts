@@ -7,6 +7,25 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 const router = Router();
 
 // Get (or create) the default "Watchlist"
+/**
+ * @openapi
+ * tags:
+ *   name: Lists
+ *   description: Custom watchlists and media collections
+ */
+
+/**
+ * @openapi
+ * /api/v1/lists/watchlist:
+ *   get:
+ *     tags: [Lists]
+ *     summary: Get or create default watchlist
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User's watchlist
+ */
 router.get('/watchlist', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.user!.userId;
@@ -44,7 +63,40 @@ router.get('/watchlist', authMiddleware, async (req: Request, res: Response): Pr
     }
 });
 
-// Add item to a list
+/**
+ * @openapi
+ * /api/v1/lists/{listId}/items:
+ *   post:
+ *     tags: [Lists]
+ *     summary: Add item to a list
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: listId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tmdbId
+ *             properties:
+ *               tmdbId:
+ *                 type: integer
+ *               mediaType:
+ *                 type: string
+ *                 default: movie
+ *     responses:
+ *       200:
+ *         description: Item added
+ *       404:
+ *         description: List not found
+ */
 router.post('/:listId/items', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const { listId } = req.params;
@@ -111,7 +163,29 @@ router.post('/:listId/items', authMiddleware, async (req: Request, res: Response
     }
 });
 
-// Remove item from a list (by tmdbId for convenience)
+/**
+ * @openapi
+ * /api/v1/lists/{listId}/items/{tmdbId}:
+ *   delete:
+ *     tags: [Lists]
+ *     summary: Remove item from a list
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: listId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: tmdbId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Removed
+ */
 router.delete('/:listId/items/:tmdbId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const { listId, tmdbId } = req.params;

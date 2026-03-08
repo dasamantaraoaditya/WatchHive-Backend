@@ -144,9 +144,26 @@ const SOUL_PERSONAS = [
 ];
 
 /**
- * @route   GET /api/v1/mindlens/insights
- * @desc    Generate psychological insights from watch history
- * @access  Private
+ * @openapi
+ * tags:
+ *   name: MindLens
+ *   description: AI-powered psychological viewing insights
+ */
+
+/**
+ * @openapi
+ * /api/v1/mindlens/insights:
+ *   get:
+ *     tags: [MindLens]
+ *     summary: Generate psychological watch insights
+ *     description: Analyzes the last 100 watch entries to generate a 'Soul Persona' and thematic trends.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Analysis successful
+ *       200_insufficient:
+ *         description: Not enough data (needs 5+ entries)
  */
 router.get('/insights', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {

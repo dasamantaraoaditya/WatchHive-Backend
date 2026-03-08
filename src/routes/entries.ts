@@ -21,9 +21,60 @@ const validateEntry = [
     body('watchLocation').optional().trim(),
 ];
 
-// ============================================
-// CREATE ENTRY
-// ============================================
+/**
+ * @openapi
+ * tags:
+ *   name: Entries
+ *   description: Watch logs and entries management
+ */
+
+/**
+ * @openapi
+ * /api/v1/entries:
+ *   post:
+ *     tags: [Entries]
+ *     summary: Create a new watch entry
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tmdbId
+ *               - title
+ *               - type
+ *             properties:
+ *               tmdbId:
+ *                 type: integer
+ *               title:
+ *                 type: string
+ *               type:
+ *                 type: string
+ *                 enum: [MOVIE, TV_SHOW, EPISODE]
+ *               watchedAt:
+ *                 type: string
+ *                 format: date-time
+ *               rating:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 10
+ *               review:
+ *                 type: string
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               isRewatch:
+ *                 type: boolean
+ *               watchLocation:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Entry created successfully
+ */
 router.post(
     '/',
     authMiddleware,
@@ -117,9 +168,50 @@ router.post(
     }
 );
 
-// ============================================
-// GET ALL ENTRIES (with filters)
-// ============================================
+/**
+ * @openapi
+ * /api/v1/entries:
+ *   get:
+ *     tags: [Entries]
+ *     summary: Get all entries with filters
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [MOVIE, TV_SHOW, EPISODE]
+ *       - in: query
+ *         name: rating
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: tag
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of entries
+ *       403:
+ *         description: Account is private
+ */
 router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any> => {
     try {
         const currentUserId = (req as any).user.userId;
@@ -234,9 +326,26 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
     }
 });
 
-// ============================================
-// GET SINGLE ENTRY
-// ============================================
+/**
+ * @openapi
+ * /api/v1/entries/{id}:
+ *   get:
+ *     tags: [Entries]
+ *     summary: Get a single watch entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Watch entry details
+ *       404:
+ *         description: Entry not found
+ */
 router.get(
     '/:id',
     authMiddleware,
@@ -307,9 +416,53 @@ router.get(
     }
 );
 
-// ============================================
-// UPDATE ENTRY
-// ============================================
+/**
+ * @openapi
+ * /api/v1/entries/{id}:
+ *   put:
+ *     tags: [Entries]
+ *     summary: Update a watch entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               type:
+ *                 type: string
+ *                 enum: [MOVIE, TV_SHOW, EPISODE]
+ *               watchedAt:
+ *                 type: string
+ *                 format: date-time
+ *               rating:
+ *                 type: integer
+ *               review:
+ *                 type: string
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               isRewatch:
+ *                 type: boolean
+ *               watchLocation:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Entry updated successfully
+ *       404:
+ *         description: Entry not found
+ */
 router.put(
     '/:id',
     authMiddleware,
@@ -390,9 +543,26 @@ router.put(
     }
 );
 
-// ============================================
-// DELETE ENTRY
-// ============================================
+/**
+ * @openapi
+ * /api/v1/entries/{id}:
+ *   delete:
+ *     tags: [Entries]
+ *     summary: Delete a watch entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Entry deleted successfully
+ *       404:
+ *         description: Entry not found
+ */
 router.delete(
     '/:id',
     authMiddleware,
@@ -432,9 +602,18 @@ router.delete(
     }
 );
 
-// ============================================
-// GET ENTRY STATISTICS
-// ============================================
+/**
+ * @openapi
+ * /api/v1/entries/stats/summary:
+ *   get:
+ *     tags: [Entries]
+ *     summary: Get user watch statistics summary
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User statistics summary
+ */
 router.get('/stats/summary', authMiddleware, async (req: Request, res: Response): Promise<any> => {
     try {
         const userId = (req as any).user.userId;

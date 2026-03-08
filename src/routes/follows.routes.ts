@@ -8,9 +8,32 @@ import notificationService from '../services/notification.service.js';
 const router = Router();
 
 /**
- * @route   POST /api/follows/:userId
- * @desc    Follow a user (or send follow request if private)
- * @access  Private
+ * @openapi
+ * tags:
+ *   name: Follows
+ *   description: User follow and connection management
+ */
+
+/**
+ * @openapi
+ * /api/v1/follows/{userId}:
+ *   post:
+ *     tags: [Follows]
+ *     summary: Follow a user
+ *     description: Follow a user (or send follow request if private)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       201:
+ *         description: Success (Followed or Requested)
+ *       404:
+ *         description: User not found
  */
 router.post('/:userId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -117,8 +140,24 @@ router.post('/:userId', authMiddleware, async (req: Request, res: Response): Pro
 });
 
 /**
- * @route   POST /api/follows/requests/:requestId/accept
- * @desc    Accept a follow request
+ * @openapi
+ * /api/v1/follows/requests/{requestId}/accept:
+ *   post:
+ *     tags: [Follows]
+ *     summary: Accept a follow request
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Follow request accepted
+ *       404:
+ *         description: Request not found
  */
 router.post('/requests/:requestId/accept', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -157,8 +196,24 @@ router.post('/requests/:requestId/accept', authMiddleware, async (req: Request, 
 });
 
 /**
- * @route   POST /api/follows/requests/:requestId/reject
- * @desc    Reject a follow request
+ * @openapi
+ * /api/v1/follows/requests/{requestId}/reject:
+ *   post:
+ *     tags: [Follows]
+ *     summary: Reject a follow request
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Follow request rejected
+ *       404:
+ *         description: Request not found
  */
 router.post('/requests/:requestId/reject', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -184,8 +239,16 @@ router.post('/requests/:requestId/reject', authMiddleware, async (req: Request, 
 });
 
 /**
- * @route   GET /api/follows/requests/pending
- * @desc    Get pending follow requests for current user
+ * @openapi
+ * /api/v1/follows/requests/pending:
+ *   get:
+ *     tags: [Follows]
+ *     summary: Get pending follow requests
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of pending requests
  */
 router.get('/requests/pending', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -216,8 +279,24 @@ router.get('/requests/pending', authMiddleware, async (req: Request, res: Respon
 });
 
 /**
- * @route   DELETE /api/follows/:userId
- * @desc    Unfollow a user
+ * @openapi
+ * /api/v1/follows/{userId}:
+ *   delete:
+ *     tags: [Follows]
+ *     summary: Unfollow a user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successfully unfollowed
+ *       404:
+ *         description: Not following
  */
 router.delete('/:userId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -251,7 +330,30 @@ router.delete('/:userId', authMiddleware, async (req: Request, res: Response): P
 });
 
 /**
- * @route   GET /api/follows/:userId/followers
+ * @openapi
+ * /api/v1/follows/{userId}/followers:
+ *   get:
+ *     tags: [Follows]
+ *     summary: Get user's followers
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of followers
  */
 router.get('/:userId/followers', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -287,7 +389,30 @@ router.get('/:userId/followers', authMiddleware, async (req: Request, res: Respo
 });
 
 /**
- * @route   GET /api/follows/:userId/following
+ * @openapi
+ * /api/v1/follows/{userId}/following:
+ *   get:
+ *     tags: [Follows]
+ *     summary: Get users followed by user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of following users
  */
 router.get('/:userId/following', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -323,7 +448,22 @@ router.get('/:userId/following', authMiddleware, async (req: Request, res: Respo
 });
 
 /**
- * @route   GET /api/follows/:userId/status
+ * @openapi
+ * /api/v1/follows/{userId}/status:
+ *   get:
+ *     tags: [Follows]
+ *     summary: Get follow status between users
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Follow status information
  */
 router.get('/:userId/status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -353,7 +493,22 @@ router.get('/:userId/status', authMiddleware, async (req: Request, res: Response
 });
 
 /**
- * @route   GET /api/follows/stats/:userId
+ * @openapi
+ * /api/v1/follows/stats/{userId}:
+ *   get:
+ *     tags: [Follows]
+ *     summary: Get follow statistics for user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Follower/Following counts
  */
 router.get('/stats/:userId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {

@@ -7,10 +7,37 @@ import tmdbService from '../services/tmdb.service.js';
 
 const router = Router();
 
-// ============================================
-// GET /api/v1/feed
-// Fetch mixed feed of user entries and system suggestions
-// ============================================
+/**
+ * @openapi
+ * tags:
+ *   name: Feed
+ *   description: Activity feed and content discovery
+ */
+
+/**
+ * @openapi
+ * /api/v1/feed:
+ *   get:
+ *     tags: [Feed]
+ *     summary: Get mixed activity feed
+ *     description: Returns a personalized mix of followed user entries and system suggestions.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Mixed feed items
+ */
 router.get('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user.userId;

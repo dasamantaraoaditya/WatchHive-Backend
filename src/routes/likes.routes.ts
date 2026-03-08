@@ -8,9 +8,31 @@ import notificationService from '../services/notification.service.js';
 const router = Router();
 
 /**
- * @route   POST /api/likes/:entryId
- * @desc    Like an entry
- * @access  Private
+ * @openapi
+ * tags:
+ *   name: Likes
+ *   description: Entry likes management
+ */
+
+/**
+ * @openapi
+ * /api/v1/likes/{entryId}:
+ *   post:
+ *     tags: [Likes]
+ *     summary: Like an entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: entryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       201:
+ *         description: Successfully liked entry
+ *       404:
+ *         description: Entry not found
  */
 router.post('/:entryId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -99,9 +121,22 @@ router.post('/:entryId', authMiddleware, async (req: Request, res: Response): Pr
 });
 
 /**
- * @route   DELETE /api/likes/:entryId
- * @desc    Unlike an entry
- * @access  Private
+ * @openapi
+ * /api/v1/likes/{entryId}:
+ *   delete:
+ *     tags: [Likes]
+ *     summary: Unlike an entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: entryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successfully unliked entry
  */
 router.delete('/:entryId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -142,9 +177,30 @@ router.delete('/:entryId', authMiddleware, async (req: Request, res: Response): 
 });
 
 /**
- * @route   GET /api/likes/:entryId
- * @desc    Get all likes for an entry
- * @access  Private
+ * @openapi
+ * /api/v1/likes/{entryId}:
+ *   get:
+ *     tags: [Likes]
+ *     summary: Get all likes for an entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: entryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Likes list
  */
 router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -186,9 +242,22 @@ router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Pro
 });
 
 /**
- * @route   GET /api/likes/:entryId/status
- * @desc    Check if current user has liked an entry
- * @access  Private
+ * @openapi
+ * /api/v1/likes/{entryId}/status:
+ *   get:
+ *     tags: [Likes]
+ *     summary: Check if current user has liked an entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: entryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Like status
  */
 router.get('/:entryId/status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -213,9 +282,30 @@ router.get('/:entryId/status', authMiddleware, async (req: Request, res: Respons
 });
 
 /**
- * @route   GET /api/likes/user/:userId
- * @desc    Get all entries liked by a user
- * @access  Private
+ * @openapi
+ * /api/v1/likes/user/{userId}:
+ *   get:
+ *     tags: [Likes]
+ *     summary: Get all entries liked by a user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Liked entries list
  */
 router.get('/user/:userId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {

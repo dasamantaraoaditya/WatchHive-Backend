@@ -9,9 +9,44 @@ import notificationService from '../services/notification.service.js';
 const router = Router();
 
 /**
- * @route   POST /api/comments/:entryId
- * @desc    Add a comment to an entry
- * @access  Private
+ * @openapi
+ * tags:
+ *   name: Comments
+ *   description: Entry comments and replies management
+ */
+
+/**
+ * @openapi
+ * /api/v1/comments/{entryId}:
+ *   post:
+ *     tags: [Comments]
+ *     summary: Add a comment to an entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: entryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - content
+ *             properties:
+ *               content:
+ *                 type: string
+ *               parentCommentId:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Comment added
+ *       404:
+ *         description: Entry not found
  */
 router.post(
     '/:entryId',
@@ -126,9 +161,30 @@ router.post(
 );
 
 /**
- * @route   GET /api/comments/:entryId
- * @desc    Get comments for an entry
- * @access  Private
+ * @openapi
+ * /api/v1/comments/{entryId}:
+ *   get:
+ *     tags: [Comments]
+ *     summary: Get comments for an entry
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: entryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Comments list
  */
 router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -186,9 +242,24 @@ router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Pro
 });
 
 /**
- * @route   DELETE /api/comments/:commentId
- * @desc    Delete a comment
- * @access  Private (Owner or Entry Owner)
+ * @openapi
+ * /api/v1/comments/{commentId}:
+ *   delete:
+ *     tags: [Comments]
+ *     summary: Delete a comment
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Comment deleted
+ *       403:
+ *         description: Not authorized
  */
 router.delete('/:commentId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {

@@ -5,9 +5,32 @@ import notificationService from '../services/notification.service.js';
 const router = Router();
 
 /**
- * @route   GET /api/notifications
- * @desc    Get user notifications
- * @access  Private
+ * @openapi
+ * tags:
+ *   name: Notifications
+ *   description: User notifications management
+ */
+
+/**
+ * @openapi
+ * /api/v1/notifications:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: Get user notifications
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Notifications list
  */
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
     try {
@@ -35,9 +58,16 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 });
 
 /**
- * @route   GET /api/notifications/unread-count
- * @desc    Get count of unread notifications
- * @access  Private
+ * @openapi
+ * /api/v1/notifications/unread-count:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: Get count of unread notifications
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Unread count
  */
 router.get('/unread-count', authMiddleware, async (req: Request, res: Response) => {
     try {
@@ -50,9 +80,22 @@ router.get('/unread-count', authMiddleware, async (req: Request, res: Response) 
 });
 
 /**
- * @route   PATCH /api/notifications/:notificationId/read
- * @desc    Mark notification as read
- * @access  Private
+ * @openapi
+ * /api/v1/notifications/{notificationId}/read:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Mark notification as read
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: notificationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successfully marked as read
  */
 router.patch('/:notificationId/read', authMiddleware, async (req: Request, res: Response) => {
     try {
@@ -67,9 +110,16 @@ router.patch('/:notificationId/read', authMiddleware, async (req: Request, res: 
 });
 
 /**
- * @route   PATCH /api/notifications/read-all
- * @desc    Mark all notifications as read
- * @access  Private
+ * @openapi
+ * /api/v1/notifications/read-all:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Mark all notifications as read
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successfully marked all as read
  */
 router.patch('/read-all', authMiddleware, async (req: Request, res: Response) => {
     try {

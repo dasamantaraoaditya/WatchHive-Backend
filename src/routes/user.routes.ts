@@ -46,7 +46,25 @@ const upload = multer({
 });
 
 
-// GET /api/v1/users/me - Get current user profile
+/**
+ * @openapi
+ * tags:
+ *   name: User
+ *   description: User profile and avatar management
+ */
+
+/**
+ * @openapi
+ * /api/v1/users/me:
+ *   get:
+ *     tags: [User]
+ *     summary: Get current user profile
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user profile details
+ */
 router.get('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
@@ -78,7 +96,31 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
     }
 });
 
-// PUT /api/v1/users/me - Update current user profile
+/**
+ * @openapi
+ * /api/v1/users/me:
+ *   put:
+ *     tags: [User]
+ *     summary: Update current user profile
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               displayName:
+ *                 type: string
+ *               bio:
+ *                 type: string
+ *               location:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ */
 router.put('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
@@ -112,7 +154,28 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
     }
 });
 
-// POST /api/v1/users/me/avatar - Upload profile picture
+/**
+ * @openapi
+ * /api/v1/users/me/avatar:
+ *   post:
+ *     tags: [User]
+ *     summary: Upload profile picture
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               avatar:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Avatar uploaded successfully
+ */
 router.post(
     '/me/avatar',
     authMiddleware,
@@ -171,7 +234,18 @@ router.post(
     }
 );
 
-// DELETE /api/v1/users/me/avatar - Remove profile picture
+/**
+ * @openapi
+ * /api/v1/users/me/avatar:
+ *   delete:
+ *     tags: [User]
+ *     summary: Remove profile picture
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Avatar removed
+ */
 router.delete('/me/avatar', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
@@ -219,7 +293,32 @@ router.delete('/me/avatar', authMiddleware, async (req: Request, res: Response, 
 });
 
 
-// GET /api/v1/users/search - Search for users
+/**
+ * @openapi
+ * /api/v1/users/search:
+ *   get:
+ *     tags: [User]
+ *     summary: Search for users
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of matching users
+ */
 router.get('/search', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const query = req.query.q as string;
@@ -276,7 +375,26 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
     }
 });
 
-// GET /api/v1/users/:id - Get specific user profile
+/**
+ * @openapi
+ * /api/v1/users/{id}:
+ *   get:
+ *     tags: [User]
+ *     summary: Get specific user profile
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User profile details and stats
+ *       404:
+ *         description: User not found
+ */
 router.get('/:id', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const targetId = req.params.id;

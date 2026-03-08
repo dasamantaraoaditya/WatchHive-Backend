@@ -106,8 +106,13 @@ class TMDbService {
         lastError = error;
         const code = error?.code || error?.cause?.code || '';
         const isRetryable = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'ERR_SOCKET_CONNECTION_TIMEOUT'].includes(code)
-          || error?.response?.status === 429  // rate limited
-          || error?.response?.status >= 500;  // server error
+          || (error?.response?.status === 429)  // rate limited
+          || (error?.response?.status >= 500);  // server error
+
+        // Don't retry on 404 Not Found
+        if (error?.response?.status === 404) {
+          throw error;
+        }
 
         if (isRetryable && attempt < retries) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
@@ -174,7 +179,10 @@ class TMDbService {
       return await this.requestWithRetry<TMDbMovieDetails>({
         url: `/movie/${movieId}`,
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        return null as any;
+      }
       console.error('Error getting movie details:', error);
       throw new Error('Failed to get movie details from TMDb');
     }
@@ -188,7 +196,10 @@ class TMDbService {
       return await this.requestWithRetry<TMDbTVShowDetails>({
         url: `/tv/${tvId}`,
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        return null as any;
+      }
       console.error('Error getting TV show details:', error);
       throw new Error('Failed to get TV show details from TMDb');
     }
