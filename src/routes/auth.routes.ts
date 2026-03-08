@@ -47,11 +47,120 @@ const refreshValidation = [
         .withMessage('Refresh token is required'),
 ];
 
+/**
+ * @openapi
+ * tags:
+ *   name: Authentication
+ *   description: User registration and login management
+ */
+
 // Routes
+/**
+ * @openapi
+ * /api/v1/auth/register:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Register a new user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - email
+ *               - password
+ *             properties:
+ *               username:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               displayName:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: Validation error
+ */
 router.post('/register', registerValidation, validate, authController.register);
+
+/**
+ * @openapi
+ * /api/v1/auth/login:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Login a user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Unauthorized
+ */
 router.post('/login', loginValidation, validate, authController.login);
+
+/**
+ * @openapi
+ * /api/v1/auth/google:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Login with Google OAuth
+ *     responses:
+ *       200:
+ *         description: Google login successful
+ */
 router.post('/google', authController.googleLogin);
+
+/**
+ * @openapi
+ * /api/v1/auth/refresh:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Refresh access token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfuly
+ */
 router.post('/refresh', refreshValidation, validate, authController.refresh);
+
+/**
+ * @openapi
+ * /api/v1/auth/logout:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Logout a user
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ */
 router.post('/logout', authController.logout);
 
 export default router;

@@ -5,6 +5,8 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './config/swagger.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import authRoutes from './routes/auth.routes.js';
 import entriesRoutes from './routes/entries.js';
@@ -22,6 +24,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// Swagger Documentation
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Security middleware — allow images from same origin
 app.use(helmet({
@@ -64,7 +69,32 @@ if (config.nodeEnv === 'development') {
 
 import { checkDbHealth } from './db/index.js';
 
-// Health check
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     tags:
+ *       - Health
+ *     summary: Check API health status
+ *     description: Returns the health status of the API and database connection.
+ *     responses:
+ *       200:
+ *         description: API is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 database:
+ *                   type: string
+ *                   example: connected
+ *                 environment:
+ *                   type: string
+ *                   example: production
+ */
 app.get('/health', async (_req, res) => {
     const isDbHealthy = await checkDbHealth();
     res.json({
