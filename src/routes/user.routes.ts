@@ -8,30 +8,30 @@ import { users, follows, entries } from '../db/schema.js';
 import { eq, or, and, ilike, not, count, exists } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import multerS3 from 'multer-s3';
+import fs from 'fs';
 
 const router = Router();
 
-// Configure S3 client
-const s3 = new S3Client({
-    region: process.env.AWS_S3_REGION || 'us-west-2',
+// Ensure uploads directory exists
+const uploadDir = 'uploads/avatars';
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Configure multer for Local Disk storage
+const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const userId = req.user?.userId || 'unknown';
+        const ext = path.extname(file.originalname) || '.jpg';
+        cb(null, `${userId}-${Date.now()}${ext}`);
+    },
 });
 
-// Configure multer for S3 uploads
 const upload = multer({
-    storage: multerS3({
-        s3: s3,
-        bucket: process.env.S3_BUCKET_NAME || 'watchhive-uploads-prod-api-us-west-2',
-        acl: 'public-read',
-        contentType: multerS3.AUTO_CONTENT_TYPE,
-        key: (req, _file, cb) => {
-            const userId = req.user?.userId || 'unknown';
-            const ext = path.extname(_file.originalname) || '.jpg';
-            const filename = `avatars/${userId}-${Date.now()}${ext}`;
-            cb(null, filename);
-        },
-    }),
+    storage: storage,
     limits: {
         fileSize: 5 * 1024 * 1024, // 5 MB
     },
@@ -195,26 +195,24 @@ router.post(
                 .where(eq(users.id, userId))
                 .limit(1);
 
-            if (currentUser?.profilePictureUrl && currentUser.profilePictureUrl.includes('.amazonaws.com/')) {
-                const key = currentUser.profilePictureUrl.split('.amazonaws.com/').pop();
-                if (key) {
+            if (currentUser?.profilePictureUrl && currentUser.profilePictureUrl.includes('/uploads/')) {
+                const oldPath = path.join(process.cwd(), currentUser.profilePictureUrl.split('/').slice(-3).join('/'));
+                if (fs.existsSync(oldPath)) {
                     try {
-                        await s3.send(new DeleteObjectCommand({
-                            Bucket: process.env.S3_BUCKET_NAME || 'watchhive-uploads-prod-api-us-west-2',
-                            Key: key,
-                        }));
+                        fs.unlinkSync(oldPath);
                     } catch (err: any) {
-                        console.error('Error deleting old avatar from S3:', err);
-                        // Don't fail the whole request if deleting old avatar fails
+                        console.error('Error deleting old avatar file:', err);
                     }
                 }
             }
 
             // Build the URL for the uploaded file
-            const profilePictureUrl = (req.file as any).location;
+            const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+            const host = req.get('host');
+            const profilePictureUrl = `${protocol}://${host}/uploads/avatars/${req.file.filename}`;
 
             if (!profilePictureUrl) {
-                throw new AppError('File upload failed - no location returned from storage', 500);
+                throw new AppError('File upload failed - URL could not be generated', 500);
             }
 
             // Update user in database
@@ -234,11 +232,6 @@ router.post(
 
             res.json(user);
         } catch (error: any) {
-            // Provide more specific error message for S3 credential issues
-            if (error.name === 'CredentialsProviderError' || error.message?.includes('credentials')) {
-                console.error('CRITICAL: AWS S3 credentials missing or invalid.');
-                return next(new AppError('Storage configuration error. Please contact support.', 500));
-            }
             next(error);
         }
     }
@@ -267,16 +260,13 @@ router.delete('/me/avatar', authMiddleware, async (req: Request, res: Response, 
             .where(eq(users.id, userId))
             .limit(1);
 
-        if (currentUser?.profilePictureUrl && currentUser.profilePictureUrl.includes('.amazonaws.com/')) {
-            const key = currentUser.profilePictureUrl.split('.amazonaws.com/').pop();
-            if (key) {
+        if (currentUser?.profilePictureUrl && currentUser.profilePictureUrl.includes('/uploads/')) {
+            const oldPath = path.join(process.cwd(), currentUser.profilePictureUrl.split('/').slice(-3).join('/'));
+            if (fs.existsSync(oldPath)) {
                 try {
-                    await s3.send(new DeleteObjectCommand({
-                        Bucket: process.env.S3_BUCKET_NAME || 'watchhive-uploads-prod-api-us-west-2',
-                        Key: key,
-                    }));
-                } catch (err) {
-                    console.error('Error deleting avatar from S3:', err);
+                    fs.unlinkSync(oldPath);
+                } catch (err: any) {
+                    console.error('Error deleting avatar file:', err);
                 }
             }
         }

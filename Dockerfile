@@ -22,6 +22,9 @@ RUN npm prune --production
 # Expose port (Railway provides PORT env var)
 EXPOSE 8080
 
+# Create uploads directory
+RUN mkdir -p /app/uploads/avatars
+
 # Environment variables
 ENV NODE_ENV=production
 
