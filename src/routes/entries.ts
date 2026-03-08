@@ -201,8 +201,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                     displayName: users.displayName,
                     profilePictureUrl: users.profilePictureUrl
                 },
-                likesCount: sql<number>`(SELECT count(*) FROM "Like" WHERE "Like"."entryId" = ${entries.id})`.mapWith(Number),
-                commentsCount: sql<number>`(SELECT count(*) FROM "Comment" WHERE "Comment"."entryId" = ${entries.id})`.mapWith(Number)
+                likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
+                commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number)
             })
                 .from(entries)
                 .innerJoin(users, eq(entries.userId, users.id))

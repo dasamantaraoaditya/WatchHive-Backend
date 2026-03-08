@@ -28,10 +28,23 @@ app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
-// CORS
+// CORS — allow both production URL and localhost for development
+const allowedOrigins: string[] = [];
+if (config.cors.origin) allowedOrigins.push(config.cors.origin);
+if (config.nodeEnv === 'development') {
+    allowedOrigins.push('http://localhost:3000', 'http://localhost:5173');
+}
+
 app.use(
     cors({
-        origin: config.cors.origin,
+        origin: (origin, callback) => {
+            // Allow requests with no origin (mobile apps, curl, etc.)
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error(`CORS: origin ${origin} not allowed`));
+        },
         credentials: true,
     })
 );

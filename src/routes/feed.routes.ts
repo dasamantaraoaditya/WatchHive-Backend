@@ -50,9 +50,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 profilePictureUrl: users.profilePictureUrl,
                 isPrivate: users.isPrivate
             },
-            likesCount: sql<number>`(SELECT count(*) FROM "Like" WHERE "Like"."entryId" = ${entries.id})`.mapWith(Number),
-            commentsCount: sql<number>`(SELECT count(*) FROM "Comment" WHERE "Comment"."entryId" = ${entries.id})`.mapWith(Number),
-            isLiked: sql<boolean>`EXISTS(SELECT 1 FROM "Like" WHERE "Like"."entryId" = ${entries.id} AND "Like"."userId" = ${userId})`
+            likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
+            commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number),
+            isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.entry_id = ${entries.id} AND likes.user_id = ${userId})`
         })
             .from(entries)
             .innerJoin(users, eq(entries.userId, users.id))
