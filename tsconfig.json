@@ -6,7 +6,7 @@
             "ES2022"
         ],
         "moduleResolution": "NodeNext",
-        "rootDir": "./",
+        "rootDir": "./src",
         "outDir": "./dist",
         "isolatedModules": true,
         "strict": true,
@@ -24,11 +24,11 @@
         "allowSyntheticDefaultImports": true
     },
     "include": [
-        "src/**/*",
-        "tests/**/*"
+        "src/**/*"
     ],
     "exclude": [
         "node_modules",
-        "dist"
+        "dist",
+        "tests"
     ]
 }
