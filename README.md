@@ -116,17 +116,13 @@ npm run test:watch
 
 Full API documentation is available at `/api-docs` using Swagger.
 
-## 🚀 CI/CD & Deployment
+## 🚀 Deployment
 
-### Continuous Integration
-This project uses **GitHub Actions** for CI. Every push and pull request to the `main` branch triggers:
-1. Linting with ESLint.
-2. Automated testing with Jest.
+This project uses a **"Ship on Push"** workflow:
+1. **GitHub Actions**: Runs tests on every push.
+2. **Railway**: Automatically deploys when tests pass.
 
-### Continuous Deployment
-We use **Railway** for CD. To enable fully automated "Ship on Push":
-1. Connect your GitHub repository to your Railway project.
-2. Railway will automatically deploy the latest changes from the `main` branch once the CI checks pass.
+For detailed architecture and setup, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 Manual deployment:
 ```bash
