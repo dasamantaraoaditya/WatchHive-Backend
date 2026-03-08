@@ -8,30 +8,55 @@ import { users, follows, entries } from '../db/schema.js';
 import { eq, or, and, ilike, not, count, exists } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 
-import fs from 'fs';
+import { S3Client, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import multerS3 from 'multer-s3';
 
 const router = Router();
 
-// Ensure uploads directory exists
-const uploadDir = 'uploads/avatars';
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure multer for Local Disk storage
-const storage = multer.diskStorage({
-    destination: (_req, _file, cb) => {
-        cb(null, uploadDir);
+// Configure S3 client for Railway Buckets
+const s3 = new S3Client({
+    region: process.env.S3_REGION || 'us-east-1',
+    endpoint: process.env.S3_ENDPOINT, // Railway provides this
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
     },
-    filename: (req, file, cb) => {
-        const userId = req.user?.userId || 'unknown';
-        const ext = path.extname(file.originalname) || '.jpg';
-        cb(null, `${userId}-${Date.now()}${ext}`);
-    },
+    forcePathStyle: true, // Often required for S3-compatible providers
 });
 
+// Helper to generate a presigned URL for an avatar
+const getAvatarUrl = async (key: string | null): Promise<string | null> => {
+    if (!key) return null;
+    if (key.startsWith('http')) return key; // Already a full URL (legacy or external)
+
+    try {
+        const command = new GetObjectCommand({
+            Bucket: process.env.S3_BUCKET_NAME,
+            Key: key,
+        });
+        // URL valid for 1 hour
+        return await getSignedUrl(s3, command, { expiresIn: 3600 });
+    } catch (err) {
+        console.error('Error generating presigned URL:', err);
+        return null;
+    }
+};
+
+// Configure multer for Railway Bucket uploads
 const upload = multer({
-    storage: storage,
+    storage: multerS3({
+        s3: s3,
+        bucket: process.env.S3_BUCKET_NAME || 'watchhive-avatars',
+        acl: 'private', // Railway buckets are private by default
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        key: (req, _file, cb) => {
+            const userId = req.user?.userId || 'unknown';
+            const ext = path.extname(_file.originalname) || '.jpg';
+            const filename = `avatars/${userId}-${Date.now()}${ext}`;
+            cb(null, filename);
+        },
+    }),
     limits: {
         fileSize: 5 * 1024 * 1024, // 5 MB
     },
@@ -89,6 +114,9 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
         if (!user) {
             throw new AppError('User not found', 404);
         }
+
+        // Generate signed URL for avatar
+        user.profilePictureUrl = await getAvatarUrl(user.profilePictureUrl);
 
         res.json(user);
     } catch (error) {
@@ -148,6 +176,10 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 updatedAt: users.updatedAt,
             });
 
+        if (user) {
+            user.profilePictureUrl = await getAvatarUrl(user.profilePictureUrl);
+        }
+
         res.json(user);
     } catch (error) {
         next(error);
@@ -195,24 +227,22 @@ router.post(
                 .where(eq(users.id, userId))
                 .limit(1);
 
-            if (currentUser?.profilePictureUrl && currentUser.profilePictureUrl.includes('/uploads/')) {
-                const oldPath = path.join(process.cwd(), currentUser.profilePictureUrl.split('/').slice(-3).join('/'));
-                if (fs.existsSync(oldPath)) {
-                    try {
-                        fs.unlinkSync(oldPath);
-                    } catch (err: any) {
-                        console.error('Error deleting old avatar file:', err);
-                    }
+            if (currentUser?.profilePictureUrl && !currentUser.profilePictureUrl.startsWith('http')) {
+                try {
+                    await s3.send(new DeleteObjectCommand({
+                        Bucket: process.env.S3_BUCKET_NAME || 'watchhive-avatars',
+                        Key: currentUser.profilePictureUrl,
+                    }));
+                } catch (err: any) {
+                    console.error('Error deleting old avatar from Bucket:', err);
                 }
             }
 
-            // Build the URL for the uploaded file
-            const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-            const host = req.get('host');
-            const profilePictureUrl = `${protocol}://${host}/uploads/avatars/${req.file.filename}`;
+            // Store the S3 Key in the database
+            const profilePictureUrl = (req.file as any).key;
 
             if (!profilePictureUrl) {
-                throw new AppError('File upload failed - URL could not be generated', 500);
+                throw new AppError('File upload failed - storage key not generated', 500);
             }
 
             // Update user in database
@@ -230,8 +260,16 @@ router.post(
                     location: users.location,
                 });
 
+            if (user) {
+                user.profilePictureUrl = await getAvatarUrl(user.profilePictureUrl);
+            }
+
             res.json(user);
         } catch (error: any) {
+            if (error.name === 'CredentialsProviderError' || error.message?.includes('credentials') || error.message?.includes('endpoint')) {
+                console.error('CRITICAL: Railway Bucket credentials or endpoint missing.');
+                return next(new AppError('Bucket storage not provisioned. Please contact support.', 500));
+            }
             next(error);
         }
     }
@@ -260,14 +298,14 @@ router.delete('/me/avatar', authMiddleware, async (req: Request, res: Response, 
             .where(eq(users.id, userId))
             .limit(1);
 
-        if (currentUser?.profilePictureUrl && currentUser.profilePictureUrl.includes('/uploads/')) {
-            const oldPath = path.join(process.cwd(), currentUser.profilePictureUrl.split('/').slice(-3).join('/'));
-            if (fs.existsSync(oldPath)) {
-                try {
-                    fs.unlinkSync(oldPath);
-                } catch (err: any) {
-                    console.error('Error deleting avatar file:', err);
-                }
+        if (currentUser?.profilePictureUrl && !currentUser.profilePictureUrl.startsWith('http')) {
+            try {
+                await s3.send(new DeleteObjectCommand({
+                    Bucket: process.env.S3_BUCKET_NAME || 'watchhive-avatars',
+                    Key: currentUser.profilePictureUrl,
+                }));
+            } catch (err: any) {
+                console.error('Error deleting avatar from Bucket:', err);
             }
         }
 
@@ -362,7 +400,10 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
         ]);
 
         res.json({
-            users: usersList,
+            users: await Promise.all(usersList.map(async (u) => ({
+                ...u,
+                profilePictureUrl: await getAvatarUrl(u.profilePictureUrl)
+            }))),
             pagination: {
                 page,
                 limit,
@@ -435,6 +476,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
 
         res.json({
             ...user,
+            profilePictureUrl: await getAvatarUrl(user.profilePictureUrl),
             _count: {
                 followers: followersCount,
                 following: followingCount,

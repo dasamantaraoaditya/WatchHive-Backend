@@ -108,7 +108,9 @@ app.get('/health', async (_req, res) => {
 });
 
 // Serve uploaded files statically
-app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
+if (config.nodeEnv === 'development') {
+    app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
+}
 
 // API routes
 app.use('/api/v1/auth', authRoutes);
