@@ -203,14 +203,19 @@ router.post(
                             Bucket: process.env.S3_BUCKET_NAME || 'watchhive-uploads-prod-api-us-west-2',
                             Key: key,
                         }));
-                    } catch (err) {
+                    } catch (err: any) {
                         console.error('Error deleting old avatar from S3:', err);
+                        // Don't fail the whole request if deleting old avatar fails
                     }
                 }
             }
 
             // Build the URL for the uploaded file
             const profilePictureUrl = (req.file as any).location;
+
+            if (!profilePictureUrl) {
+                throw new AppError('File upload failed - no location returned from storage', 500);
+            }
 
             // Update user in database
             const [user] = await db
@@ -228,7 +233,12 @@ router.post(
                 });
 
             res.json(user);
-        } catch (error) {
+        } catch (error: any) {
+            // Provide more specific error message for S3 credential issues
+            if (error.name === 'CredentialsProviderError' || error.message?.includes('credentials')) {
+                console.error('CRITICAL: AWS S3 credentials missing or invalid.');
+                return next(new AppError('Storage configuration error. Please contact support.', 500));
+            }
             next(error);
         }
     }
