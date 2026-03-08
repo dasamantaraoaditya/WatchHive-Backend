@@ -1,9 +1,9 @@
 import request from 'supertest';
-import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
-import app from '../src/app';
-
-const prisma = new PrismaClient();
+import { db } from '../src/db/index.js';
+import { users, follows, entries, likes, comments, notifications } from '../src/db/schema.js';
+import { eq, and } from 'drizzle-orm';
+import app from '../src/app.js';
 
 describe('Follow System Integration Tests', () => {
     let userA: any;
@@ -16,27 +16,47 @@ describe('Follow System Integration Tests', () => {
     const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_key_123';
 
     beforeAll(async () => {
-        // Clean database
-        await prisma.notification.deleteMany();
-        await prisma.comment.deleteMany();
-        await prisma.like.deleteMany();
-        await prisma.entry.deleteMany();
-        await prisma.follow.deleteMany();
-        await prisma.user.deleteMany();
+        // Clean database (order matters due to foreign keys)
+        await db.delete(notifications);
+        await db.delete(comments);
+        await db.delete(likes);
+        await db.delete(entries);
+        await db.delete(follows);
+        await db.delete(users);
 
         // Create Users
-        userA = await prisma.user.create({
-            data: { username: 'test_a', email: 'a@test.com', passwordHash: 'hash', displayName: 'User A' }
-        });
-        userB = await prisma.user.create({
-            data: { username: 'test_b', email: 'b@test.com', passwordHash: 'hash', displayName: 'Public User B', isPrivate: false }
-        });
-        userC = await prisma.user.create({
-            data: { username: 'test_c', email: 'c@test.com', passwordHash: 'hash', displayName: 'Private User C', isPrivate: true }
-        });
-        userD = await prisma.user.create({
-            data: { username: 'test_d', email: 'd@test.com', passwordHash: 'hash' }
-        });
+        const [uA] = await db.insert(users).values({
+            username: 'test_a',
+            email: 'a@test.com',
+            passwordHash: 'hash',
+            displayName: 'User A'
+        }).returning();
+        userA = uA;
+
+        const [uB] = await db.insert(users).values({
+            username: 'test_b',
+            email: 'b@test.com',
+            passwordHash: 'hash',
+            displayName: 'Public User B',
+            isPrivate: false
+        }).returning();
+        userB = uB;
+
+        const [uC] = await db.insert(users).values({
+            username: 'test_c',
+            email: 'c@test.com',
+            passwordHash: 'hash',
+            displayName: 'Private User C',
+            isPrivate: true
+        }).returning();
+        userC = uC;
+
+        const [uD] = await db.insert(users).values({
+            username: 'test_d',
+            email: 'd@test.com',
+            passwordHash: 'hash'
+        }).returning();
+        userD = uD;
 
         // Generate Tokens
         tokenA = jwt.sign({ userId: userA.id, email: userA.email }, JWT_SECRET, { expiresIn: '1h' });
@@ -44,7 +64,7 @@ describe('Follow System Integration Tests', () => {
     });
 
     afterAll(async () => {
-        await prisma.$disconnect();
+        // No explicit disconnect needed for drizzle-orm/postgres-js in this setup
     });
 
     describe('POST /api/v1/follows/:id', () => {
@@ -57,9 +77,12 @@ describe('Follow System Integration Tests', () => {
             expect(res.body.message).toMatch(/successfully/i);
 
             // Verify DB
-            const follow = await prisma.follow.findUnique({
-                where: { followerId_followingId: { followerId: userA.id, followingId: userB.id } }
-            });
+            const [follow] = await db.select().from(follows).where(
+                and(
+                    eq(follows.followerId, userA.id),
+                    eq(follows.followingId, userB.id)
+                )
+            );
             expect(follow).toBeTruthy();
         });
 
@@ -76,7 +99,7 @@ describe('Follow System Integration Tests', () => {
                 .post(`/api/v1/follows/${userB.id}`)
                 .set('Authorization', `Bearer ${tokenA}`);
 
-            expect(res.status).toBe(400); // Or 409 Conflict
+            expect(res.status).toBe(400);
         });
     });
 
@@ -89,10 +112,13 @@ describe('Follow System Integration Tests', () => {
             expect(res.status).toBe(200);
 
             // Verify DB
-            const follow = await prisma.follow.findUnique({
-                where: { followerId_followingId: { followerId: userA.id, followingId: userB.id } }
-            });
-            expect(follow).toBeNull();
+            const [follow] = await db.select().from(follows).where(
+                and(
+                    eq(follows.followerId, userA.id),
+                    eq(follows.followingId, userB.id)
+                )
+            );
+            expect(follow).toBeUndefined();
         });
 
         it('should return 404 if not following', async () => {
@@ -116,8 +142,9 @@ describe('Follow System Integration Tests', () => {
 
         it('should allow follower (User A) to view private user (User C) entries', async () => {
             // First follow C
-            await prisma.follow.create({
-                data: { followerId: userA.id, followingId: userC.id }
+            await db.insert(follows).values({
+                followerId: userA.id,
+                followingId: userC.id
             });
 
             const res = await request(app)
@@ -132,14 +159,12 @@ describe('Follow System Integration Tests', () => {
     describe('Feed Consistency', () => {
         it('should show followed user entries in feed', async () => {
             // User C creates an entry
-            await prisma.entry.create({
-                data: {
-                    userId: userC.id,
-                    tmdbId: 100, // Dummy
-                    title: 'Test Entry',
-                    type: 'MOVIE',
-                    watchedAt: new Date()
-                }
+            await db.insert(entries).values({
+                userId: userC.id,
+                tmdbId: 100, // Dummy
+                title: 'Test Entry',
+                type: 'MOVIE',
+                watchedAt: new Date()
             });
 
             // User A (follows C) fetches feed

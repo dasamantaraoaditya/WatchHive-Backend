@@ -131,7 +131,7 @@ export const authService = {
         });
 
         // Remove password hash from response
-        const { passwordHash, ...userWithoutPassword } = user;
+        const { passwordHash: _passwordHash, ...userWithoutPassword } = user;
 
         return {
             user: userWithoutPassword,

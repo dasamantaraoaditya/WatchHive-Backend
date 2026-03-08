@@ -16,8 +16,8 @@ const router = Router();
 
 // Configure S3 client for Railway Buckets
 const s3 = new S3Client({
-    region: process.env.S3_REGION || 'us-east-1',
-    endpoint: process.env.S3_ENDPOINT, // Railway provides this
+    region: process.env.AWS_DEFAULT_REGION || 'us-east-1',
+    endpoint: process.env.AWS_ENDPOINT_URL, // Railway provides this
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
@@ -32,7 +32,7 @@ const getAvatarUrl = async (key: string | null): Promise<string | null> => {
 
     try {
         const command = new GetObjectCommand({
-            Bucket: process.env.S3_BUCKET_NAME,
+            Bucket: process.env.AWS_S3_BUCKET_NAME,
             Key: key,
         });
         // URL valid for 1 hour
@@ -47,7 +47,7 @@ const getAvatarUrl = async (key: string | null): Promise<string | null> => {
 const upload = multer({
     storage: multerS3({
         s3: s3,
-        bucket: process.env.S3_BUCKET_NAME || 'watchhive-avatars',
+        bucket: process.env.AWS_S3_BUCKET_NAME || 'watchhive-avatars',
         acl: 'private', // Railway buckets are private by default
         contentType: multerS3.AUTO_CONTENT_TYPE,
         key: (req, _file, cb) => {
@@ -230,7 +230,7 @@ router.post(
             if (currentUser?.profilePictureUrl && !currentUser.profilePictureUrl.startsWith('http')) {
                 try {
                     await s3.send(new DeleteObjectCommand({
-                        Bucket: process.env.S3_BUCKET_NAME || 'watchhive-avatars',
+                        Bucket: process.env.AWS_S3_BUCKET_NAME || 'watchhive-avatars',
                         Key: currentUser.profilePictureUrl,
                     }));
                 } catch (err: any) {
@@ -301,7 +301,7 @@ router.delete('/me/avatar', authMiddleware, async (req: Request, res: Response, 
         if (currentUser?.profilePictureUrl && !currentUser.profilePictureUrl.startsWith('http')) {
             try {
                 await s3.send(new DeleteObjectCommand({
-                    Bucket: process.env.S3_BUCKET_NAME || 'watchhive-avatars',
+                    Bucket: process.env.AWS_S3_BUCKET_NAME || 'watchhive-avatars',
                     Key: currentUser.profilePictureUrl,
                 }));
             } catch (err: any) {

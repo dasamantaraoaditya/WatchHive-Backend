@@ -24,14 +24,11 @@ Backend API server for WatchHive - A social platform for movie and TV show enthu
 
 3. **Set up database**:
    ```bash
-   # Generate Prisma client
-   npm run prisma:generate
+   # Generate Drizzle migrations
+   npm run db:generate
    
-   # Run migrations
-   npm run prisma:migrate
-   
-   # (Optional) Seed database
-   npm run prisma:seed
+   # Push changes to database
+   npm run db:push
    ```
 
 4. **Start development server**:
@@ -44,24 +41,19 @@ The server will start on `http://localhost:5001`
 ## 📁 Project Structure
 
 ```
-server/
-├── src/
-│   ├── controllers/      # Request handlers
-│   ├── services/         # Business logic
-│   ├── routes/           # API routes
-│   ├── middleware/       # Express middleware
-│   ├── utils/            # Utility functions
-│   ├── types/            # TypeScript types
-│   ├── config.ts         # Configuration
-│   ├── app.ts            # Express app setup
-│   └── index.ts          # Server entry point
-├── prisma/
-│   ├── schema.prisma     # Database schema
-│   ├── migrations/       # Database migrations
-│   └── seed.ts           # Seed data
-├── tests/                # Test files
-├── .env                  # Environment variables
-└── package.json
+src/
+├── controllers/      # Request handlers
+├── services/         # Business logic
+├── routes/           # API routes
+├── middleware/       # Express middleware
+├── utils/            # Utility functions
+├── types/            # TypeScript types
+├── db/               # Drizzle schema and client
+├── config.ts         # Configuration
+├── app.ts            # Express app setup
+└── index.ts          # Server entry point
+tests/                # Test files
+.github/workflows/    # CI/CD pipelines
 ```
 
 ## 🔌 API Endpoints
@@ -69,8 +61,8 @@ server/
 ### Authentication
 - `POST /api/v1/auth/register` - Register new user
 - `POST /api/v1/auth/login` - Login user
-- `POST /api/v1/auth/refresh` - Refresh access token
-- `POST /api/v1/auth/logout` - Logout user
+- `POST /api/v1/user/refresh` - Refresh access token
+- `POST /api/v1/user/logout` - Logout user
 
 ### Health Check
 - `GET /health` - Server health status
@@ -80,16 +72,15 @@ server/
 - `npm run dev` - Start development server with hot reload
 - `npm run build` - Build for production
 - `npm start` - Start production server
-- `npm run prisma:generate` - Generate Prisma client
-- `npm run prisma:migrate` - Run database migrations
-- `npm run prisma:studio` - Open Prisma Studio (database GUI)
-- `npm run prisma:seed` - Seed database with test data
+- `npm run db:generate` - Generate Drizzle migrations
+- `npm run db:push` - Push schema to database
+- `npm run db:studio` - Open Drizzle Studio (database GUI)
 - `npm test` - Run tests
 - `npm run lint` - Run ESLint
 
 ## 🗄️ Database Schema
 
-The database uses PostgreSQL with Prisma ORM. Main models:
+The database uses PostgreSQL with Drizzle ORM. Main models:
 
 - **User** - User accounts and profiles
 - **Entry** - Logged movies/shows
@@ -97,10 +88,8 @@ The database uses PostgreSQL with Prisma ORM. Main models:
 - **Like** - Entry likes
 - **Comment** - Entry comments
 - **List** - User-created lists
-- **ListItem** - Items in lists
-- **Notification** - User notifications
 
-See `prisma/schema.prisma` for full schema details.
+See `src/db/schema.ts` for full schema details.
 
 ## 🔐 Environment Variables
 
@@ -112,12 +101,6 @@ JWT_SECRET=your-secret-key
 JWT_REFRESH_SECRET=your-refresh-secret
 FRONTEND_URL=http://localhost:3000
 ```
-
-Optional:
-- `TMDB_API_KEY` - For movie data
-- `REDIS_URL` - For caching
-- `SENDGRID_API_KEY` - For emails
-- `CLOUDINARY_*` - For file uploads
 
 ## 🧪 Testing
 
@@ -131,34 +114,23 @@ npm run test:watch
 
 ## 📝 API Documentation
 
-Full API documentation will be available at `/api/docs` (coming soon with Swagger).
+Full API documentation is available at `/api-docs` using Swagger.
 
-## 🔒 Security Features
+## 🚀 CI/CD & Deployment
 
-- JWT-based authentication
-- Password hashing with bcrypt
-- Helmet.js for security headers
-- CORS configuration
-- Request validation
-- Rate limiting (coming soon)
+### Continuous Integration
+This project uses **GitHub Actions** for CI. Every push and pull request to the `main` branch triggers:
+1. Linting with ESLint.
+2. Automated testing with Jest.
 
-## 🚀 Deployment
+### Continuous Deployment
+We use **Railway** for CD. To enable fully automated "Ship on Push":
+1. Connect your GitHub repository to your Railway project.
+2. Railway will automatically deploy the latest changes from the `main` branch once the CI checks pass.
 
-### Production Build
-
+Manual deployment:
 ```bash
-npm run build
-npm start
-```
-
-### Environment Setup
-
-Make sure to set all required environment variables in your production environment.
-
-### Database Migrations
-
-```bash
-npx prisma migrate deploy
+railway up
 ```
 
 ## 📚 Tech Stack
@@ -167,22 +139,11 @@ npx prisma migrate deploy
 - **Framework**: Express.js
 - **Language**: TypeScript
 - **Database**: PostgreSQL
-- **ORM**: Prisma
+- **ORM**: Drizzle
 - **Authentication**: JWT + bcrypt
 - **Validation**: express-validator
 - **Security**: Helmet
 - **Logging**: Morgan
-
-## 🤝 Contributing
-
-1. Create a feature branch
-2. Make your changes
-3. Write/update tests
-4. Submit a pull request
-
-## 📄 License
-
-MIT
 
 ---
 

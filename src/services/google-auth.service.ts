@@ -141,13 +141,17 @@ export const googleAuthService = {
                 let counter = 1;
 
                 // Ensure unique username
-                while (true) {
+                let isUsernameUnique = false;
+                while (!isUsernameUnique) {
                     const [existing] = await db
                         .select()
                         .from(users)
                         .where(eq(users.username, username))
                         .limit(1);
-                    if (!existing) break;
+                    if (!existing) {
+                        isUsernameUnique = true;
+                        break;
+                    }
 
                     username = `${baseUsername}_${counter}`;
                     counter++;
