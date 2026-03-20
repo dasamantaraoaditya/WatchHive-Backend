@@ -418,6 +418,56 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
 
 /**
  * @openapi
+ * /api/v1/users/suggested:
+ *   get:
+ *     tags: [User]
+ *     summary: Get suggested users to follow
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of suggested users
+ */
+router.get('/suggested', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const currentId = req.user!.userId;
+        const limit = 5;
+
+        // Fetch users the current user is NOT following, excluding themselves
+        // In PostgreSQL logic, we filter where NOT EXISTS in follows
+        const whereClause = and(
+            not(eq(users.id, currentId)),
+            not(exists(
+                db.select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, currentId), eq(follows.followingId, users.id)))
+            ))
+        );
+
+        const usersList = await db.select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            profilePictureUrl: users.profilePictureUrl,
+            bio: users.bio
+        })
+            .from(users)
+            .where(whereClause)
+            .limit(limit);
+
+        res.json({
+            users: await Promise.all(usersList.map(async (u) => ({
+                ...u,
+                profilePictureUrl: await getAvatarUrl(u.profilePictureUrl)
+            })))
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
  * /api/v1/users/{id}:
  *   get:
  *     tags: [User]
