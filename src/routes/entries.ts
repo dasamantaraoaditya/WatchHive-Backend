@@ -480,7 +480,7 @@ router.put(
         body('title').optional().trim().notEmpty().withMessage('Title cannot be empty'),
         body('type').optional().isIn(['MOVIE', 'TV_SHOW', 'EPISODE']).withMessage('Invalid entry type'),
         body('watchedAt').optional().isISO8601().withMessage('Invalid date format'),
-        body('rating').optional().isInt({ min: 1, max: 10 }).withMessage('Rating must be between 1 and 10'),
+        body('rating').optional().isFloat({ min: 0, max: 10 }).withMessage('Rating must be between 0 and 10'),
         body('review').optional().trim(),
         body('tags').optional().isArray().withMessage('Tags must be an array'),
         body('isRewatch').optional().isBoolean().withMessage('isRewatch must be boolean'),
