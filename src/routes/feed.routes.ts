@@ -16,6 +16,91 @@ const router = Router();
 
 /**
  * @openapi
+ * /api/v1/feed/trending:
+ *   get:
+ *     tags: [Feed]
+ *     summary: Get top trending topics and entries
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Trending items
+ */
+router.get('/trending', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
+    try {
+        // 1. Fetch recent entries with interaction counts (last 30 days)
+        const recentEntries = await db.select({
+            id: entries.id,
+            tmdbId: entries.tmdbId,
+            title: entries.title,
+            tags: entries.tags,
+            likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
+            commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number),
+        })
+            .from(entries)
+            .where(sql`${entries.createdAt} > NOW() - INTERVAL '30 days'`);
+
+        // 2. Aggregate in memory
+        const buzzMap = new Map<number, { title: string, context: string, buzzes: number, tags: string[] }>();
+
+        for (const entry of recentEntries) {
+            const current = buzzMap.get(entry.tmdbId) || {
+                title: entry.title,
+                context: '',
+                buzzes: 0,
+                tags: entry.tags || []
+            };
+
+            // Buzz Score Formula: (Entries x 5) + (Comments x 3) + (Likes x 2)
+            const entryBuzz = 5 + ((entry.commentsCount || 0) * 3) + ((entry.likesCount || 0) * 2);
+            
+            current.buzzes += entryBuzz;
+            
+            // Generate context from tags
+            if (entry.tags && entry.tags.length > 0 && !current.context) {
+                current.context = `Trending in ${entry.tags[0]}`;
+                current.tags = entry.tags;
+            }
+
+            buzzMap.set(entry.tmdbId, current);
+        }
+
+        const trending = Array.from(buzzMap.values()).sort((a, b) => b.buzzes - a.buzzes).map(x => ({
+            title: x.title,
+            context: x.context || 'Trending Movie',
+            buzzes: x.buzzes,
+        }));
+
+        // 3. Fallback to TMDB if less than 3
+        if (trending.length < 3) {
+            try {
+                const tmdbTrending = await tmdbService.getTrending('all', 'week');
+                const fallbackItems = tmdbTrending.results.slice(0, 5).map((r: any) => ({
+                    title: r.title || r.name,
+                    context: r.media_type === 'tv' ? 'Trending TV Show' : 'Trending Movie',
+                    buzzes: Math.floor(r.popularity * 10), // fake buzz metric based on popularity
+                }));
+                
+                // Add TMDB items that aren't already in our trending list
+                for (const fallback of fallbackItems) {
+                    if (!trending.some(t => t.title === fallback.title)) {
+                        trending.push(fallback);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch TMDB fallback for trending", err);
+            }
+        }
+
+        res.json({ trending: trending.slice(0, 5) });
+    } catch (error) {
+        console.error('Trending feed error:', error);
+        res.status(500).json({ error: 'Failed to fetch trending topics' });
+    }
+});
+
+/**
+ * @openapi
  * /api/v1/feed:
  *   get:
  *     tags: [Feed]
@@ -38,6 +123,7 @@ const router = Router();
  *       200:
  *         description: Mixed feed items
  */
+
 router.get('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user.userId;
