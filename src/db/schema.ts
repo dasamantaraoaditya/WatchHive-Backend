@@ -32,6 +32,9 @@ export const users = pgTable('users', {
     profilePictureUrl: text('profile_picture_url'),
     location: varchar('location', { length: 255 }),
     isPrivate: boolean('is_private').default(false).notNull(),
+    xp: integer('xp').default(0).notNull(),
+    level: integer('level').default(1).notNull(),
+    badges: jsonb('badges').default([]).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

@@ -82,7 +82,7 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             if (timeSeriesMap.has(dateStr)) {
                 const data = timeSeriesMap.get(dateStr)!;
                 data.count++;
-                data.items.push({ id: e.id, title: e.title, type: e.type, rating: e.rating });
+                data.items.push({ id: e.id, title: e.title, type: e.type, rating: e.rating, watchedAt: e.watchedAt });
             }
         });
 
@@ -119,6 +119,29 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             ? parseFloat((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
             : 0;
 
+        // 7. Viewing Rhythm (Hour of day distribution)
+        // Group into 2-hour blocks for better visualization: 0-2, 2-4, ..., 22-24
+        const rhythmMap = new Map<number, number>();
+        for (let i = 0; i < 24; i += 4) rhythmMap.set(i, 0); // Initializing blocks
+
+        filteredEntries.forEach(e => {
+            const hour = new Date(e.watchedAt).getHours();
+            const block = Math.floor(hour / 4) * 4;
+            rhythmMap.set(block, (rhythmMap.get(block) || 0) + 1);
+        });
+
+        const viewingRhythm = Array.from(rhythmMap.entries())
+            .map(([hour, count]) => {
+                let label = 'Late Night';
+                if (hour >= 4 && hour < 8) label = 'Early Bird';
+                else if (hour >= 8 && hour < 12) label = 'Morning';
+                else if (hour >= 12 && hour < 16) label = 'Afternoon';
+                else if (hour >= 16 && hour < 20) label = 'Evening';
+                else if (hour >= 20 || hour < 4) label = 'Night Owl';
+                return { hour, label, count };
+            })
+            .sort((a, b) => a.hour - b.hour);
+
         res.json({
             summary: {
                 totalCount: filteredEntries.length,
@@ -127,7 +150,8 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             },
             timeSeries,
             availableGenres,
-            typeBreakdown
+            typeBreakdown,
+            viewingRhythm
         });
 
     } catch (error) {

@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { users, entries, likes } from '../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
+import { xpService, XpAction } from '../services/xp.service.js';
 
 const router = Router();
 
@@ -98,7 +99,7 @@ router.post('/:entryId', authMiddleware, async (req: Request, res: Response): Pr
             db.select({ likeCount: count() }).from(likes).where(eq(likes.entryId, entryId))
         ]);
 
-        // Notify the entry owner
+        // Notify and award XP to the entry owner (if not self-like)
         if (like.entry.userId !== userId) {
             await notificationService.createNotification(like.entry.userId, 'LIKE', {
                 actorId: userId,
@@ -107,6 +108,9 @@ router.post('/:entryId', authMiddleware, async (req: Request, res: Response): Pr
                 entryTitle: like.entry.title,
                 type: like.entry.type
             });
+
+            // Award XP to the entry owner
+            await xpService.awardXp(like.entry.userId, XpAction.RECEIVE_LIKE);
         }
 
         res.status(201).json({

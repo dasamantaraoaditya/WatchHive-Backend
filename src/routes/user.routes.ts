@@ -94,7 +94,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
     try {
         const userId = req.user!.userId;
 
-        const [user] = await db
+        const [userResult] = await db
             .select({
                 id: users.id,
                 username: users.username,
@@ -106,14 +106,26 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 isPrivate: users.isPrivate,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
+                entriesCount: count(entries.id),
             })
             .from(users)
+            .leftJoin(entries, eq(entries.userId, users.id))
             .where(eq(users.id, userId))
+            .groupBy(users.id)
             .limit(1);
 
-        if (!user) {
+        if (!userResult) {
             throw new AppError('User not found', 404);
         }
+
+        const user = {
+            ...userResult,
+            _count: {
+                entries: Number(userResult.entriesCount),
+                followers: 0, // Placeholder or fetch separately if needed
+                following: 0,
+            }
+        };
 
         // Generate signed URL for avatar
         user.profilePictureUrl = await getAvatarUrl(user.profilePictureUrl);

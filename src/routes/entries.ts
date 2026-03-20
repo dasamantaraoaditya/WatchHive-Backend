@@ -5,6 +5,7 @@ import { users, entries, follows, likes, comments } from '../db/schema.js';
 import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
+import { xpService, XpAction } from '../services/xp.service.js';
 
 const router = Router();
 
@@ -14,7 +15,7 @@ const validateEntry = [
     body('title').trim().notEmpty().withMessage('Title is required'),
     body('type').isIn(['MOVIE', 'TV_SHOW', 'EPISODE']).withMessage('Invalid entry type'),
     body('watchedAt').optional().isISO8601().withMessage('Invalid date format'),
-    body('rating').optional().isInt({ min: 1, max: 10 }).withMessage('Rating must be between 1 and 10'),
+    body('rating').optional().isFloat({ min: 0, max: 10 }).withMessage('Rating must be between 0 and 10'),
     body('review').optional().trim(),
     body('tags').optional().isArray().withMessage('Tags must be an array'),
     body('isRewatch').optional().isBoolean().withMessage('isRewatch must be boolean'),
@@ -58,8 +59,9 @@ const validateEntry = [
  *                 type: string
  *                 format: date-time
  *               rating:
- *                 type: integer
- *                 minimum: 1
+ *                 type: number
+ *                 format: float
+ *                 minimum: 0
  *                 maximum: 10
  *               review:
  *                 type: string
@@ -153,6 +155,13 @@ router.post(
                 db.select({ likesCount: count() }).from(likes).where(eq(likes.entryId, newEntry.id)),
                 db.select({ commentsCount: count() }).from(comments).where(eq(comments.entryId, newEntry.id))
             ]);
+
+            // Award XP to the user
+            await xpService.awardXp(userId, XpAction.LOG_WATCH);
+            // Award additional XP if they wrote a review
+            if (review && review.trim().length > 10) {
+                await xpService.awardXp(userId, XpAction.WRITE_REVIEW);
+            }
 
             res.status(201).json({
                 message: 'Entry created successfully',
