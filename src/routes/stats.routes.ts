@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { entries } from '../db/schema.js';
-import { eq, and, desc, gte } from 'drizzle-orm';
+import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = Router();
@@ -34,6 +34,8 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
         const userId = (req as any).user.userId;
         const days = parseInt(req.query.days as string) || 30;
         const typeFilter = req.query.type as string;
+        const genreFilter = req.query.genre as string;
+        const minRating = parseInt(req.query.minRating as string) || 0;
 
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - days);
@@ -44,15 +46,15 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             gte(entries.watchedAt, startDate)
         ];
 
-        if (typeFilter) {
-            conditions.push(eq(entries.type, typeFilter as any));
-        }
+        if (typeFilter) conditions.push(eq(entries.type, typeFilter as any));
+        if (minRating > 0) conditions.push(gte(sql`CAST(${entries.rating} AS INTEGER)`, minRating));
 
         const whereClause = and(...conditions);
 
         // 2. Fetch Data for Aggregation
         const userEntries = await db.select({
             id: entries.id,
+            title: entries.title,
             type: entries.type,
             watchedAt: entries.watchedAt,
             tags: entries.tags,
@@ -62,43 +64,47 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             .where(whereClause)
             .orderBy(desc(entries.watchedAt));
 
-        // 3. Aggregate Time Series (Daily counts)
-        const timeSeriesMap = new Map<string, number>();
-        // Pre-fill last N days with zeros
+        // Filter by genre in memory if tag filter is provided
+        const filteredEntries = genreFilter 
+            ? userEntries.filter(e => e.tags && Array.isArray(e.tags) && e.tags.some(t => t.toLowerCase() === genreFilter.toLowerCase()))
+            : userEntries;
+
+        // 3. Aggregate Time Series (Daily counts + Item lists)
+        const timeSeriesMap = new Map<string, { count: number, items: any[] }>();
         for (let i = 0; i < days; i++) {
             const d = new Date();
             d.setDate(d.getDate() - i);
-            timeSeriesMap.set(d.toISOString().split('T')[0], 0);
+            timeSeriesMap.set(d.toISOString().split('T')[0], { count: 0, items: [] });
         }
 
-        userEntries.forEach(e => {
+        filteredEntries.forEach(e => {
             const dateStr = new Date(e.watchedAt).toISOString().split('T')[0];
             if (timeSeriesMap.has(dateStr)) {
-                timeSeriesMap.set(dateStr, (timeSeriesMap.get(dateStr) || 0) + 1);
+                const data = timeSeriesMap.get(dateStr)!;
+                data.count++;
+                data.items.push({ id: e.id, title: e.title, type: e.type, rating: e.rating });
             }
         });
 
         const timeSeries = Array.from(timeSeriesMap.entries())
-            .map(([date, count]) => ({ date, count }))
+            .map(([date, data]) => ({ date, count: data.count, items: data.items }))
             .sort((a, b) => a.date.localeCompare(b.date));
 
-        // 4. Aggregate Genre Breakdown
+        // 4. Aggregate Genre Breakdown (Top 20 for filters)
         const genreMap = new Map<string, number>();
         userEntries.forEach(e => {
-            if (e.tags && Array.isArray(e.tags) && e.tags.length > 0) {
-                const primaryGenre = e.tags[0];
-                genreMap.set(primaryGenre, (genreMap.get(primaryGenre) || 0) + 1);
+            if (e.tags && Array.isArray(e.tags)) {
+                e.tags.forEach(tag => genreMap.set(tag, (genreMap.get(tag) || 0) + 1));
             }
         });
 
-        const genreBreakdown = Array.from(genreMap.entries())
-            .map(([name, count]) => ({ name, count }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 10);
+        const availableGenres = Array.from(genreMap.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([name]) => name);
 
         // 5. Aggregate Type Breakdown
         const typeMap = new Map<string, number>();
-        userEntries.forEach(e => {
+        filteredEntries.forEach(e => {
             typeMap.set(e.type, (typeMap.get(e.type) || 0) + 1);
         });
 
@@ -106,7 +112,7 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             .map(([name, count]) => ({ name, count }));
 
         // 6. Basic Averages
-        const ratings = userEntries
+        const ratings = filteredEntries
             .map(e => parseInt(e.rating || '0'))
             .filter(r => r > 0);
         const averageRating = ratings.length > 0 
@@ -115,12 +121,12 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
 
         res.json({
             summary: {
-                totalCount: userEntries.length,
+                totalCount: filteredEntries.length,
                 averageRating,
                 daysAnalyzed: days
             },
             timeSeries,
-            genreBreakdown,
+            availableGenres,
             typeBreakdown
         });
 
