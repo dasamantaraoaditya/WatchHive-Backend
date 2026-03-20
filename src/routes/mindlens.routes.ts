@@ -54,6 +54,7 @@ const SOUL_PERSONAS = [
         name: 'The Contract Killer',
         description: 'Cold, calculated, and high-stakes. You prefer narratives where every choice is a life-or-death decision.',
         icon: '🎯',
+        imageUrl: 'https://media.giphy.com/media/l3q2wJsC23ikJg9xe/giphy.gif', // John Wick loading outline
         color: '#dc2626',
         criteria: { themes: ['Justice & Order Seeking', 'Suspense & Stimulation'], moods: ['Tense'] }
     },
@@ -61,6 +62,7 @@ const SOUL_PERSONAS = [
         name: 'The Sharp Lawyer',
         description: 'Analytical and sharp-witted. You love dissecting arguments and finding the elusive truth in complex dramas.',
         icon: '⚖️',
+        imageUrl: 'https://media.giphy.com/media/l0EwYGlvQ7STj3mNy/giphy.gif', // Saul Goodman
         color: '#2563eb',
         criteria: { themes: ['Justice & Order Seeking', 'Context & Perspective'], moods: ['Reflective'] }
     },
@@ -68,6 +70,7 @@ const SOUL_PERSONAS = [
         name: 'The Master Judge',
         description: 'Moral clarity and heavy decisions. You gravitate towards stories that explore right, wrong, and the gray areas in between.',
         icon: '👨‍⚖️',
+        imageUrl: 'https://media.giphy.com/media/1lAOemoi0KhPMzxczT/giphy.gif', // Judge Judy eye roll
         color: '#4b5563',
         criteria: { themes: ['Justice & Order Seeking', 'History'], moods: ['Reflective'] }
     },
@@ -75,6 +78,7 @@ const SOUL_PERSONAS = [
         name: 'The Wise Teacher',
         description: 'Always seeking knowledge. You view cinema as a lens to learn about the complexities of history and human nature.',
         icon: '🎓',
+        imageUrl: 'https://media.giphy.com/media/PudZiAbQDUEik/giphy.gif', // Miyagi nod
         color: '#059669',
         criteria: { themes: ['Intellectual Curiosity', 'Context & Perspective'], moods: ['Reflective'] }
     },
@@ -82,6 +86,7 @@ const SOUL_PERSONAS = [
         name: 'The Creator God',
         description: 'Limitless imagination. You love sprawling worlds that defy reality and the visionary minds that build them.',
         icon: '⚛️',
+        imageUrl: 'https://media.giphy.com/media/BqiGk3yGk7f12/giphy.gif', // Spongebob imagination
         color: '#d946ef',
         criteria: { themes: ['Escapism & Creativity', 'Imagination & Playfulness'], moods: ['Lighthearted', 'Excited'] }
     },
@@ -89,6 +94,7 @@ const SOUL_PERSONAS = [
         name: 'The Vengeful Batman',
         description: 'You are a guardian of the shadows. Justice, grit, and the complex morality of the night guide your viewing.',
         icon: '🦇',
+        imageUrl: 'https://media.giphy.com/media/l396BoOTIFem9xqUM/giphy.gif', // Lego Batman
         color: '#111827',
         criteria: { themes: ['Justice & Order Seeking', 'Adrenaline Seeking'], moods: ['Tense'] }
     },
@@ -96,6 +102,7 @@ const SOUL_PERSONAS = [
         name: 'The Agent of Chaos (Joker)',
         description: 'You enjoy the unpredictability of it all. High adrenaline and suspense keep you coming back for more.',
         icon: '🤡',
+        imageUrl: 'https://media.giphy.com/media/F9yAvk7Xpr0c/giphy.gif', // Heath Ledger Joker clapping
         color: '#7c3aed',
         criteria: { themes: ['Thrill Seeking', 'Adrenaline Seeking'], moods: ['Excited'] }
     },
@@ -103,6 +110,7 @@ const SOUL_PERSONAS = [
         name: 'The Ancient Vampire',
         description: 'Gothic, immortal, and elegantly dark. You prefer stories that transcend time and explore the seductive side of danger.',
         icon: '🧛',
+        imageUrl: 'https://media.giphy.com/media/cjKfH7n0R8XaDPwlV0/giphy.gif', // What We Do in the Shadows 
         color: '#991b1b',
         criteria: { themes: ['Thrill Seeking', 'Escapism & Creativity'], moods: ['Tense', 'Sentimental'] }
     },
@@ -110,6 +118,7 @@ const SOUL_PERSONAS = [
         name: 'The Sandman',
         description: 'Lord of Dreams. Surreal, philosophical, and atmospheric narratives are where your mind truly feels at home.',
         icon: '⏳',
+        imageUrl: 'https://media.giphy.com/media/mguPrVJAnEHIY/giphy.gif', // Sleepy mood
         color: '#0ea5e9',
         criteria: { themes: ['Imagination & Playfulness', 'Future-Oriented Thinking'], moods: ['Reflective'] }
     },
@@ -117,6 +126,7 @@ const SOUL_PERSONAS = [
         name: 'The Mamba Mentality (Kobe)',
         description: 'Relentless focus and competitive fire. You are drawn to stories of triumph, failure, and the obsession with greatness.',
         icon: '🐍',
+        imageUrl: 'https://media.giphy.com/media/xT1XGT9ersM295XGgw/giphy.gif', // Kobe nod
         color: '#facc15',
         criteria: { themes: ['Intensity & Conflict Awareness', 'Adrenaline Seeking'], moods: ['Excited'] }
     },
@@ -124,6 +134,7 @@ const SOUL_PERSONAS = [
         name: 'The Smooth Soul (Wiz Khalifa)',
         description: 'Aesthetic, rhythmic, and high-vibing. You prioritize visual and auditory beauty in every cinematic experience.',
         icon: '🎶',
+        imageUrl: 'https://media.giphy.com/media/xT0BKk9aPtLzKJiRx6/giphy.gif', // Snoop Dogg dance
         color: '#22c55e',
         criteria: { themes: ['Aesthetic Appreciation', 'Stress Relief & Optimism'], moods: ['Lighthearted'] }
     },
@@ -131,6 +142,7 @@ const SOUL_PERSONAS = [
         name: 'The Devilish Rebel',
         description: 'You are drawn to the dark side of ambition and the seductive power of rebellion. Rules are just suggestions to you.',
         icon: '😈',
+        imageUrl: 'https://media.giphy.com/media/P7JmDW7IkB7TW/giphy.gif', // Elmo Fire Meme
         color: '#dc2626',
         criteria: { themes: ['Thrill Seeking', 'Intensity & Conflict Awareness'], moods: ['Excited', 'Tense'] }
     },
@@ -138,6 +150,7 @@ const SOUL_PERSONAS = [
         name: 'The Sturdy Dwarf',
         description: 'Grounded, loyal, and deep-rooted. You prefer stories of companionship, craft, and the enduring strength of the earth.',
         icon: '⚒️',
+        imageUrl: 'https://media.giphy.com/media/zGnnFpOB1OjMQ/giphy.gif', // LOTR Gimli
         color: '#92400e',
         criteria: { themes: ['Independence & Justice', 'Comfort & Connection'], moods: ['Reflective'] }
     },
@@ -332,6 +345,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
                 name: selectedPersona.name,
                 description: selectedPersona.description,
                 icon: selectedPersona.icon,
+                imageUrl: selectedPersona.imageUrl,
                 color: selectedPersona.color
             },
             themes: topThemes.map(([name, score]) => ({ name, score })),
