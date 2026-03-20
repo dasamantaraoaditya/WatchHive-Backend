@@ -282,6 +282,45 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             }
         });
 
+        // 4.5 Aesthetic Profile Mapping
+        const AESTHETIC_GENRES: Record<string, string[]> = {
+            'Noir': ['Crime', 'Thriller', 'Mystery'],
+            'Amber': ['History', 'Romance', 'Drama'],
+            'Concrete': ['Documentary', 'War'],
+            'Forest': ['Adventure', 'Fantasy', 'Family'],
+            'Grit': ['Action', 'Horror'],
+            'Void': ['Science Fiction', 'Sci-Fi'],
+            'Neon': ['Animation', 'Music'],
+            'Pastel': ['Comedy', 'TV Movie']
+        };
+
+        const aestheticCounts: Record<string, number> = {};
+        Object.keys(AESTHETIC_GENRES).forEach(k => aestheticCounts[k] = 0);
+        
+        userEntries.forEach(entry => {
+            if (entry.tags) {
+                entry.tags.forEach(tag => {
+                    for (const [aesthetic, genres] of Object.entries(AESTHETIC_GENRES)) {
+                        if (genres.some(g => normalize(tag).includes(normalize(g)))) {
+                            aestheticCounts[aesthetic]++;
+                        }
+                    }
+                });
+            }
+        });
+
+        let topAesthetics = Object.entries(aestheticCounts)
+            .filter(a => a[1] > 0)
+            .sort((a, b) => b[1] - a[1])
+            .map(a => a[0]);
+
+        const allAesthetics = Object.keys(AESTHETIC_GENRES);
+        while (topAesthetics.length < 6) {
+            const randomAes = allAesthetics[Math.floor(Math.random() * allAesthetics.length)];
+            if (!topAesthetics.includes(randomAes)) topAesthetics.push(randomAes);
+        }
+        topAesthetics = topAesthetics.slice(0, 6);
+
         // 5. Construct Response
         res.json({
             hasEnoughData: true,
@@ -298,6 +337,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             themes: topThemes.map(([name, score]) => ({ name, score })),
             timeDistribution: timeOfDay,
             insights,
+            aesthetics: topAesthetics,
             generatedAt: new Date(),
         });
 
