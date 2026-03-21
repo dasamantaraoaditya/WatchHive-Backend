@@ -19,6 +19,9 @@ const validateEntry = [
     body('review').optional().trim(),
     body('tags').optional().isArray().withMessage('Tags must be an array'),
     body('isRewatch').optional().isBoolean().withMessage('isRewatch must be boolean'),
+    body('isWatching').optional().isBoolean().withMessage('isWatching must be boolean'),
+    body('startedAt').optional().isISO8601().withMessage('Invalid date format'),
+    body('completedAt').optional().isISO8601().withMessage('Invalid date format'),
     body('watchLocation').optional().trim(),
 ];
 
@@ -99,6 +102,9 @@ router.post(
                 review,
                 tags,
                 isRewatch,
+                isWatching,
+                startedAt,
+                completedAt,
                 watchLocation,
             } = req.body;
 
@@ -132,6 +138,9 @@ router.post(
                 review: review || null,
                 tags: entryTags,
                 isRewatch: isRewatch || false,
+                isWatching: isWatching || false,
+                startedAt: startedAt ? new Date(startedAt) : (isWatching ? new Date() : null),
+                completedAt: completedAt ? new Date(completedAt) : null,
                 watchLocation: watchLocation || null,
             }).returning();
 
@@ -233,6 +242,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
             offset = '0',
             sortBy = 'watchedAt',
             order = 'desc',
+            isWatching: queryIsWatching,
             userId: queryUserId,
         } = req.query;
 
@@ -271,6 +281,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
         if (type) conditions.push(eq(entries.type, type as any));
         if (rating) conditions.push(eq(entries.rating, rating.toString()));
         if (tag) conditions.push(arrayContains(entries.tags, [tag as string]));
+        if (queryIsWatching !== undefined) {
+            conditions.push(eq(entries.isWatching, queryIsWatching === 'true'));
+        }
         if (search) {
             conditions.push(or(
                 ilike(entries.title, `%${search}%`),
@@ -293,6 +306,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                 review: entries.review,
                 tags: entries.tags,
                 isRewatch: entries.isRewatch,
+                isWatching: entries.isWatching,
+                startedAt: entries.startedAt,
+                completedAt: entries.completedAt,
                 watchLocation: entries.watchLocation,
                 createdAt: entries.createdAt,
                 updatedAt: entries.updatedAt,
@@ -484,6 +500,9 @@ router.put(
         body('review').optional().trim(),
         body('tags').optional().isArray().withMessage('Tags must be an array'),
         body('isRewatch').optional().isBoolean().withMessage('isRewatch must be boolean'),
+        body('isWatching').optional().isBoolean().withMessage('isWatching must be boolean'),
+        body('startedAt').optional().isISO8601().withMessage('Invalid date format'),
+        body('completedAt').optional().isISO8601().withMessage('Invalid date format'),
         body('watchLocation').optional().trim(),
     ],
     async (req: Request, res: Response): Promise<any> => {
@@ -511,6 +530,8 @@ router.put(
             // Update entry
             const updateData = { ...req.body };
             if (updateData.watchedAt) updateData.watchedAt = new Date(updateData.watchedAt);
+            if (updateData.startedAt) updateData.startedAt = new Date(updateData.startedAt);
+            if (updateData.completedAt) updateData.completedAt = new Date(updateData.completedAt);
             if (updateData.rating) updateData.rating = updateData.rating.toString();
 
             await db
