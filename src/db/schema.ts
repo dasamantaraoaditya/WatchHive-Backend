@@ -19,6 +19,7 @@ export const entryTypeEnum = pgEnum('EntryType', ['MOVIE', 'TV_SHOW', 'EPISODE']
 export const notificationTypeEnum = pgEnum('NotificationType', [
     'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION'
 ]);
+export const listTypeEnum = pgEnum('ListType', ['WATCHLIST', 'RANKING_STACK', 'COLLECTION']);
 
 // Users Table
 export const users = pgTable('users', {
@@ -121,6 +122,7 @@ export const lists = pgTable('lists', {
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
+    type: listTypeEnum('type').default('WATCHLIST').notNull(),
     isPublic: boolean('is_public').default(true).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

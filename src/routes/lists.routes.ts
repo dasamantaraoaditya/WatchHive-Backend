@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { lists, listItems } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { lists, listItems, entries } from '../db/schema.js';
+import { eq, and, desc, asc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = Router();
@@ -60,6 +60,50 @@ router.get('/watchlist', authMiddleware, async (req: Request, res: Response): Pr
     } catch (error) {
         console.error('Error fetching watchlist:', error);
         res.status(500).json({ error: 'Failed to fetch watchlist' });
+    }
+});
+
+// Get all lists for the user
+router.get('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+        const userLists = await db.query.lists.findMany({
+            where: eq(lists.userId, userId),
+            orderBy: desc(lists.updatedAt),
+        });
+        res.json(userLists);
+    } catch (error) {
+        console.error('Error fetching lists:', error);
+        res.status(500).json({ error: 'Failed to fetch lists' });
+    }
+});
+
+// Create a new list
+router.post('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+        const { name, description, type, isPublic } = req.body;
+
+        if (!name) {
+            res.status(400).json({ error: 'Name is required' });
+            return;
+        }
+
+        const [newList] = await db
+            .insert(lists)
+            .values({
+                userId,
+                name,
+                description,
+                type: type || 'WATCHLIST',
+                isPublic: isPublic !== undefined ? isPublic : true,
+            })
+            .returning();
+
+        res.status(201).json(newList);
+    } catch (error) {
+        console.error('Error creating list:', error);
+        res.status(500).json({ error: 'Failed to create list' });
     }
 });
 
@@ -222,6 +266,113 @@ router.delete('/:listId/items/:tmdbId', authMiddleware, async (req: Request, res
     } catch (error) {
         console.error('Error removing from list:', error);
         res.status(500).json({ error: 'Failed to remove' });
+    }
+});
+
+// Reorder items in a list
+router.patch('/:listId/reorder', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { listId } = req.params;
+        const { items } = req.body; // Array of { tmdbId: number, orderIndex: number }
+        const userId = req.user!.userId;
+
+        // Verify ownership
+        const [list] = await db.select().from(lists).where(eq(lists.id, listId)).limit(1);
+        if (!list || list.userId !== userId) {
+            res.status(403).json({ error: 'Unauthorized' });
+            return;
+        }
+
+        // Update each item's orderIndex
+        await db.transaction(async (tx) => {
+            for (const item of items) {
+                await tx
+                    .update(listItems)
+                    .set({ orderIndex: item.orderIndex })
+                    .where(
+                        and(
+                            eq(listItems.listId, listId),
+                            eq(listItems.tmdbId, item.tmdbId)
+                        )
+                    );
+            }
+        });
+
+        res.json({ message: 'Reordered successfully' });
+    } catch (error) {
+        console.error('Error reordering list:', error);
+        res.status(500).json({ error: 'Failed to reorder list' });
+    }
+});
+
+// Get ranked items with metadata and filters
+router.get('/:listId/ranked', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { listId } = req.params;
+        const { genre } = req.query;
+        const userId = req.user!.userId;
+
+        // Verify ownership (or publicity)
+        const [list] = await db.select().from(lists).where(eq(lists.id, listId)).limit(1);
+        if (!list) {
+            res.status(404).json({ error: 'List not found' });
+            return;
+        }
+
+        // Support public lists for other users
+        if (!list.isPublic && list.userId !== userId) {
+            res.status(403).json({ error: 'Unauthorized' });
+            return;
+        }
+
+        // Fetch items joined with entries (to get genres/rating from local log if exists)
+        // We use left join because user might rank movies they haven't logged yet
+        const rankedItems = await db
+            .select({
+                tmdbId: listItems.tmdbId,
+                mediaType: listItems.mediaType,
+                orderIndex: listItems.orderIndex,
+                addedAt: listItems.addedAt,
+                // From entries
+                localRating: entries.rating,
+                localReview: entries.review,
+                tags: entries.tags,
+                watchedAt: entries.watchedAt,
+                title: entries.title, // Fallback if entry exists
+            })
+            .from(listItems)
+            .leftJoin(
+                entries,
+                and(
+                    eq(listItems.tmdbId, entries.tmdbId),
+                    eq(entries.userId, list.userId)
+                )
+            )
+            .where(eq(listItems.listId, listId))
+            .orderBy(asc(listItems.orderIndex));
+
+        // Note: For movies without local entries, frontend will fetch metadata from TMDB.
+        // For filtering, if we only have local metadata, we filter here.
+        let filteredItems = rankedItems;
+
+        if (genre) {
+            filteredItems = filteredItems.filter(item => 
+                item.tags?.some(tag => tag.toLowerCase().includes((genre as string).toLowerCase()))
+            );
+        }
+
+        // If year or language filters are provided, they usually require TMDB data for un-logged movies.
+        // For now, we'll return all and let frontend handle secondary filtering OR we could
+        // fetch TMDB details for all items here (but that's slow without a cache).
+        
+        // We'll return the items and the frontend will supplement with TMDB data.
+        res.json({
+            list,
+            items: filteredItems
+        });
+    } catch (error) {
+        console.error('Error fetching ranked list:', error);
+        res.status(500).json({ error: 'Failed to fetch ranked list' });
     }
 });
 
