@@ -8,6 +8,13 @@
       "when": 1774441085770,
       "tag": "0000_cold_mad_thinker",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775243431282,
+      "tag": "0001_deep_zodiak",
+      "breakpoints": true
     }
   ]
 }

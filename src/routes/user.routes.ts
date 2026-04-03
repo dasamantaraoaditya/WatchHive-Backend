@@ -104,6 +104,9 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 profilePictureUrl: users.profilePictureUrl,
                 location: users.location,
                 isPrivate: users.isPrivate,
+                showWatchEntries: users.showWatchEntries,
+                showCurrentlyWatching: users.showCurrentlyWatching,
+                showWatchlist: users.showWatchlist,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
                 entriesCount: count(entries.id),
@@ -164,7 +167,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 router.put('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
-        const { displayName, bio, location } = req.body;
+        const { displayName, bio, location, isPrivate, showWatchEntries, showCurrentlyWatching, showWatchlist } = req.body;
 
         const [user] = await db
             .update(users)
@@ -172,6 +175,10 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 ...(displayName !== undefined && { displayName }),
                 ...(bio !== undefined && { bio }),
                 ...(location !== undefined && { location }),
+                ...(isPrivate !== undefined && { isPrivate }),
+                ...(showWatchEntries !== undefined && { showWatchEntries }),
+                ...(showCurrentlyWatching !== undefined && { showCurrentlyWatching }),
+                ...(showWatchlist !== undefined && { showWatchlist }),
                 updatedAt: new Date(),
             })
             .where(eq(users.id, userId))
@@ -184,6 +191,9 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 profilePictureUrl: users.profilePictureUrl,
                 location: users.location,
                 isPrivate: users.isPrivate,
+                showWatchEntries: users.showWatchEntries,
+                showCurrentlyWatching: users.showCurrentlyWatching,
+                showWatchlist: users.showWatchlist,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
             });
@@ -513,6 +523,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 profilePictureUrl: users.profilePictureUrl,
                 location: users.location,
                 isPrivate: users.isPrivate,
+                showWatchEntries: users.showWatchEntries,
+                showCurrentlyWatching: users.showCurrentlyWatching,
+                showWatchlist: users.showWatchlist,
                 createdAt: users.createdAt,
             })
             .from(users)
