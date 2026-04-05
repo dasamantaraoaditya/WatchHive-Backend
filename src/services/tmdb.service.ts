@@ -46,6 +46,23 @@ export interface TMDbSearchResult {
   total_results: number;
 }
 
+export interface TMDbWatchProvider {
+  logo_path: string;
+  provider_id: number;
+  provider_name: string;
+  display_priority: number;
+}
+
+export interface TMDbWatchProvidersResponse {
+  results: Record<string, {
+    link?: string;
+    flatrate?: TMDbWatchProvider[];
+    rent?: TMDbWatchProvider[];
+    buy?: TMDbWatchProvider[];
+    free?: TMDbWatchProvider[];
+  }>;
+}
+
 export interface TMDbMovieDetails extends TMDbMovie {
   runtime: number | null;
   genres: { id: number; name: string }[];
@@ -55,6 +72,7 @@ export interface TMDbMovieDetails extends TMDbMovie {
   budget: number;
   revenue: number;
   imdb_id: string | null;
+  "watch/providers"?: TMDbWatchProvidersResponse;
 }
 
 export interface TMDbTVShowDetails extends TMDbTVShow {
@@ -65,6 +83,7 @@ export interface TMDbTVShowDetails extends TMDbTVShow {
   status: string;
   number_of_seasons: number;
   number_of_episodes: number;
+  "watch/providers"?: TMDbWatchProvidersResponse;
 }
 
 class TMDbService {
@@ -178,6 +197,7 @@ class TMDbService {
     try {
       return await this.requestWithRetry<TMDbMovieDetails>({
         url: `/movie/${movieId}`,
+        params: { append_to_response: 'watch/providers' },
       });
     } catch (error: any) {
       if (error?.response?.status === 404) {
@@ -195,6 +215,7 @@ class TMDbService {
     try {
       return await this.requestWithRetry<TMDbTVShowDetails>({
         url: `/tv/${tvId}`,
+        params: { append_to_response: 'watch/providers' },
       });
     } catch (error: any) {
       if (error?.response?.status === 404) {
