@@ -20,6 +20,7 @@ import mindlensRoutes from './routes/mindlens.routes.js';
 import listRoutes from './routes/lists.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import statsRoutes from './routes/stats.routes.js';
+import suggestionsRoutes from './routes/suggestions.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -126,6 +127,7 @@ app.use('/api/v1/mindlens', mindlensRoutes);
 app.use('/api/v1/lists', listRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/stats', statsRoutes);
+app.use('/api/v1/suggestions', suggestionsRoutes);
 
 // 404 handler
 app.use(notFoundHandler);

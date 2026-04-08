@@ -15,6 +15,13 @@
       "when": 1775243431282,
       "tag": "0001_deep_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775580746500,
+      "tag": "0002_sudden_terrax",
+      "breakpoints": true
     }
   ]
 }

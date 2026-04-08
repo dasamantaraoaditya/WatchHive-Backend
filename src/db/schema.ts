@@ -17,7 +17,7 @@ import { relations } from 'drizzle-orm';
 // Enums
 export const entryTypeEnum = pgEnum('EntryType', ['MOVIE', 'TV_SHOW', 'EPISODE']);
 export const notificationTypeEnum = pgEnum('NotificationType', [
-    'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION'
+    'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION', 'SUGGESTION'
 ]);
 export const listTypeEnum = pgEnum('ListType', ['WATCHLIST', 'RANKING_STACK', 'COLLECTION']);
 
@@ -158,6 +158,21 @@ export const notifications = pgTable('notifications', {
     readIndex: index('notifications_is_read_idx').on(table.isRead),
 }));
 
+// Suggestions Table
+export const suggestions = pgTable('suggestions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    fromUserId: uuid('from_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    toUserId: uuid('to_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    mediaType: varchar('media_type', { length: 20 }).default('movie').notNull(),
+    message: text('message'),
+    status: varchar('status', { length: 20 }).default('pending').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+    toUserIndex: index('suggestions_to_user_id_idx').on(table.toUserId),
+    tmdbIndex: index('suggestions_tmdb_id_idx').on(table.tmdbId),
+}));
+
 // Relations Definitions
 export const usersRelations = relations(users, ({ many }) => ({
     entries: many(entries),
@@ -167,6 +182,8 @@ export const usersRelations = relations(users, ({ many }) => ({
     comments: many(comments),
     lists: many(lists),
     notifications: many(notifications),
+    suggestionsSent: many(suggestions, { relationName: 'sentSuggestions' }),
+    suggestionsReceived: many(suggestions, { relationName: 'receivedSuggestions' }),
 }));
 
 export const entriesRelations = relations(entries, ({ one, many }) => ({
@@ -204,3 +221,9 @@ export const listItemsRelations = relations(listItems, ({ one }) => ({
 export const notificationsRelations = relations(notifications, ({ one }) => ({
     user: one(users, { fields: [notifications.userId], references: [users.id] }),
 }));
+
+export const suggestionsRelations = relations(suggestions, ({ one }) => ({
+    fromUser: one(users, { fields: [suggestions.fromUserId], references: [users.id], relationName: 'sentSuggestions' }),
+    toUser: one(users, { fields: [suggestions.toUserId], references: [users.id], relationName: 'receivedSuggestions' }),
+}));
+
