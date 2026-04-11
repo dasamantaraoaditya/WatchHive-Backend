@@ -225,11 +225,11 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
 
         // Pre-fetch user's watched IDs to mark items in feed
         const userEntriesList = await db
-            .select({ tmdbId: entries.tmdbId })
+            .select({ tmdbId: entries.tmdbId, type: entries.type })
             .from(entries)
             .where(eq(entries.userId, userId));
 
-        const watchedTmdbIds = new Set(userEntriesList.map(e => e.tmdbId));
+        const watchedTmdbSet = new Set(userEntriesList.map(e => `${e.type}-${e.tmdbId}`));
 
         // 4. Mix Content Strategy
         const feedItems: any[] = [];
@@ -243,7 +243,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 ...entry,
                 _count: { likes: entry.likesCount, comments: entry.commentsCount },
                 isLiked: entry.isLiked,
-                isWatched: watchedTmdbIds.has(entry.tmdbId)
+                isWatched: watchedTmdbSet.has(`${entry.type}-${entry.tmdbId}`)
             }
         }));
 
@@ -255,7 +255,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                     timestamp: new Date(),
                     data: {
                         ...item,
-                        isWatched: watchedTmdbIds.has(item.id)
+                        isWatched: watchedTmdbSet.has(`${(item as any)?.media_type?.toUpperCase() === 'TV' ? 'TV_SHOW' : 'MOVIE'}-${item.id}`)
                     },
                     reason: item.reason || "Trending on WatchHive"
                 });
@@ -273,7 +273,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                             timestamp: mappedEntries[i].timestamp,
                             data: {
                                 ...sugg,
-                                isWatched: watchedTmdbIds.has(sugg.id)
+                                isWatched: watchedTmdbSet.has(`${(sugg as any)?.media_type?.toUpperCase() === 'TV' ? 'TV_SHOW' : 'MOVIE'}-${sugg.id}`)
                             },
                             reason: sugg.reason || "Trending Now"
                         });
