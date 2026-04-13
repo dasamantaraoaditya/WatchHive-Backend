@@ -253,7 +253,10 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
             targetUserId = queryUserId as string;
 
             const [targetUser] = await db
-                .select({ isPrivate: users.isPrivate })
+                .select({ 
+                    isPrivate: users.isPrivate,
+                    privacyLevel: users.privacyLevel 
+                })
                 .from(users)
                 .where(eq(users.id, targetUserId))
                 .limit(1);
@@ -262,7 +265,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                 return res.status(404).json({ error: 'User not found' });
             }
 
-            if (targetUser.isPrivate) {
+            // New Tiered Privacy Logic
+            if (targetUser.privacyLevel === 'PRIVATE') {
+                return res.status(403).json({ error: 'This account is strictly private.' });
+            }
+
+            if (targetUser.privacyLevel === 'FOLLOWERS_ONLY' || targetUser.isPrivate) {
                 const [isFollowing] = await db
                     .select()
                     .from(follows)

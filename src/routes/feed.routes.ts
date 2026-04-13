@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { users, entries, follows } from '../db/schema.js';
-import { eq, desc, sql, inArray } from 'drizzle-orm';
+import { eq, desc, sql, inArray, and, or, not } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 
@@ -161,15 +161,25 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 username: users.username,
                 displayName: users.displayName,
                 profilePictureUrl: users.profilePictureUrl,
-                isPrivate: users.isPrivate
+                isPrivate: users.isPrivate,
+                privacyLevel: users.privacyLevel
             },
             likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
             commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number),
-            isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.entry_id = ${entries.id} AND likes.user_id = ${userId})`
+            isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.entry_id = ${entries.id} AND likes.user_id = ${userId})`,
+            isCommented: sql<boolean>`EXISTS(SELECT 1 FROM comments WHERE comments.entry_id = ${entries.id} AND comments.user_id = ${userId})`
         })
             .from(entries)
             .innerJoin(users, eq(entries.userId, users.id))
-            .where(inArray(entries.userId, relevantUserIds))
+            .where(
+                and(
+                    inArray(entries.userId, relevantUserIds),
+                    or(
+                        eq(entries.userId, userId),
+                        not(eq(users.privacyLevel, 'PRIVATE'))
+                    )
+                )
+            )
             .orderBy(desc(entries.createdAt))
             .limit(limit)
             .offset(offset);
@@ -243,6 +253,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 ...entry,
                 _count: { likes: entry.likesCount, comments: entry.commentsCount },
                 isLiked: entry.isLiked,
+                isCommented: entry.isCommented,
                 isWatched: watchedTmdbSet.has(`${entry.type}-${entry.tmdbId}`)
             }
         }));

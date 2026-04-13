@@ -4,8 +4,8 @@ import path from 'path';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
-import { users, follows, entries } from '../db/schema.js';
-import { eq, or, and, ilike, not, count, exists } from 'drizzle-orm';
+import { users, follows, entries, lists, listItems } from '../db/schema.js';
+import { eq, or, and, ilike, not, count, exists, desc } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 
 import { S3Client, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -104,6 +104,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 profilePictureUrl: users.profilePictureUrl,
                 location: users.location,
                 isPrivate: users.isPrivate,
+                privacyLevel: users.privacyLevel,
                 showWatchEntries: users.showWatchEntries,
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
@@ -167,7 +168,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 router.put('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
-        const { displayName, bio, location, isPrivate, showWatchEntries, showCurrentlyWatching, showWatchlist } = req.body;
+        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist } = req.body;
 
         const [user] = await db
             .update(users)
@@ -176,6 +177,7 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 ...(bio !== undefined && { bio }),
                 ...(location !== undefined && { location }),
                 ...(isPrivate !== undefined && { isPrivate }),
+                ...(privacyLevel !== undefined && { privacyLevel }),
                 ...(showWatchEntries !== undefined && { showWatchEntries }),
                 ...(showCurrentlyWatching !== undefined && { showCurrentlyWatching }),
                 ...(showWatchlist !== undefined && { showWatchlist }),
@@ -191,6 +193,7 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 profilePictureUrl: users.profilePictureUrl,
                 location: users.location,
                 isPrivate: users.isPrivate,
+                privacyLevel: users.privacyLevel,
                 showWatchEntries: users.showWatchEntries,
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
@@ -408,6 +411,7 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
                 displayName: users.displayName,
                 profilePictureUrl: users.profilePictureUrl,
                 isPrivate: users.isPrivate,
+                privacyLevel: users.privacyLevel,
                 isFollowing: exists(
                     db.select()
                         .from(follows)
@@ -523,6 +527,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 profilePictureUrl: users.profilePictureUrl,
                 location: users.location,
                 isPrivate: users.isPrivate,
+                privacyLevel: users.privacyLevel,
                 showWatchEntries: users.showWatchEntries,
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
@@ -559,6 +564,84 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
             },
             isFollowing: !!followStatus,
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/{id}/watchlist:
+ *   get:
+ *     tags: [User]
+ *     summary: Get a specific user's watchlist
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User's watchlist with items
+ */
+router.get('/:id/watchlist', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const targetId = req.params.id;
+        const currentId = req.user!.userId;
+
+        // Check privacy
+        const [targetUser] = await db
+            .select({ 
+                isPrivate: users.isPrivate, 
+                privacyLevel: users.privacyLevel,
+                showWatchlist: users.showWatchlist 
+            })
+            .from(users)
+            .where(eq(users.id, targetId))
+            .limit(1);
+
+        if (!targetUser) {
+            throw new AppError('User not found', 404);
+        }
+
+        // Only enforce privacy if it's NOT the user themselves
+        if (targetId !== currentId) {
+            // New Tiered Privacy Logic
+            if (targetUser.privacyLevel === 'PRIVATE') {
+                throw new AppError('This account is strictly private.', 403);
+            }
+
+            if (targetUser.privacyLevel === 'FOLLOWERS_ONLY' || targetUser.isPrivate) {
+                const [isFollowing] = await db
+                    .select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
+                    .limit(1);
+
+                if (!isFollowing) {
+                    throw new AppError('This account is private. Follow to see their watchlist.', 403);
+                }
+            }
+
+            if (!targetUser.showWatchlist) {
+                return res.json({ items: [], message: 'User has hidden their watchlist.' });
+            }
+        }
+
+        // Find the "Watchlist" list for this user
+        const watchlist = await db.query.lists.findFirst({
+            where: and(eq(lists.userId, targetId), eq(lists.name, 'Watchlist')),
+            with: {
+                items: {
+                    orderBy: desc(listItems.addedAt),
+                },
+            },
+        });
+
+        res.json(watchlist || { items: [] });
     } catch (error) {
         next(error);
     }

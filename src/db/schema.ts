@@ -20,6 +20,7 @@ export const notificationTypeEnum = pgEnum('NotificationType', [
     'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION', 'SUGGESTION'
 ]);
 export const listTypeEnum = pgEnum('ListType', ['WATCHLIST', 'RANKING_STACK', 'COLLECTION']);
+export const privacyLevelEnum = pgEnum('PrivacyLevel', ['PUBLIC', 'FOLLOWERS_ONLY', 'PRIVATE']);
 
 // Users Table
 export const users = pgTable('users', {
@@ -33,6 +34,7 @@ export const users = pgTable('users', {
     profilePictureUrl: text('profile_picture_url'),
     location: varchar('location', { length: 255 }),
     isPrivate: boolean('is_private').default(false).notNull(),
+    privacyLevel: privacyLevelEnum('privacy_level').default('PUBLIC').notNull(),
     showWatchEntries: boolean('show_watch_entries').default(true).notNull(),
     showCurrentlyWatching: boolean('show_currently_watching').default(true).notNull(),
     showWatchlist: boolean('show_watchlist').default(true).notNull(),
