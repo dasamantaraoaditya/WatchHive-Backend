@@ -541,17 +541,62 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
             throw new AppError('User not found', 404);
         }
 
-        // Fetch stats in parallel
+        const isOwner = targetId === currentId;
+        
+        // Fetch follow status first to check permissions if needed
+        const [followStatus] = await db
+            .select()
+            .from(follows)
+            .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
+            .limit(1);
+
+        const isFollowing = !!followStatus;
+
+        // Privacy determination
+        const privacyLevel = user.privacyLevel || (user.isPrivate ? 'FOLLOWERS_ONLY' : 'PUBLIC');
+        
+        let canViewStats = isOwner;
+        if (!isOwner) {
+            if (privacyLevel === 'PUBLIC') {
+                canViewStats = true;
+            } else if (privacyLevel === 'FOLLOWERS_ONLY' && isFollowing) {
+                canViewStats = true;
+            }
+        }
+
+        if (!canViewStats) {
+            // Return restricted profile info
+            return res.json({
+                id: user.id,
+                username: user.username,
+                displayName: user.displayName,
+                bio: user.bio,
+                profilePictureUrl: await getAvatarUrl(user.profilePictureUrl),
+                privacyLevel: user.privacyLevel,
+                isPrivate: user.isPrivate,
+                showWatchEntries: user.showWatchEntries,
+                showCurrentlyWatching: user.showCurrentlyWatching,
+                showWatchlist: user.showWatchlist,
+                createdAt: user.createdAt,
+                _count: {
+                    followers: 0,
+                    following: 0,
+                    entries: 0
+                },
+                isFollowing: isFollowing,
+                isRestricted: true
+            });
+        }
+
+        // Fetch stats in parallel for authorized users
         const [
             [{ followersCount }],
             [{ followingCount }],
-            [{ entriesCount }],
-            [followStatus]
+            [{ entriesCount }]
         ] = await Promise.all([
             db.select({ followersCount: count() }).from(follows).where(eq(follows.followingId, targetId)),
             db.select({ followingCount: count() }).from(follows).where(eq(follows.followerId, targetId)),
-            db.select({ entriesCount: count() }).from(entries).where(eq(entries.userId, targetId)),
-            db.select().from(follows).where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId))).limit(1)
+            db.select({ entriesCount: count() }).from(entries).where(eq(entries.userId, targetId))
         ]);
 
         res.json({
@@ -562,7 +607,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 following: followingCount,
                 entries: entriesCount
             },
-            isFollowing: !!followStatus,
+            isFollowing: isFollowing,
         });
     } catch (error) {
         next(error);
