@@ -566,7 +566,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
 
         if (!canViewStats) {
             // Return restricted profile info
-            return res.json({
+            res.json({
                 id: user.id,
                 username: user.username,
                 displayName: user.displayName,
@@ -586,6 +586,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 isFollowing: isFollowing,
                 isRestricted: true
             });
+            return;
         }
 
         // Fetch stats in parallel for authorized users
@@ -672,7 +673,8 @@ router.get('/:id/watchlist', authMiddleware, async (req: Request, res: Response,
             }
 
             if (!targetUser.showWatchlist) {
-                return res.json({ items: [], message: 'User has hidden their watchlist.' });
+                res.json({ items: [], message: 'User has hidden their watchlist.' });
+                return;
             }
         }
 
