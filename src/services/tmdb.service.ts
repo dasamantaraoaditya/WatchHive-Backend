@@ -3,7 +3,7 @@ import http from 'http';
 import https from 'https';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_BASE_URL = 'https://api.tmdb.org/3';
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
 export interface TMDbMovie {
@@ -100,7 +100,7 @@ class TMDbService {
     // and fresh connection handling to prevent ETIMEDOUT / ECONNRESET
     this.client = axios.create({
       baseURL: TMDB_BASE_URL,
-      timeout: 15000, // 15 second timeout (fail fast instead of hanging 75s+)
+      timeout: 3000, // 3 second timeout (fail fast instead of hanging)
       httpAgent: new http.Agent({ keepAlive: false }),
       httpsAgent: new https.Agent({ keepAlive: false }),
     });
@@ -109,7 +109,7 @@ class TMDbService {
   /**
    * Internal helper: make a request with automatic retries on transient failures
    */
-  private async requestWithRetry<T>(config: AxiosRequestConfig, retries = 3): Promise<T> {
+  private async requestWithRetry<T>(config: AxiosRequestConfig, retries = 1): Promise<T> {
     let lastError: Error | null = null;
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -134,7 +134,7 @@ class TMDbService {
         }
 
         if (isRetryable && attempt < retries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
+          const delay = 1000;
           console.warn(`TMDb request failed (attempt ${attempt}/${retries}, code: ${code}). Retrying in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {

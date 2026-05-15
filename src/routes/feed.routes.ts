@@ -229,8 +229,13 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
 
         } catch (err) {
             console.error('Failed to fetch advanced suggestions', err);
-            const fallback = await tmdbService.getTrending('all', 'week');
-            suggestions = fallback.results.map((r: any) => ({ ...r, reason: "Trending Now" }));
+            try {
+                const fallback = await tmdbService.getTrending('all', 'week');
+                suggestions = fallback.results.map((r: any) => ({ ...r, reason: "Trending Now" }));
+            } catch (fallbackErr) {
+                console.error('Fallback also failed:', fallbackErr);
+                suggestions = [];
+            }
         }
 
         // Pre-fetch user's watched IDs to mark items in feed

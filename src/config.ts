@@ -26,7 +26,7 @@ export const config = {
 
     tmdb: {
         apiKey: process.env.TMDB_API_KEY!,
-        baseUrl: process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3',
+        baseUrl: process.env.TMDB_BASE_URL || 'https://api.tmdb.org/3',
     },
 
     google: {
