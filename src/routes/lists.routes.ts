@@ -376,4 +376,69 @@ router.get('/:listId/ranked', authMiddleware, async (req: Request, res: Response
     }
 });
 
+// Update list name/details
+router.patch('/:listId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+        const { listId } = req.params;
+        const { name, description, isPublic } = req.body;
+
+        const list = await db.query.lists.findFirst({
+            where: and(eq(lists.id, listId), eq(lists.userId, userId))
+        });
+
+        if (!list) {
+            res.status(404).json({ error: 'List not found or unauthorized' });
+            return;
+        }
+
+        const [updatedList] = await db
+            .update(lists)
+            .set({
+                name: name !== undefined ? name : list.name,
+                description: description !== undefined ? description : list.description,
+                isPublic: isPublic !== undefined ? isPublic : list.isPublic,
+                updatedAt: new Date()
+            })
+            .where(eq(lists.id, listId))
+            .returning();
+
+        res.json(updatedList);
+    } catch (error) {
+        console.error('Error updating list:', error);
+        res.status(500).json({ error: 'Failed to update list' });
+    }
+});
+
+// Delete a list
+router.delete('/:listId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+        const { listId } = req.params;
+
+        const list = await db.query.lists.findFirst({
+            where: and(eq(lists.id, listId), eq(lists.userId, userId))
+        });
+
+        if (!list) {
+            res.status(404).json({ error: 'List not found or unauthorized' });
+            return;
+        }
+
+        if (list.type === 'WATCHLIST' && list.name === 'Watchlist') {
+            res.status(400).json({ error: 'Default watchlist cannot be deleted' });
+            return;
+        }
+
+        await db
+            .delete(lists)
+            .where(eq(lists.id, listId));
+
+        res.json({ message: 'List deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting list:', error);
+        res.status(500).json({ error: 'Failed to delete list' });
+    }
+});
+
 export default router;
