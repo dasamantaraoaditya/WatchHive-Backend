@@ -537,6 +537,10 @@ router.put(
 
             // Update entry
             const updateData = { ...req.body };
+            if (existingEntry.isWatching && updateData.isWatching === false) {
+                updateData.completedAt = new Date();
+                updateData.watchedAt = new Date();
+            }
             if (updateData.watchedAt) updateData.watchedAt = new Date(updateData.watchedAt);
             if (updateData.startedAt) updateData.startedAt = new Date(updateData.startedAt);
             if (updateData.completedAt) updateData.completedAt = new Date(updateData.completedAt);

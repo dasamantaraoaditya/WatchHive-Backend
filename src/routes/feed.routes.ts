@@ -154,8 +154,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             review: entries.review,
             tags: entries.tags,
             isRewatch: entries.isRewatch,
+            isWatching: entries.isWatching,
+            startedAt: entries.startedAt,
+            completedAt: entries.completedAt,
             watchLocation: entries.watchLocation,
             createdAt: entries.createdAt,
+            updatedAt: entries.updatedAt,
             user: {
                 id: users.id,
                 username: users.username,
@@ -180,7 +184,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                     )
                 )
             )
-            .orderBy(desc(entries.createdAt))
+            .orderBy(desc(entries.updatedAt))
             .limit(limit)
             .offset(offset);
 
@@ -190,7 +194,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             const likes = entry.likesCount || 0;
             const comments = entry.commentsCount || 0;
             const engagement = likes + (comments * 2);
-            const hoursAge = Math.max(0.5, (Date.now() - new Date(entry.createdAt).getTime()) / (1000 * 60 * 60));
+            const hoursAge = Math.max(0.5, (Date.now() - new Date(entry.updatedAt).getTime()) / (1000 * 60 * 60));
             const score = (engagement + 1) / Math.pow(hoursAge + 2, 1.5);
             return { entry, score };
         }).sort((a, b) => b.score - a.score).map(x => x.entry);
@@ -253,7 +257,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         const mappedEntries = entriesWithScores.map(entry => ({
             type: 'ENTRY',
             id: entry.id,
-            timestamp: entry.createdAt,
+            timestamp: entry.updatedAt,
             data: {
                 ...entry,
                 _count: { likes: entry.likesCount, comments: entry.commentsCount },
