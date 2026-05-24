@@ -579,6 +579,20 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
 
         const isRequested = !!followReq;
 
+        // Fetch incoming follow request status
+        const [incomingReq] = await db
+            .select()
+            .from(followRequests)
+            .where(and(
+                eq(followRequests.senderId, targetId),
+                eq(followRequests.recipientId, currentId),
+                eq(followRequests.status, 'pending')
+            ))
+            .limit(1);
+
+        const isIncomingRequest = !!incomingReq;
+        const incomingRequestId = incomingReq ? incomingReq.id : null;
+
         // Privacy determination
         const privacyLevel = user.privacyLevel || (user.isPrivate ? 'FOLLOWERS_ONLY' : 'PUBLIC');
         
@@ -614,6 +628,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 },
                 isFollowing: isFollowing,
                 isRequested: isRequested,
+                isIncomingRequest: isIncomingRequest,
+                incomingRequestId: incomingRequestId,
                 isRestricted: true
             });
             return;
@@ -640,6 +656,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
             },
             isFollowing: isFollowing,
             isRequested: isRequested,
+            isIncomingRequest: isIncomingRequest,
+            incomingRequestId: incomingRequestId,
         });
     } catch (error) {
         next(error);
