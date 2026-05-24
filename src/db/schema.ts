@@ -17,7 +17,7 @@ import { relations } from 'drizzle-orm';
 // Enums
 export const entryTypeEnum = pgEnum('EntryType', ['MOVIE', 'TV_SHOW', 'EPISODE']);
 export const notificationTypeEnum = pgEnum('NotificationType', [
-    'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION', 'SUGGESTION'
+    'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'FOLLOW_REJECT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION', 'SUGGESTION'
 ]);
 export const listTypeEnum = pgEnum('ListType', ['WATCHLIST', 'RANKING_STACK', 'COLLECTION']);
 export const privacyLevelEnum = pgEnum('PrivacyLevel', ['PUBLIC', 'FOLLOWERS_ONLY', 'PRIVATE']);

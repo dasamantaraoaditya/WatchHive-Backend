@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { db } from '../db/index.js';
-import { users, entries, follows, likes, comments } from '../db/schema.js';
+import { users, entries, follows, likes, comments, followRequests } from '../db/schema.js';
 import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
@@ -268,6 +268,21 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
             // New Tiered Privacy Logic
             if (targetUser.privacyLevel === 'PRIVATE') {
                 return res.status(403).json({ error: 'This account is strictly private.' });
+            }
+
+            // Check if there is a pending follow request
+            const [pendingRequest] = await db
+                .select()
+                .from(followRequests)
+                .where(and(
+                    eq(followRequests.senderId, currentUserId),
+                    eq(followRequests.recipientId, targetUserId),
+                    eq(followRequests.status, 'pending')
+                ))
+                .limit(1);
+
+            if (pendingRequest) {
+                return res.status(403).json({ error: 'Follow request is pending. Cannot view entries.' });
             }
 
             if (targetUser.privacyLevel === 'FOLLOWERS_ONLY' || targetUser.isPrivate) {

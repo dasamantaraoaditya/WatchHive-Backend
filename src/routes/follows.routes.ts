@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { db } from '../db/index.js';
-import { users, follows, followRequests } from '../db/schema.js';
+import { users, follows, followRequests, notifications } from '../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
 
@@ -90,49 +90,19 @@ router.post('/:userId', authMiddleware, async (req: Request, res: Response): Pro
             .limit(1);
         const actorName = actor?.displayName || actor?.username || 'Someone';
 
-        // 3. Handle Private vs Public
-        if (userToFollow.isPrivate) {
-            const [request] = await db
-                .insert(followRequests)
-                .values({ senderId: followerId, recipientId: followingId })
-                .returning();
+        // 3. Always enter a pending follow request state (requiring target user approval)
+        const [request] = await db
+            .insert(followRequests)
+            .values({ senderId: followerId, recipientId: followingId })
+            .returning();
 
-            await notificationService.createNotification(followingId, 'FOLLOW_REQUEST', {
-                actorId: followerId,
-                actorName,
-                requestId: request.id
-            });
+        await notificationService.createNotification(followingId, 'FOLLOW_REQUEST', {
+            actorId: followerId,
+            actorName,
+            requestId: request.id
+        });
 
-            res.status(201).json({ message: 'Follow request sent', status: 'requested' });
-        } else {
-            const [follow] = await db
-                .insert(follows)
-                .values({ followerId, followingId })
-                .returning();
-
-            // Fetch following details for response parity
-            const [followingDetails] = await db
-                .select({
-                    id: users.id,
-                    username: users.username,
-                    displayName: users.displayName,
-                    profilePictureUrl: users.profilePictureUrl
-                })
-                .from(users)
-                .where(eq(users.id, followingId))
-                .limit(1);
-
-            await notificationService.createNotification(followingId, 'FOLLOW', {
-                actorId: followerId,
-                actorName
-            });
-
-            res.status(201).json({
-                message: 'Successfully followed user',
-                follow: { ...follow, following: followingDetails },
-                status: 'following'
-            });
-        }
+        res.status(201).json({ message: 'Follow request sent', status: 'requested' });
     } catch (error) {
         console.error('Error following user:', error);
         res.status(500).json({ error: 'Failed to follow user' });
@@ -178,6 +148,24 @@ router.post('/requests/:requestId/accept', authMiddleware, async (req: Request, 
         await db.insert(follows).values({ followerId: request.senderId, followingId: userId });
         await db.delete(followRequests).where(eq(followRequests.id, requestId));
 
+        // Delete recipient's FOLLOW_REQUEST notification
+        const bNotifications = await db
+            .select()
+            .from(notifications)
+            .where(and(
+                eq(notifications.userId, userId),
+                eq(notifications.type, 'FOLLOW_REQUEST')
+            ));
+
+        const bNotif = bNotifications.find(n => {
+            const content = n.content as any;
+            return content && (content.requestId === requestId || content.actorId === request.senderId);
+        });
+
+        if (bNotif) {
+            await db.delete(notifications).where(eq(notifications.id, bNotif.id));
+        }
+
         const [recipient] = await db
             .select({ username: users.username, displayName: users.displayName })
             .from(users)
@@ -214,7 +202,7 @@ router.post('/requests/:requestId/accept', authMiddleware, async (req: Request, 
  *         description: Follow request rejected
  *       404:
  *         description: Request not found
- */
+ * */
 router.post('/requests/:requestId/reject', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const { requestId } = req.params;
@@ -231,7 +219,37 @@ router.post('/requests/:requestId/reject', authMiddleware, async (req: Request, 
             return;
         }
 
+        const [recipient] = await db
+            .select({ username: users.username, displayName: users.displayName })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+
         await db.delete(followRequests).where(eq(followRequests.id, requestId));
+
+        // Delete recipient's FOLLOW_REQUEST notification
+        const bNotifications = await db
+            .select()
+            .from(notifications)
+            .where(and(
+                eq(notifications.userId, userId),
+                eq(notifications.type, 'FOLLOW_REQUEST')
+            ));
+
+        const bNotif = bNotifications.find(n => {
+            const content = n.content as any;
+            return content && (content.requestId === requestId || content.actorId === request.senderId);
+        });
+
+        if (bNotif) {
+            await db.delete(notifications).where(eq(notifications.id, bNotif.id));
+        }
+
+        await notificationService.createNotification(request.senderId, 'FOLLOW_REJECT', {
+            actorId: userId,
+            actorName: recipient?.displayName || recipient?.username || 'Someone'
+        });
+
         res.json({ message: 'Follow request rejected' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to reject' });
@@ -303,9 +321,28 @@ router.delete('/:userId', authMiddleware, async (req: Request, res: Response): P
         const followingId = req.params.userId;
         const followerId = req.user!.userId;
 
-        await db
+        const deleteRequestResult = await db
             .delete(followRequests)
-            .where(and(eq(followRequests.senderId, followerId), eq(followRequests.recipientId, followingId)));
+            .where(and(eq(followRequests.senderId, followerId), eq(followRequests.recipientId, followingId)))
+            .returning();
+
+        // Also clean up any FOLLOW_REQUEST notification from followerId to followingId
+        const pendingNotifications = await db
+            .select()
+            .from(notifications)
+            .where(and(
+                eq(notifications.userId, followingId),
+                eq(notifications.type, 'FOLLOW_REQUEST')
+            ));
+
+        const notificationToDelete = pendingNotifications.find(n => {
+            const content = n.content as any;
+            return content && content.actorId === followerId;
+        });
+
+        if (notificationToDelete) {
+            await db.delete(notifications).where(eq(notifications.id, notificationToDelete.id));
+        }
 
         const [existingFollow] = await db
             .select()
@@ -314,6 +351,10 @@ router.delete('/:userId', authMiddleware, async (req: Request, res: Response): P
             .limit(1);
 
         if (!existingFollow) {
+            if (deleteRequestResult.length > 0) {
+                res.json({ message: 'Successfully canceled follow request' });
+                return;
+            }
             res.status(404).json({ error: 'You are not following this user' });
             return;
         }

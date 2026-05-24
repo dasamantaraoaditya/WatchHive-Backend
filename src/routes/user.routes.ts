@@ -4,7 +4,7 @@ import path from 'path';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
-import { users, follows, entries, lists, listItems } from '../db/schema.js';
+import { users, follows, entries, lists, listItems, followRequests } from '../db/schema.js';
 import { eq, or, and, ilike, not, count, exists, desc } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 
@@ -416,6 +416,15 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
                     db.select()
                         .from(follows)
                         .where(and(eq(follows.followerId, currentId), eq(follows.followingId, users.id)))
+                ),
+                isRequested: exists(
+                    db.select()
+                        .from(followRequests)
+                        .where(and(
+                            eq(followRequests.senderId, currentId),
+                            eq(followRequests.recipientId, users.id),
+                            eq(followRequests.status, 'pending')
+                        ))
                 )
             })
                 .from(users)
@@ -467,6 +476,11 @@ router.get('/suggested', authMiddleware, async (req: Request, res: Response, nex
                 db.select()
                     .from(follows)
                     .where(and(eq(follows.followerId, currentId), eq(follows.followingId, users.id)))
+            )),
+            not(exists(
+                db.select()
+                    .from(followRequests)
+                    .where(and(eq(followRequests.senderId, currentId), eq(followRequests.recipientId, users.id)))
             ))
         );
 
@@ -552,12 +566,27 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
 
         const isFollowing = !!followStatus;
 
+        // Fetch follow request status
+        const [followReq] = await db
+            .select()
+            .from(followRequests)
+            .where(and(
+                eq(followRequests.senderId, currentId),
+                eq(followRequests.recipientId, targetId),
+                eq(followRequests.status, 'pending')
+            ))
+            .limit(1);
+
+        const isRequested = !!followReq;
+
         // Privacy determination
         const privacyLevel = user.privacyLevel || (user.isPrivate ? 'FOLLOWERS_ONLY' : 'PUBLIC');
         
         let canViewStats = isOwner;
         if (!isOwner) {
-            if (privacyLevel === 'PUBLIC') {
+            if (isRequested) {
+                canViewStats = false;
+            } else if (privacyLevel === 'PUBLIC') {
                 canViewStats = true;
             } else if (privacyLevel === 'FOLLOWERS_ONLY' && isFollowing) {
                 canViewStats = true;
@@ -584,6 +613,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                     entries: 0
                 },
                 isFollowing: isFollowing,
+                isRequested: isRequested,
                 isRestricted: true
             });
             return;
@@ -609,6 +639,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 entries: entriesCount
             },
             isFollowing: isFollowing,
+            isRequested: isRequested,
         });
     } catch (error) {
         next(error);
@@ -655,6 +686,21 @@ router.get('/:id/watchlist', authMiddleware, async (req: Request, res: Response,
 
         // Only enforce privacy if it's NOT the user themselves
         if (targetId !== currentId) {
+            // Check if there is a pending follow request
+            const [pendingRequest] = await db
+                .select()
+                .from(followRequests)
+                .where(and(
+                    eq(followRequests.senderId, currentId),
+                    eq(followRequests.recipientId, targetId),
+                    eq(followRequests.status, 'pending')
+                ))
+                .limit(1);
+
+            if (pendingRequest) {
+                throw new AppError('Follow request is pending. Cannot view watchlist.', 403);
+            }
+
             // New Tiered Privacy Logic
             if (targetUser.privacyLevel === 'PRIVATE') {
                 throw new AppError('This account is strictly private.', 403);
