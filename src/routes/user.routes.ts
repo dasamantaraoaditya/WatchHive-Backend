@@ -108,6 +108,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showWatchEntries: users.showWatchEntries,
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
+                showRankings: users.showRankings,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
                 entriesCount: count(entries.id),
@@ -176,7 +177,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 router.put('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
-        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist } = req.body;
+        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings } = req.body;
 
         if (displayName !== undefined && String(displayName).trim().length > 50) {
             res.status(400).json({ error: 'Display name cannot exceed 50 characters' });
@@ -204,6 +205,7 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 ...(showWatchEntries !== undefined && { showWatchEntries }),
                 ...(showCurrentlyWatching !== undefined && { showCurrentlyWatching }),
                 ...(showWatchlist !== undefined && { showWatchlist }),
+                ...(showRankings !== undefined && { showRankings }),
                 updatedAt: new Date(),
             })
             .where(eq(users.id, userId))
@@ -220,6 +222,7 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showWatchEntries: users.showWatchEntries,
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
+                showRankings: users.showRankings,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
             });
@@ -568,6 +571,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 showWatchEntries: users.showWatchEntries,
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
+                showRankings: users.showRankings,
                 createdAt: users.createdAt,
             })
             .from(users)
@@ -643,6 +647,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 showWatchEntries: user.showWatchEntries,
                 showCurrentlyWatching: user.showCurrentlyWatching,
                 showWatchlist: user.showWatchlist,
+                showRankings: user.showRankings,
                 createdAt: user.createdAt,
                 _count: {
                     followers: 0,

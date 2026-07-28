@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { lists, listItems, entries } from '../db/schema.js';
+import { lists, listItems, entries, users, follows } from '../db/schema.js';
 import { eq, and, desc, asc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
@@ -60,6 +60,72 @@ router.get('/watchlist', authMiddleware, async (req: Request, res: Response): Pr
     } catch (error) {
         console.error('Error fetching watchlist:', error);
         res.status(500).json({ error: 'Failed to fetch watchlist' });
+    }
+});
+
+// Get public ranking stacks for a specific user (subject to profile privacy settings)
+router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const currentUserId = req.user!.userId;
+
+        const [targetUser] = await db.select({
+            id: users.id,
+            isPrivate: users.isPrivate,
+            privacyLevel: users.privacyLevel,
+            showRankings: users.showRankings,
+        }).from(users).where(eq(users.id, userId)).limit(1);
+
+        if (!targetUser) {
+            res.status(404).json({ error: 'User not found' });
+            return;
+        }
+
+        const isOwner = currentUserId === userId;
+
+        if (!isOwner && targetUser.showRankings === false) {
+            res.json([]);
+            return;
+        }
+
+        if (!isOwner) {
+            const privacyLevel = targetUser.privacyLevel || (targetUser.isPrivate ? 'FOLLOWERS_ONLY' : 'PUBLIC');
+
+            if (privacyLevel === 'PRIVATE') {
+                res.status(403).json({ error: 'Private profile' });
+                return;
+            }
+
+            if (privacyLevel === 'FOLLOWERS_ONLY') {
+                const [follow] = await db.select().from(follows).where(
+                    and(eq(follows.followerId, currentUserId), eq(follows.followingId, userId))
+                ).limit(1);
+
+                if (!follow) {
+                    res.status(403).json({ error: 'Followers only' });
+                    return;
+                }
+            }
+        }
+
+        const rankingLists = await db.query.lists.findMany({
+            where: and(
+                eq(lists.userId, userId),
+                eq(lists.type, 'RANKING_STACK'),
+                ...(isOwner ? [] : [eq(lists.isPublic, true)])
+            ),
+            with: {
+                items: {
+                    orderBy: asc(listItems.orderIndex),
+                },
+            },
+            orderBy: desc(lists.updatedAt),
+        });
+
+        res.json(rankingLists);
+    } catch (error) {
+        console.error('Error fetching user rankings:', error);
+        res.status(500).json({ error: 'Failed to fetch user rankings' });
     }
 });
 

@@ -38,6 +38,7 @@ export const users = pgTable('users', {
     showWatchEntries: boolean('show_watch_entries').default(true).notNull(),
     showCurrentlyWatching: boolean('show_currently_watching').default(true).notNull(),
     showWatchlist: boolean('show_watchlist').default(true).notNull(),
+    showRankings: boolean('show_rankings').default(true).notNull(),
     xp: integer('xp').default(0).notNull(),
     level: integer('level').default(1).notNull(),
     badges: jsonb('badges').default([]).notNull(),
