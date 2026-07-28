@@ -6,9 +6,10 @@ import rateLimit from 'express-rate-limit';
  */
 export const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 300,
+    limit: 1500,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    skip: () => process.env.NODE_ENV !== 'production',
     message: {
         error: 'Too many requests from this IP, please try again after 15 minutes.',
     },
