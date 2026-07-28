@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { authController } from '../controllers/auth.controller.js';
 import { validate } from '../middleware/validation.middleware.js';
+import { authMiddleware } from '../middleware/auth.middleware.js';
+import { authLimiter, passwordResetLimiter } from '../middleware/rate-limit.middleware.js';
+
 
 const router = Router();
 
@@ -47,6 +50,38 @@ const refreshValidation = [
         .withMessage('Refresh token is required'),
 ];
 
+const forgotPasswordValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+];
+
+const resetPasswordValidation = [
+    body('token')
+        .notEmpty()
+        .withMessage('Reset token is required'),
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+    body('newPassword')
+        .isLength({ min: 8 })
+        .withMessage('Password must be at least 8 characters long')
+        .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+        .withMessage('Password must contain uppercase, lowercase, and number'),
+];
+
+const setPasswordValidation = [
+    body('newPassword')
+        .isLength({ min: 8 })
+        .withMessage('Password must be at least 8 characters long')
+        .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+        .withMessage('Password must contain uppercase, lowercase, and number'),
+];
+
 /**
  * @openapi
  * tags:
@@ -86,7 +121,7 @@ const refreshValidation = [
  *       400:
  *         description: Validation error
  */
-router.post('/register', registerValidation, validate, authController.register);
+router.post('/register', authLimiter, registerValidation, validate, authController.register);
 
 /**
  * @openapi
@@ -114,7 +149,7 @@ router.post('/register', registerValidation, validate, authController.register);
  *       401:
  *         description: Unauthorized
  */
-router.post('/login', loginValidation, validate, authController.login);
+router.post('/login', authLimiter, loginValidation, validate, authController.login);
 
 /**
  * @openapi
@@ -126,7 +161,7 @@ router.post('/login', loginValidation, validate, authController.login);
  *       200:
  *         description: Google login successful
  */
-router.post('/google', authController.googleLogin);
+router.post('/google', authLimiter, authController.googleLogin);
 
 /**
  * @openapi
@@ -162,5 +197,87 @@ router.post('/refresh', refreshValidation, validate, authController.refresh);
  *         description: Logout successful
  */
 router.post('/logout', authController.logout);
+
+/**
+ * @openapi
+ * /api/v1/auth/forgot-password:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Request a password reset email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Reset email sent (always returns success to prevent enumeration)
+ */
+router.post('/forgot-password', passwordResetLimiter, forgotPasswordValidation, validate, authController.forgotPassword);
+
+/**
+ * @openapi
+ * /api/v1/auth/reset-password:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Reset password using token from email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - email
+ *               - newPassword
+ *             properties:
+ *               token:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/reset-password', passwordResetLimiter, resetPasswordValidation, validate, authController.resetPassword);
+
+/**
+ * @openapi
+ * /api/v1/auth/set-password:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Set a backup password on a Google-only account
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - newPassword
+ *             properties:
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password set successfully
+ *       400:
+ *         description: Account already has a password or is not Google-linked
+ */
+router.post('/set-password', authMiddleware, setPasswordValidation, validate, authController.setPassword);
+
 
 export default router;

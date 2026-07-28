@@ -23,6 +23,7 @@ const GENRE_THEMES: Record<string, string> = {
     'Mystery': 'Problem Solving',
     'Romance': 'Emotional Connection',
     'Science Fiction': 'Future-Oriented Thinking',
+    'Sci-Fi': 'Future-Oriented Thinking',
     'TV Movie': 'Comfort Viewing',
     'Thriller': 'Suspense & Stimulation',
     'War': 'Intensity & Conflict Awareness',
@@ -44,49 +45,50 @@ const MOOD_MAP: Record<string, string> = {
     'Action': 'Excited',
     'Adventure': 'Excited',
     'Sci-Fi': 'Excited',
+    'Science Fiction': 'Excited',
     'Fantasy': 'Excited',
     'Romance': 'Sentimental',
+    'Music': 'Sentimental',
 };
 
-// Soul Personas based on USER's request
 const SOUL_PERSONAS = [
     {
         name: 'The Contract Killer',
         description: 'Cold, calculated, and high-stakes. You prefer narratives where every choice is a life-or-death decision.',
         icon: '🎯',
-        imageUrl: 'https://media.giphy.com/media/l3q2wJsC23ikJg9xe/giphy.gif', // John Wick loading outline
-        color: '#dc2626',
+        imageUrl: 'https://i.giphy.com/media/l3q2wJsC23ikJg9xe/giphy.gif',
+        color: '#ef4444',
         criteria: { themes: ['Justice & Order Seeking', 'Suspense & Stimulation'], moods: ['Tense'] }
     },
     {
         name: 'The Sharp Lawyer',
         description: 'Analytical and sharp-witted. You love dissecting arguments and finding the elusive truth in complex dramas.',
         icon: '⚖️',
-        imageUrl: 'https://media.giphy.com/media/l0EwYGlvQ7STj3mNy/giphy.gif', // Saul Goodman
-        color: '#2563eb',
+        imageUrl: 'https://i.giphy.com/media/l0EwYGlvQ7STj3mNy/giphy.gif',
+        color: '#3b82f6',
         criteria: { themes: ['Justice & Order Seeking', 'Context & Perspective'], moods: ['Reflective'] }
     },
     {
         name: 'The Master Judge',
         description: 'Moral clarity and heavy decisions. You gravitate towards stories that explore right, wrong, and the gray areas in between.',
         icon: '👨‍⚖️',
-        imageUrl: 'https://media.giphy.com/media/1lAOemoi0KhPMzxczT/giphy.gif', // Judge Judy eye roll
-        color: '#4b5563',
+        imageUrl: 'https://i.giphy.com/media/1lAOemoi0KhPMzxczT/giphy.gif',
+        color: '#6b7280',
         criteria: { themes: ['Justice & Order Seeking', 'History'], moods: ['Reflective'] }
     },
     {
         name: 'The Wise Teacher',
         description: 'Always seeking knowledge. You view cinema as a lens to learn about the complexities of history and human nature.',
         icon: '🎓',
-        imageUrl: 'https://media.giphy.com/media/PudZiAbQDUEik/giphy.gif', // Miyagi nod
-        color: '#059669',
+        imageUrl: 'https://i.giphy.com/media/PudZiAbQDUEik/giphy.gif',
+        color: '#10b981',
         criteria: { themes: ['Intellectual Curiosity', 'Context & Perspective'], moods: ['Reflective'] }
     },
     {
         name: 'The Creator God',
         description: 'Limitless imagination. You love sprawling worlds that defy reality and the visionary minds that build them.',
         icon: '⚛️',
-        imageUrl: 'https://media.giphy.com/media/BqiGk3yGk7f12/giphy.gif', // Spongebob imagination
+        imageUrl: 'https://i.giphy.com/media/BqiGk3yGk7f12/giphy.gif',
         color: '#d946ef',
         criteria: { themes: ['Escapism & Creativity', 'Imagination & Playfulness'], moods: ['Lighthearted', 'Excited'] }
     },
@@ -94,23 +96,23 @@ const SOUL_PERSONAS = [
         name: 'The Vengeful Batman',
         description: 'You are a guardian of the shadows. Justice, grit, and the complex morality of the night guide your viewing.',
         icon: '🦇',
-        imageUrl: 'https://media.giphy.com/media/l396BoOTIFem9xqUM/giphy.gif', // Lego Batman
-        color: '#111827',
+        imageUrl: 'https://i.giphy.com/media/l396BoOTIFem9xqUM/giphy.gif',
+        color: '#1e293b',
         criteria: { themes: ['Justice & Order Seeking', 'Adrenaline Seeking'], moods: ['Tense'] }
     },
     {
-        name: 'The Agent of Chaos (Joker)',
+        name: 'The Agent of Chaos',
         description: 'You enjoy the unpredictability of it all. High adrenaline and suspense keep you coming back for more.',
         icon: '🤡',
-        imageUrl: 'https://media.giphy.com/media/F9yAvk7Xpr0c/giphy.gif', // Heath Ledger Joker clapping
-        color: '#7c3aed',
+        imageUrl: 'https://i.giphy.com/media/F9yAvk7Xpr0c/giphy.gif',
+        color: '#8b5cf6',
         criteria: { themes: ['Thrill Seeking', 'Adrenaline Seeking'], moods: ['Excited'] }
     },
     {
         name: 'The Ancient Vampire',
         description: 'Gothic, immortal, and elegantly dark. You prefer stories that transcend time and explore the seductive side of danger.',
         icon: '🧛',
-        imageUrl: 'https://media.giphy.com/media/cjKfH7n0R8XaDPwlV0/giphy.gif', // What We Do in the Shadows 
+        imageUrl: 'https://i.giphy.com/media/cjKfH7n0R8XaDPwlV0/giphy.gif',
         color: '#991b1b',
         criteria: { themes: ['Thrill Seeking', 'Escapism & Creativity'], moods: ['Tense', 'Sentimental'] }
     },
@@ -118,23 +120,23 @@ const SOUL_PERSONAS = [
         name: 'The Sandman',
         description: 'Lord of Dreams. Surreal, philosophical, and atmospheric narratives are where your mind truly feels at home.',
         icon: '⏳',
-        imageUrl: 'https://media.giphy.com/media/mguPrVJAnEHIY/giphy.gif', // Sleepy mood
+        imageUrl: 'https://i.giphy.com/media/mguPrVJAnEHIY/giphy.gif',
         color: '#0ea5e9',
         criteria: { themes: ['Imagination & Playfulness', 'Future-Oriented Thinking'], moods: ['Reflective'] }
     },
     {
-        name: 'The Mamba Mentality (Kobe)',
+        name: 'The Mamba Mentality',
         description: 'Relentless focus and competitive fire. You are drawn to stories of triumph, failure, and the obsession with greatness.',
         icon: '🐍',
-        imageUrl: 'https://media.giphy.com/media/xT1XGT9ersM295XGgw/giphy.gif', // Kobe nod
-        color: '#facc15',
+        imageUrl: 'https://i.giphy.com/media/xT1XGT9ersM295XGgw/giphy.gif',
+        color: '#eab308',
         criteria: { themes: ['Intensity & Conflict Awareness', 'Adrenaline Seeking'], moods: ['Excited'] }
     },
     {
-        name: 'The Smooth Soul (Wiz Khalifa)',
+        name: 'The Smooth Soul',
         description: 'Aesthetic, rhythmic, and high-vibing. You prioritize visual and auditory beauty in every cinematic experience.',
         icon: '🎶',
-        imageUrl: 'https://media.giphy.com/media/xT0BKk9aPtLzKJiRx6/giphy.gif', // Snoop Dogg dance
+        imageUrl: 'https://i.giphy.com/media/xT0BKk9aPtLzKJiRx6/giphy.gif',
         color: '#22c55e',
         criteria: { themes: ['Aesthetic Appreciation', 'Stress Relief & Optimism'], moods: ['Lighthearted'] }
     },
@@ -142,47 +144,352 @@ const SOUL_PERSONAS = [
         name: 'The Devilish Rebel',
         description: 'You are drawn to the dark side of ambition and the seductive power of rebellion. Rules are just suggestions to you.',
         icon: '😈',
-        imageUrl: 'https://media.giphy.com/media/P7JmDW7IkB7TW/giphy.gif', // Elmo Fire Meme
-        color: '#dc2626',
+        imageUrl: 'https://i.giphy.com/media/P7JmDW7IkB7TW/giphy.gif',
+        color: '#f43f5e',
         criteria: { themes: ['Thrill Seeking', 'Intensity & Conflict Awareness'], moods: ['Excited', 'Tense'] }
-    },
-    {
-        name: 'The Sturdy Dwarf',
-        description: 'Grounded, loyal, and deep-rooted. You prefer stories of companionship, craft, and the enduring strength of the earth.',
-        icon: '⚒️',
-        imageUrl: 'https://media.giphy.com/media/zGnnFpOB1OjMQ/giphy.gif', // LOTR Gimli
-        color: '#92400e',
-        criteria: { themes: ['Independence & Justice', 'Comfort & Connection'], moods: ['Reflective'] }
     },
 ];
 
 /**
- * @openapi
- * tags:
- *   name: MindLens
- *   description: AI-powered psychological viewing insights
+ * Predict current mental state/mood based on recent watch history (last 5-7 items)
  */
+function computeCurrentMoodPrediction(recentEntries: any[]) {
+    if (!recentEntries || recentEntries.length === 0) {
+        return {
+            mood: 'Neutral Baseline',
+            status: 'Calm & Steady',
+            description: 'Not enough recent logs to detect an active emotional shift.',
+            icon: '🧘',
+            confidence: 50,
+            recentTitles: [],
+        };
+    }
+
+    const recentTags: string[] = [];
+    let ratingSum = 0;
+    let ratedCount = 0;
+
+    recentEntries.forEach(e => {
+        if (e.tags && Array.isArray(e.tags)) {
+            recentTags.push(...e.tags);
+        }
+        if (e.rating) {
+            ratingSum += parseFloat(e.rating);
+            ratedCount++;
+        }
+    });
+
+    const genreCounts: Record<string, number> = {};
+    recentTags.forEach(t => {
+        const norm = t.toLowerCase().trim();
+        for (const genre of Object.keys(GENRE_THEMES)) {
+            if (norm.includes(genre.toLowerCase())) {
+                genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+            }
+        }
+    });
+
+    const topGenre = Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Drama';
+    const avgRecentRating = ratedCount > 0 ? ratingSum / ratedCount : 7.0;
+    const recentTitles = recentEntries.slice(0, 4).map(e => e.title);
+
+    // Mood heuristics based on recent genre & rating intensity
+    if (['Comedy', 'Animation', 'Family'].includes(topGenre)) {
+        return {
+            mood: 'Lighthearted & Recharging',
+            status: 'Seeking Positive Energy',
+            description: 'Your recent watches show a desire for comfort, laughter, and mental decompression.',
+            icon: '☀️',
+            confidence: 88,
+            recentTitles,
+        };
+    } else if (['Horror', 'Thriller', 'Mystery', 'Crime'].includes(topGenre)) {
+        return {
+            mood: 'High-Alert Thrill Seeking',
+            status: 'Adrenaline & Tension Processing',
+            description: 'You are gravitating towards suspenseful and high-stakes narratives to stimulate focus.',
+            icon: '⚡️',
+            confidence: 92,
+            recentTitles,
+        };
+    } else if (['Action', 'Adventure', 'Sci-Fi', 'Science Fiction'].includes(topGenre)) {
+        return {
+            mood: 'Excited & Action-Oriented',
+            status: 'High Energy & Escapism',
+            description: 'Driven by momentum, big ideas, and immersive cinematic worlds.',
+            icon: '🚀',
+            confidence: 85,
+            recentTitles,
+        };
+    } else if (['Documentary', 'History', 'War'].includes(topGenre)) {
+        return {
+            mood: 'Intellectual & Reflective',
+            status: 'Knowledge & Truth Seeking',
+            description: 'You are in an analytical state, seeking deeper context and real-world understanding.',
+            icon: '🧠',
+            confidence: 90,
+            recentTitles,
+        };
+    } else if (avgRecentRating >= 8.5) {
+        return {
+            mood: 'Deeply Inspired',
+            status: 'High Cinematic Resonance',
+            description: 'Your recent watches have struck a powerful emotional chord, leaving you captivated.',
+            icon: '✨',
+            confidence: 94,
+            recentTitles,
+        };
+    } else {
+        return {
+            mood: 'Emotional Exploration',
+            status: 'Contemplative & Empathetic',
+            description: 'Engaging with nuanced, character-driven stories to process subtle emotions.',
+            icon: '🌊',
+            confidence: 82,
+            recentTitles,
+        };
+    }
+}
 
 /**
- * @openapi
- * /api/v1/mindlens/insights:
- *   get:
- *     tags: [MindLens]
- *     summary: Generate psychological watch insights
- *     description: Analyzes the last 100 watch entries to generate a 'Soul Persona' and thematic trends.
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Analysis successful
- *       200_insufficient:
- *         description: Not enough data (needs 5+ entries)
+ * Compute behavioral traits across entire watch history
+ */
+function computeBehavioralTrails(allEntries: any[]) {
+    const total = allEntries.length;
+    if (total === 0) return [];
+
+    const rewatchCount = allEntries.filter(e => e.isRewatch).length;
+    const rewatchRatio = Math.round((rewatchCount / total) * 100);
+
+    let ratedSum = 0;
+    let ratedCount = 0;
+    let reviewCount = 0;
+
+    allEntries.forEach(e => {
+        if (e.rating) {
+            ratedSum += parseFloat(e.rating);
+            ratedCount++;
+        }
+        if (e.review && e.review.trim().length > 20) {
+            reviewCount++;
+        }
+    });
+
+    const avgRating = ratedCount > 0 ? (ratedSum / ratedCount).toFixed(1) : '7.0';
+    const reviewRatio = Math.round((reviewCount / total) * 100);
+
+    const traits = [
+        {
+            title: 'Rewatch Reliance',
+            value: `${rewatchRatio}%`,
+            subtitle: rewatchRatio > 25 ? 'High Comfort Seeker' : 'Fresh Explorer',
+            description: rewatchRatio > 25
+                ? 'You frequently revisit trusted favorites for emotional grounding and comfort.'
+                : 'You actively prioritize new stories and novel experiences over rewatching.',
+            icon: 'loop',
+            color: '#3b82f6',
+        },
+        {
+            title: 'Critical Rigor',
+            value: `${avgRating} ★`,
+            subtitle: parseFloat(avgRating) < 6.5 ? 'Strict Judge' : (parseFloat(avgRating) > 8.0 ? 'Generous Enthusiast' : 'Balanced Critic'),
+            description: parseFloat(avgRating) < 6.5
+                ? 'You hold cinema to high standards and reserve top marks for true masterpieces.'
+                : 'You find joy and appreciation in most movies you log.',
+            icon: 'star',
+            color: '#eab308',
+        },
+        {
+            title: 'Review Depth',
+            value: `${reviewRatio}%`,
+            subtitle: reviewRatio > 30 ? 'Active Analyst' : 'Casual Observer',
+            description: reviewRatio > 30
+                ? 'You regularly reflect on what you watch by writing reviews and notes.'
+                : 'You prefer quick logging without heavy written analysis.',
+            icon: 'edit_note',
+            color: '#10b981',
+        },
+        {
+            title: 'Catalog Scale',
+            value: `${total} Titles`,
+            subtitle: total > 50 ? 'Seasoned Cinephile' : 'Growing Vault',
+            description: `You have logged ${total} entries in your WatchHive history.`,
+            icon: 'video_library',
+            color: '#ec4899',
+        },
+    ];
+
+    return traits;
+}
+
+/**
+ * Dynamic Achievement Badges Evaluator
+ */
+function evaluateUserBadges(allEntries: any[]) {
+    const total = allEntries.length;
+    const nightOwlCount = allEntries.filter(e => {
+        const h = new Date(e.watchedAt).getHours();
+        return h >= 22 || h < 4;
+    }).length;
+
+    const rewatchCount = allEntries.filter(e => e.isRewatch).length;
+    const reviewCount = allEntries.filter(e => e.review && e.review.trim().length > 30).length;
+
+    // Dates map for binge / streak check
+    const dateCounts: Record<string, number> = {};
+    allEntries.forEach(e => {
+        const d = new Date(e.watchedAt).toISOString().split('T')[0];
+        dateCounts[d] = (dateCounts[d] || 0) + 1;
+    });
+
+    const maxInSingleDay = Math.max(...Object.values(dateCounts), 0);
+
+    // Genre count
+    const uniqueGenres = new Set<string>();
+    allEntries.forEach(e => {
+        if (e.tags && Array.isArray(e.tags)) {
+            e.tags.forEach((t: string) => uniqueGenres.add(t.toLowerCase().trim()));
+        }
+    });
+
+    // Rating average
+    let ratingSum = 0;
+    let ratedCount = 0;
+    allEntries.forEach(e => {
+        if (e.rating) {
+            ratingSum += parseFloat(e.rating);
+            ratedCount++;
+        }
+    });
+    const avgRating = ratedCount > 0 ? ratingSum / ratedCount : 7.0;
+
+    const badges = [
+        {
+            id: 'hive_legend',
+            title: 'Hive Titan',
+            description: 'Log 50+ total movies or TV shows',
+            icon: 'emoji_events',
+            color: 'from-amber-400 to-yellow-600',
+            isUnlocked: total >= 50,
+            progress: total,
+            target: 50,
+        },
+        {
+            id: 'night_owl',
+            title: 'Night Owl',
+            description: 'Log 5+ entries late at night (10 PM - 4 AM)',
+            icon: 'bedtime',
+            color: 'from-purple-500 to-indigo-700',
+            isUnlocked: nightOwlCount >= 5,
+            progress: nightOwlCount,
+            target: 5,
+        },
+        {
+            id: 'binge_marathoner',
+            title: 'Binge Marathoner',
+            description: 'Watch 3+ titles in a single day',
+            icon: 'bolt',
+            color: 'from-[#ffb700] to-orange-500',
+            isUnlocked: maxInSingleDay >= 3,
+            progress: maxInSingleDay,
+            target: 3,
+        },
+        {
+            id: 'cinephile_critic',
+            title: 'Cinephile Critic',
+            description: 'Write 5+ detailed reviews',
+            icon: 'rate_review',
+            color: 'from-emerald-400 to-teal-600',
+            isUnlocked: reviewCount >= 5,
+            progress: reviewCount,
+            target: 5,
+        },
+        {
+            id: 'genre_polymath',
+            title: 'Genre Polymath',
+            description: 'Explore 6+ distinct genres',
+            icon: 'category',
+            color: 'from-pink-500 to-rose-600',
+            isUnlocked: uniqueGenres.size >= 6,
+            progress: uniqueGenres.size,
+            target: 6,
+        },
+        {
+            id: 'comfort_rewatcher',
+            title: 'Comfort Rewatcher',
+            description: 'Log 3+ rewatched titles',
+            icon: 'autorenew',
+            color: 'from-blue-400 to-indigo-600',
+            isUnlocked: rewatchCount >= 3,
+            progress: rewatchCount,
+            target: 3,
+        },
+        {
+            id: 'discerning_critic',
+            title: 'Discerning Critic',
+            description: 'Average rating below 6.5 (High Standards)',
+            icon: 'gavel',
+            color: 'from-[#2D2926] to-[#ffb700]',
+            isUnlocked: ratedCount >= 5 && avgRating < 6.5,
+            progress: ratedCount >= 5 ? 1 : 0,
+            target: 1,
+        },
+        {
+            id: 'pure_optimist',
+            title: 'Pure Optimist',
+            description: 'Average rating above 8.0 across 5+ logs',
+            icon: 'sentiment_very_satisfied',
+            color: 'from-amber-300 to-yellow-500',
+            isUnlocked: ratedCount >= 5 && avgRating >= 8.0,
+            progress: ratedCount >= 5 ? 1 : 0,
+            target: 1,
+        },
+    ];
+
+    return badges;
+}
+
+/**
+ * Generate daily time-series watch frequency for the last 30 days
+ */
+function computeDailyTimeSeries(allEntries: any[]) {
+    const days: { date: string; count: number; items: any[] }[] = [];
+    const now = new Date();
+
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+
+        const dayEntries = allEntries.filter(e => {
+            const entryDate = new Date(e.watchedAt).toISOString().split('T')[0];
+            return entryDate === dateStr;
+        });
+
+        days.push({
+            date: dateStr,
+            count: dayEntries.length,
+            items: dayEntries.map(e => ({
+                id: e.id,
+                title: e.title,
+                type: e.type,
+                rating: e.rating,
+                watchedAt: e.watchedAt,
+            })),
+        });
+    }
+
+    return days;
+}
+
+/**
+ * GET /api/v1/mindlens/insights
  */
 router.get('/insights', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.user!.userId;
 
-        // Fetch last 100 entries for analysis
+        // Fetch entire watch history (up to 1,000 entries for deep behavioral analysis)
         const userEntries = await db
             .select({
                 id: entries.id,
@@ -191,34 +498,31 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
                 watchedAt: entries.watchedAt,
                 tags: entries.tags,
                 rating: entries.rating,
+                review: entries.review,
+                isRewatch: entries.isRewatch,
                 tmdbId: entries.tmdbId,
             })
             .from(entries)
             .where(eq(entries.userId, userId))
             .orderBy(desc(entries.watchedAt))
-            .limit(100);
+            .limit(1000);
 
-        if (userEntries.length < 5) {
+        if (userEntries.length < 3) {
             res.json({
                 hasEnoughData: false,
-                message: "Need more watch history to generate insights."
+                message: "Need at least 3 watch entries to compute your MindLens profile."
             });
             return;
         }
 
-        // --- Analysis Logic ---
-
-        // 1. Theme & Mood Analysis (from Tags as proxy for Genres)
+        // 1. Theme & Mood Counts across entire history
         const themeCounts: Record<string, number> = {};
         const moodCounts: Record<string, number> = {};
-
-        // Helper to simplify genre matching
         const normalize = (s: string) => s.toLowerCase().trim();
 
         userEntries.forEach(entry => {
             if (entry.tags && Array.isArray(entry.tags)) {
                 entry.tags.forEach(tag => {
-                    // Match tag to known genres
                     for (const [genre, theme] of Object.entries(GENRE_THEMES)) {
                         if (normalize(tag).includes(normalize(genre)) || normalize(genre).includes(normalize(tag))) {
                             themeCounts[theme] = (themeCounts[theme] || 0) + 1;
@@ -233,14 +537,8 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             }
         });
 
-        // 2. Temporal Analysis (Time of Day of Watch)
-        const timeOfDay = {
-            morning: 0,   // 5-12
-            afternoon: 0, // 12-17
-            evening: 0,   // 17-22
-            night: 0      // 22-5
-        };
-
+        // 2. Time of Day Distribution
+        const timeOfDay = { morning: 0, afternoon: 0, evening: 0, night: 0 };
         userEntries.forEach(entry => {
             const hour = new Date(entry.watchedAt).getHours();
             if (hour >= 5 && hour < 12) timeOfDay.morning++;
@@ -249,34 +547,13 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             else timeOfDay.night++;
         });
 
-        // 3. Generate Insights
-        const insights: string[] = [];
-        const topThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        // 3. Top Themes & Moods
+        const topThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 4);
         const topMoods = Object.entries(moodCounts).sort((a, b) => b[1] - a[1]).slice(0, 2);
 
-        if (topThemes.length > 0) {
-            insights.push(`Your dominant viewing pattern suggests a leaning towards **${topThemes[0][0]}**.`);
-            if (topThemes[0][0] === 'Adrenaline Seeking') {
-                insights.push("You seek stimulation and excitement, perhaps to counterbalance a routine lifestyle.");
-            } else if (topThemes[0][0] === 'Stress Relief & Optimism') {
-                insights.push("You prioritize mood regulation and positivity, using entertainment as a recharge mechanism.");
-            } else if (topThemes[0][0] === 'Emotional Processing') {
-                insights.push("You engage deeply with complex narratives, using stories to reflect on human experiences.");
-            } else if (topThemes[0][0] === 'Intellectual Curiosity') {
-                insights.push("You view entertainment as a learning opportunity.");
-            }
-        }
-
-        if (timeOfDay.night > (userEntries.length * 0.4)) {
-            insights.push("High late-night activity detected. You might be a 'Revenge Bedtime Procrastinator', reclaiming personal time at night.");
-        } else if (timeOfDay.morning > (userEntries.length * 0.3)) {
-            insights.push("You start your day with content, possibly integrating entertainment into your morning routine for motivation.");
-        }
-
-        // 4. Assign Soul Persona
-        let selectedPersona = SOUL_PERSONAS[0]; // Default
+        // 4. Soul Persona Assignment
+        let selectedPersona = SOUL_PERSONAS[0];
         let maxPersonaScore = -1;
-
         const currentThemes = topThemes.map(t => t[0]);
         const currentMoods = topMoods.map(m => m[0]);
 
@@ -295,7 +572,16 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             }
         });
 
-        // 4.5 Aesthetic Profile Mapping
+        // 5. Predict Current Mental State / Mood from Recent Watches (last 7 entries)
+        const recentEntries = userEntries.slice(0, 7);
+        const moodPrediction = computeCurrentMoodPrediction(recentEntries);
+
+        // 6. Behavioral Trails & Badges
+        const behavioralTrails = computeBehavioralTrails(userEntries);
+        const badges = evaluateUserBadges(userEntries);
+        const dailyTimeSeries = computeDailyTimeSeries(userEntries);
+
+        // 7. Aesthetic Profile Palette
         const AESTHETIC_GENRES: Record<string, string[]> = {
             'Noir': ['Crime', 'Thriller', 'Mystery'],
             'Amber': ['History', 'Romance', 'Drama'],
@@ -309,7 +595,6 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
 
         const aestheticCounts: Record<string, number> = {};
         Object.keys(AESTHETIC_GENRES).forEach(k => aestheticCounts[k] = 0);
-        
         userEntries.forEach(entry => {
             if (entry.tags) {
                 entry.tags.forEach(tag => {
@@ -334,7 +619,17 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
         }
         topAesthetics = topAesthetics.slice(0, 6);
 
-        // 5. Construct Response
+        // 8. Generate Verbal Insights
+        const insights: string[] = [];
+        if (topThemes.length > 0) {
+            insights.push(`Your overall viewing pattern leans strongly toward **${topThemes[0][0]}**.`);
+        }
+        if (timeOfDay.night > (userEntries.length * 0.35)) {
+            insights.push("High late-night viewing detected. You tend to reclaim personal reflection time during late hours.");
+        } else if (timeOfDay.morning > (userEntries.length * 0.25)) {
+            insights.push("You integrate movie/TV watching into your morning routine to kickstart creative energy.");
+        }
+
         res.json({
             hasEnoughData: true,
             userProfile: {
@@ -348,6 +643,10 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
                 imageUrl: selectedPersona.imageUrl,
                 color: selectedPersona.color
             },
+            moodPrediction,
+            behavioralTrails,
+            badges,
+            dailyTimeSeries,
             themes: topThemes.map(([name, score]) => ({ name, score })),
             timeDistribution: timeOfDay,
             insights,

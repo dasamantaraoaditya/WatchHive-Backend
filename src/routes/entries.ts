@@ -12,17 +12,17 @@ const router = Router();
 // Validation middleware
 const validateEntry = [
     body('tmdbId').isInt().withMessage('TMDb ID must be an integer'),
-    body('title').trim().notEmpty().withMessage('Title is required'),
+    body('title').trim().notEmpty().withMessage('Title is required').isLength({ max: 255 }).withMessage('Title cannot exceed 255 characters'),
     body('type').isIn(['MOVIE', 'TV_SHOW', 'EPISODE']).withMessage('Invalid entry type'),
     body('watchedAt').optional().isISO8601().withMessage('Invalid date format'),
     body('rating').optional().isFloat({ min: 0, max: 10 }).withMessage('Rating must be between 0 and 10'),
-    body('review').optional().trim(),
-    body('tags').optional().isArray().withMessage('Tags must be an array'),
+    body('review').optional().trim().isLength({ max: 5000 }).withMessage('Review cannot exceed 5000 characters'),
+    body('tags').optional().isArray({ max: 20 }).withMessage('Tags must be an array with max 20 items'),
     body('isRewatch').optional().isBoolean().withMessage('isRewatch must be boolean'),
     body('isWatching').optional().isBoolean().withMessage('isWatching must be boolean'),
     body('startedAt').optional().isISO8601().withMessage('Invalid date format'),
     body('completedAt').optional().isISO8601().withMessage('Invalid date format'),
-    body('watchLocation').optional().trim(),
+    body('watchLocation').optional().trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
 ];
 
 /**
@@ -316,6 +316,20 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
 
         const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
 
+        // Whitelist allowed sort fields and sort directions
+        const ALLOWED_SORT_FIELDS: Record<string, any> = {
+            watchedAt: entries.watchedAt,
+            createdAt: entries.createdAt,
+            rating: entries.rating,
+            title: entries.title,
+        };
+        const sortColumn = ALLOWED_SORT_FIELDS[sortBy as string] || entries.watchedAt;
+        const sortOrder = String(order).toLowerCase() === 'asc' ? asc(sortColumn) : desc(sortColumn);
+
+        // Sanitize limit and offset
+        const safeLimit = Math.min(Math.max(parseInt(limit as string, 10) || 20, 1), 100);
+        const safeOffset = Math.max(parseInt(offset as string, 10) || 0, 0);
+
         // Get entries with pagination and manual counts
         const [entriesList, [{ total }]] = await Promise.all([
             db.select({
@@ -347,11 +361,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                 .from(entries)
                 .innerJoin(users, eq(entries.userId, users.id))
                 .where(whereClause)
-                .orderBy(order === 'asc' ? asc(entries[sortBy as keyof typeof entries] as any) : desc(entries[sortBy as keyof typeof entries] as any))
-                .limit(parseInt(limit as string))
-                .offset(parseInt(offset as string)),
+                .orderBy(sortOrder)
+                .limit(safeLimit)
+                .offset(safeOffset),
             db.select({ total: count() }).from(entries).where(whereClause)
         ]);
+
 
         // Map Drizzle result to Prisma-like structure for frontend compatibility
         const formattedEntries = entriesList.map(e => ({
@@ -363,9 +378,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
             entries: formattedEntries,
             pagination: {
                 total,
-                limit: parseInt(limit as string),
-                offset: parseInt(offset as string),
-                hasMore: parseInt(offset as string) + entriesList.length < total,
+                limit: safeLimit,
+                offset: safeOffset,
+                hasMore: safeOffset + entriesList.length < total,
             },
         });
     } catch (error) {

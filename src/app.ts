@@ -22,6 +22,7 @@ import notificationsRoutes from './routes/notifications.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import suggestionsRoutes from './routes/suggestions.routes.js';
 import dataRoutes from './routes/data.routes.js';
+import { apiLimiter } from './middleware/rate-limit.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -114,6 +115,9 @@ app.get('/health', async (_req, res) => {
 if (config.nodeEnv === 'development') {
     app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 }
+
+// General API rate limiting
+app.use('/api/v1', apiLimiter);
 
 // API routes
 app.use('/api/v1/auth', authRoutes);

@@ -26,6 +26,8 @@ export interface GoogleAuthResponse {
         email: string;
         displayName: string | null;
         profilePictureUrl: string | null;
+        hasGoogleLinked: boolean;
+        hasPassword: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -189,7 +191,15 @@ export const googleAuthService = {
         });
 
         return {
-            user,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                displayName: user.displayName,
+                profilePictureUrl: user.profilePictureUrl,
+                hasGoogleLinked: true,
+                hasPassword: false, // will be refreshed via getMe() in AuthContext
+            },
             accessToken,
             refreshToken,
             isNewUser,

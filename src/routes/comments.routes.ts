@@ -51,7 +51,7 @@ const router = Router();
 router.post(
     '/:entryId',
     authMiddleware,
-    [body('content').trim().notEmpty().withMessage('Comment cannot be empty')],
+    [body('content').trim().notEmpty().withMessage('Comment cannot be empty').isLength({ max: 1000 }).withMessage('Comment cannot exceed 1000 characters')],
     async (req: Request, res: Response): Promise<void> => {
         try {
             const errors = validationResult(req);

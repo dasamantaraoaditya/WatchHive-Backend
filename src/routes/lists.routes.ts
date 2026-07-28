@@ -84,8 +84,18 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
         const userId = req.user!.userId;
         const { name, description, type, isPublic } = req.body;
 
-        if (!name) {
+        if (!name || typeof name !== 'string' || name.trim().length === 0) {
             res.status(400).json({ error: 'Name is required' });
+            return;
+        }
+
+        if (name.trim().length > 100) {
+            res.status(400).json({ error: 'List name cannot exceed 100 characters' });
+            return;
+        }
+
+        if (description && typeof description === 'string' && description.length > 1000) {
+            res.status(400).json({ error: 'Description cannot exceed 1000 characters' });
             return;
         }
 
@@ -93,8 +103,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
             .insert(lists)
             .values({
                 userId,
-                name,
-                description,
+                name: name.trim(),
+                description: description ? String(description).trim() : null,
                 type: type || 'WATCHLIST',
                 isPublic: isPublic !== undefined ? isPublic : true,
             })
@@ -383,6 +393,22 @@ router.patch('/:listId', authMiddleware, async (req: Request, res: Response): Pr
         const { listId } = req.params;
         const { name, description, isPublic } = req.body;
 
+        if (name !== undefined) {
+            if (typeof name !== 'string' || name.trim().length === 0) {
+                res.status(400).json({ error: 'Name cannot be empty' });
+                return;
+            }
+            if (name.trim().length > 100) {
+                res.status(400).json({ error: 'List name cannot exceed 100 characters' });
+                return;
+            }
+        }
+
+        if (description !== undefined && description !== null && String(description).length > 1000) {
+            res.status(400).json({ error: 'Description cannot exceed 1000 characters' });
+            return;
+        }
+
         const list = await db.query.lists.findFirst({
             where: and(eq(lists.id, listId), eq(lists.userId, userId))
         });
@@ -395,8 +421,8 @@ router.patch('/:listId', authMiddleware, async (req: Request, res: Response): Pr
         const [updatedList] = await db
             .update(lists)
             .set({
-                name: name !== undefined ? name : list.name,
-                description: description !== undefined ? description : list.description,
+                name: name !== undefined ? String(name).trim() : list.name,
+                description: description !== undefined ? (description ? String(description).trim() : null) : list.description,
                 isPublic: isPublic !== undefined ? isPublic : list.isPublic,
                 updatedAt: new Date()
             })

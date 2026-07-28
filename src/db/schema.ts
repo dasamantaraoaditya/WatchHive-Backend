@@ -41,6 +41,9 @@ export const users = pgTable('users', {
     xp: integer('xp').default(0).notNull(),
     level: integer('level').default(1).notNull(),
     badges: jsonb('badges').default([]).notNull(),
+    // Password reset fields — populated only during active reset request
+    passwordResetToken: text('password_reset_token'),
+    passwordResetExpiresAt: timestamp('password_reset_expires_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

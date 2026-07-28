@@ -111,6 +111,8 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
                 entriesCount: count(entries.id),
+                googleId: users.googleId,
+                passwordHash: users.passwordHash,
             })
             .from(users)
             .leftJoin(entries, eq(entries.userId, users.id))
@@ -122,8 +124,13 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
             throw new AppError('User not found', 404);
         }
 
+        // Strip sensitive fields; expose computed boolean flags instead
+        const { googleId, passwordHash, ...safeUser } = userResult;
+
         const user = {
-            ...userResult,
+            ...safeUser,
+            hasGoogleLinked: !!googleId,
+            hasPassword: !!passwordHash,
             _count: {
                 entries: Number(userResult.entriesCount),
                 followers: 0, // Placeholder or fetch separately if needed
@@ -139,6 +146,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
         next(error);
     }
 });
+
 
 /**
  * @openapi
@@ -170,12 +178,27 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
         const userId = req.user!.userId;
         const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist } = req.body;
 
+        if (displayName !== undefined && String(displayName).trim().length > 50) {
+            res.status(400).json({ error: 'Display name cannot exceed 50 characters' });
+            return;
+        }
+
+        if (bio !== undefined && String(bio).length > 500) {
+            res.status(400).json({ error: 'Bio cannot exceed 500 characters' });
+            return;
+        }
+
+        if (location !== undefined && String(location).length > 100) {
+            res.status(400).json({ error: 'Location cannot exceed 100 characters' });
+            return;
+        }
+
         const [user] = await db
             .update(users)
             .set({
-                ...(displayName !== undefined && { displayName }),
-                ...(bio !== undefined && { bio }),
-                ...(location !== undefined && { location }),
+                ...(displayName !== undefined && { displayName: String(displayName).trim() }),
+                ...(bio !== undefined && { bio: String(bio).trim() }),
+                ...(location !== undefined && { location: String(location).trim() }),
                 ...(isPrivate !== undefined && { isPrivate }),
                 ...(privacyLevel !== undefined && { privacyLevel }),
                 ...(showWatchEntries !== undefined && { showWatchEntries }),
