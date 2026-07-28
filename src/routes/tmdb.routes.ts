@@ -138,6 +138,66 @@ router.get('/search/multi', authMiddleware, async (req: Request, res: Response):
 
 /**
  * @openapi
+ * /api/v1/tmdb/discover:
+ *   get:
+ *     tags: [TMDb]
+ *     summary: Deep Discover media with rich filters (year, genre, sort, type)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: mediaType
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: year
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: genreId
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: query
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Discovered media results
+ */
+router.get('/discover', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { mediaType, year, genreId, sortBy, page, query } = req.query;
+        const pageNum = page ? parseInt(page as string, 10) : 1;
+        const yearNum = year ? parseInt(year as string, 10) : undefined;
+        const genreIdNum = genreId ? parseInt(genreId as string, 10) : undefined;
+
+        const results = await tmdbService.discoverMedia({
+            mediaType: (mediaType as any) || 'movie',
+            year: yearNum,
+            genreId: genreIdNum,
+            sortBy: (sortBy as string) || 'popularity.desc',
+            page: pageNum,
+            query: typeof query === 'string' ? query : undefined,
+        });
+
+        res.json(results);
+    } catch (error) {
+        console.error('Error in deep discover:', error);
+        res.status(500).json({ error: 'Failed to discover media' });
+    }
+});
+
+/**
+ * @openapi
  * /api/v1/tmdb/movie/{id}:
  *   get:
  *     tags: [TMDb]

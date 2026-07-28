@@ -316,6 +316,65 @@ class TMDbService {
   }
 
   /**
+   * Deep Discover for Movies or TV Shows with rich filters
+   */
+  async discoverMedia(options: {
+    mediaType?: 'movie' | 'tv' | 'all';
+    year?: number;
+    genreId?: number;
+    sortBy?: string;
+    page?: number;
+    query?: string;
+  }): Promise<TMDbSearchResult> {
+    const { mediaType = 'movie', year, genreId, sortBy = 'popularity.desc', page = 1, query } = options;
+    try {
+      if (query && query.trim()) {
+        if (mediaType === 'tv') {
+          return await this.requestWithRetry<TMDbSearchResult>({
+            url: '/search/tv',
+            params: { query, page, first_air_date_year: year, include_adult: false },
+          });
+        } else if (mediaType === 'movie') {
+          return await this.requestWithRetry<TMDbSearchResult>({
+            url: '/search/movie',
+            params: { query, page, primary_release_year: year, include_adult: false },
+          });
+        } else {
+          return await this.searchMulti(query, page);
+        }
+      }
+
+      const endpoint = mediaType === 'tv' ? '/discover/tv' : '/discover/movie';
+      const params: Record<string, any> = {
+        page,
+        sort_by: sortBy,
+        include_adult: false,
+        'vote_count.gte': 5,
+      };
+
+      if (year) {
+        if (mediaType === 'tv') {
+          params.first_air_date_year = year;
+        } else {
+          params.primary_release_year = year;
+        }
+      }
+
+      if (genreId) {
+        params.with_genres = genreId;
+      }
+
+      return await this.requestWithRetry<TMDbSearchResult>({
+        url: endpoint,
+        params,
+      });
+    } catch (error) {
+      console.error('Error in discoverMedia:', error);
+      throw new Error('Failed to discover media from TMDb');
+    }
+  }
+
+  /**
    * Get full image URL from path
    */
   getImageUrl(path: string | null, size: 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'original' = 'w500'): string | null {
