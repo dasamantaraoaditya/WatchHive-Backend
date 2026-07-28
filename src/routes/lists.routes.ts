@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import { lists, listItems, entries, users, follows } from '../db/schema.js';
 import { eq, and, desc, asc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
+import tmdbService from '../services/tmdb.service.js';
 
 const router = Router();
 
@@ -122,7 +123,59 @@ router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: R
             orderBy: desc(lists.updatedAt),
         });
 
-        res.json(rankingLists);
+        // Enrich items with entry details & TMDB posters/titles
+        const enrichedLists = await Promise.all(
+            rankingLists.map(async (list) => {
+                const enrichedItems = await Promise.all(
+                    (list.items || []).map(async (item) => {
+                        const [localEntry] = await db.select({
+                            title: entries.title,
+                            rating: entries.rating,
+                        }).from(entries).where(
+                            and(eq(entries.userId, userId), eq(entries.tmdbId, item.tmdbId))
+                        ).limit(1);
+
+                        let title = localEntry?.title || null;
+                        let posterPath: string | null = null;
+                        let releaseDate: string | null = null;
+                        let voteAverage: number | null = null;
+
+                        try {
+                            if (item.mediaType === 'tv') {
+                                const details = await tmdbService.getTVShowDetails(item.tmdbId);
+                                title = title || details.name;
+                                posterPath = details.poster_path;
+                                releaseDate = details.first_air_date;
+                                voteAverage = details.vote_average;
+                            } else {
+                                const details = await tmdbService.getMovieDetails(item.tmdbId);
+                                title = title || details.title;
+                                posterPath = details.poster_path;
+                                releaseDate = details.release_date;
+                                voteAverage = details.vote_average;
+                            }
+                        } catch (e) {
+                            console.error(`Failed to fetch TMDB details for tmdbId ${item.tmdbId}:`, e);
+                        }
+
+                        return {
+                            ...item,
+                            title: title || `Media #${item.tmdbId}`,
+                            posterPath,
+                            releaseDate,
+                            voteAverage: localEntry?.rating ? Number(localEntry.rating) : voteAverage,
+                        };
+                    })
+                );
+
+                return {
+                    ...list,
+                    items: enrichedItems,
+                };
+            })
+        );
+
+        res.json(enrichedLists);
     } catch (error) {
         console.error('Error fetching user rankings:', error);
         res.status(500).json({ error: 'Failed to fetch user rankings' });
