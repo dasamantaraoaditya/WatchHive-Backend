@@ -326,48 +326,105 @@ class TMDbService {
     page?: number;
     query?: string;
   }): Promise<TMDbSearchResult> {
-    const { mediaType = 'movie', year, genreId, sortBy = 'popularity.desc', page = 1, query } = options;
+    const { mediaType = 'all', year, genreId, sortBy = 'popularity.desc', page = 1, query } = options;
     try {
       if (query && query.trim()) {
-        if (mediaType === 'tv') {
-          return await this.requestWithRetry<TMDbSearchResult>({
-            url: '/search/tv',
-            params: { query, page, first_air_date_year: year, include_adult: false },
-          });
-        } else if (mediaType === 'movie') {
-          return await this.requestWithRetry<TMDbSearchResult>({
+        const cleanQuery = query.trim();
+        let movies: TMDbMovie[] = [];
+        let tvs: TMDbTVShow[] = [];
+
+        if (mediaType === 'movie' || mediaType === 'all') {
+          const res = await this.requestWithRetry<TMDbSearchResult>({
             url: '/search/movie',
-            params: { query, page, primary_release_year: year, include_adult: false },
+            params: { query: cleanQuery, page, primary_release_year: year, include_adult: false },
           });
-        } else {
-          return await this.searchMulti(query, page);
+          movies = (res.results || []).map((m: any) => ({ ...m, media_type: 'movie' }));
         }
+
+        if (mediaType === 'tv' || mediaType === 'all') {
+          const res = await this.requestWithRetry<TMDbSearchResult>({
+            url: '/search/tv',
+            params: { query: cleanQuery, page, first_air_date_year: year, include_adult: false },
+          });
+          tvs = (res.results || []).map((t: any) => ({ ...t, media_type: 'tv' }));
+        }
+
+        let combined: any[] = [...movies, ...tvs];
+
+        // Filter by genre if specified
+        if (genreId && genreId > 0) {
+          combined = combined.filter((item: any) => item.genre_ids && item.genre_ids.includes(genreId));
+        }
+
+        // Apply sorting
+        if (sortBy === 'primary_release_date.desc' || sortBy === 'release_date.desc') {
+          combined.sort((a: any, b: any) => {
+            const dateA = new Date(a.release_date || a.first_air_date || 0).getTime();
+            const dateB = new Date(b.release_date || b.first_air_date || 0).getTime();
+            return dateB - dateA;
+          });
+        } else if (sortBy === 'vote_average.desc') {
+          combined.sort((a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0));
+        } else {
+          combined.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
+        }
+
+        return {
+          page,
+          results: combined,
+          total_pages: 1,
+          total_results: combined.length,
+        };
       }
 
-      const endpoint = mediaType === 'tv' ? '/discover/tv' : '/discover/movie';
-      const params: Record<string, any> = {
+      // If no query string, call /discover/movie and/or /discover/tv
+      let results: any[] = [];
+      let totalPages = 1;
+
+      if (mediaType === 'movie' || mediaType === 'all') {
+        const params: Record<string, any> = {
+          page,
+          sort_by: sortBy === 'release_date.desc' ? 'primary_release_date.desc' : sortBy,
+          include_adult: false,
+          'vote_count.gte': 5,
+        };
+        if (year) params.primary_release_year = year;
+        if (genreId && genreId > 0) params.with_genres = genreId;
+
+        const res = await this.requestWithRetry<TMDbSearchResult>({
+          url: '/discover/movie',
+          params,
+        });
+        const m = (res.results || []).map((r: any) => ({ ...r, media_type: 'movie' }));
+        results = [...results, ...m];
+        totalPages = Math.max(totalPages, res.total_pages || 1);
+      }
+
+      if (mediaType === 'tv') {
+        const params: Record<string, any> = {
+          page,
+          sort_by: sortBy === 'release_date.desc' ? 'first_air_date.desc' : sortBy,
+          include_adult: false,
+          'vote_count.gte': 5,
+        };
+        if (year) params.first_air_date_year = year;
+        if (genreId && genreId > 0) params.with_genres = genreId;
+
+        const res = await this.requestWithRetry<TMDbSearchResult>({
+          url: '/discover/tv',
+          params,
+        });
+        const t = (res.results || []).map((r: any) => ({ ...r, media_type: 'tv' }));
+        results = [...results, ...t];
+        totalPages = Math.max(totalPages, res.total_pages || 1);
+      }
+
+      return {
         page,
-        sort_by: sortBy,
-        include_adult: false,
-        'vote_count.gte': 5,
+        results,
+        total_pages: totalPages,
+        total_results: results.length,
       };
-
-      if (year) {
-        if (mediaType === 'tv') {
-          params.first_air_date_year = year;
-        } else {
-          params.primary_release_year = year;
-        }
-      }
-
-      if (genreId) {
-        params.with_genres = genreId;
-      }
-
-      return await this.requestWithRetry<TMDbSearchResult>({
-        url: endpoint,
-        params,
-      });
     } catch (error) {
       console.error('Error in discoverMedia:', error);
       throw new Error('Failed to discover media from TMDb');
