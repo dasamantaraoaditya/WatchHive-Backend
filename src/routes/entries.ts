@@ -728,7 +728,7 @@ router.get('/stats/summary', authMiddleware, async (req: Request, res: Response)
 router.get('/compare/:targetUserId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const { targetUserId } = req.params;
-        const currentUserId = (req as any).user.userId;
+        const currentUserId = (req as any).user?.userId || (req as any).user?.id;
 
         // Fetch both users
         const [currentUser] = await db.select().from(users).where(eq(users.id, currentUserId)).limit(1);
