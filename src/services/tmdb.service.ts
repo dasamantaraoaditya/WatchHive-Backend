@@ -195,10 +195,26 @@ class TMDbService {
    */
   async getMovieDetails(movieId: number): Promise<TMDbMovieDetails> {
     try {
-      return await this.requestWithRetry<TMDbMovieDetails>({
+      const details = await this.requestWithRetry<TMDbMovieDetails>({
         url: `/movie/${movieId}`,
-        params: { append_to_response: 'watch/providers' },
+        params: { append_to_response: 'watch/providers,credits,external_ids' },
       });
+      if (details) {
+        const imdbId = (details as any)?.external_ids?.imdb_id || (details as any)?.imdb_id;
+        if (imdbId) {
+          try {
+            const omdbRes = await axios.get(`https://www.omdbapi.com/?i=${imdbId}&apikey=trilogy`, { timeout: 2500 });
+            if (omdbRes.data && omdbRes.data.Response !== 'False') {
+              (details as any).awards = omdbRes.data.Awards !== 'N/A' ? omdbRes.data.Awards : null;
+              (details as any).critic_ratings = omdbRes.data.Ratings || [];
+              (details as any).box_office = omdbRes.data.BoxOffice !== 'N/A' ? omdbRes.data.BoxOffice : null;
+            }
+          } catch (e) {
+            // Silently ignore OMDB timeouts or network glitches
+          }
+        }
+      }
+      return details;
     } catch (error: any) {
       if (error?.response?.status === 404) {
         return null as any;
@@ -213,16 +229,48 @@ class TMDbService {
    */
   async getTVShowDetails(tvId: number): Promise<TMDbTVShowDetails> {
     try {
-      return await this.requestWithRetry<TMDbTVShowDetails>({
+      const details = await this.requestWithRetry<TMDbTVShowDetails>({
         url: `/tv/${tvId}`,
-        params: { append_to_response: 'watch/providers' },
+        params: { append_to_response: 'watch/providers,credits,aggregate_credits,external_ids' },
       });
+      if (details) {
+        const imdbId = (details as any)?.external_ids?.imdb_id;
+        if (imdbId) {
+          try {
+            const omdbRes = await axios.get(`https://www.omdbapi.com/?i=${imdbId}&apikey=trilogy`, { timeout: 2500 });
+            if (omdbRes.data && omdbRes.data.Response !== 'False') {
+              (details as any).awards = omdbRes.data.Awards !== 'N/A' ? omdbRes.data.Awards : null;
+              (details as any).critic_ratings = omdbRes.data.Ratings || [];
+            }
+          } catch (e) {
+            // Silently ignore OMDB timeouts or network glitches
+          }
+        }
+      }
+      return details;
     } catch (error: any) {
       if (error?.response?.status === 404) {
         return null as any;
       }
       console.error('Error getting TV show details:', error);
       throw new Error('Failed to get TV show details from TMDb');
+    }
+  }
+
+  /**
+   * Get TV season details by TV ID and Season Number
+   */
+  async getTVSeasonDetails(tvId: number, seasonNumber: number): Promise<any> {
+    try {
+      return await this.requestWithRetry({
+        url: `/tv/${tvId}/season/${seasonNumber}`,
+      });
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        return null;
+      }
+      console.error(`Error getting TV season details for tvId ${tvId} season ${seasonNumber}:`, error);
+      throw new Error('Failed to get TV season details from TMDb');
     }
   }
 

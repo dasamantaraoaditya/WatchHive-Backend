@@ -278,6 +278,29 @@ router.get('/tv/:id', authMiddleware, async (req: Request, res: Response): Promi
     }
 });
 
+router.get('/tv/:id/season/:seasonNumber', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id, seasonNumber } = req.params;
+        const tvId = parseInt(id, 10);
+        const sNum = parseInt(seasonNumber, 10);
+
+        if (isNaN(tvId) || isNaN(sNum)) {
+            res.status(400).json({ error: 'Invalid TV ID or Season Number' });
+            return;
+        }
+
+        const seasonDetails = await tmdbService.getTVSeasonDetails(tvId, sNum);
+        if (!seasonDetails) {
+            res.status(404).json({ error: 'Season not found on TMDb' });
+            return;
+        }
+        res.json(seasonDetails);
+    } catch (error) {
+        console.error('Error getting TV season details:', error);
+        res.status(500).json({ error: 'Failed to get TV season details' });
+    }
+});
+
 /**
  * @openapi
  * /api/v1/tmdb/popular/movies:
