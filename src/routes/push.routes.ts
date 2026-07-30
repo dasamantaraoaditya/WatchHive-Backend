@@ -124,4 +124,30 @@ router.delete('/unsubscribe', authMiddleware, async (req: Request, res: Response
     }
 });
 
+/**
+ * @openapi
+ * /api/v1/push/test:
+ *   post:
+ *     tags: [Push]
+ *     summary: Send a test push notification to current user
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Test push notification sent
+ */
+router.post('/test', authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const userId = req.user!.userId;
+        await pushService.sendPushNotification(userId, 'LIKE', {
+            actorName: 'WatchHive Test Bot',
+            entryTitle: 'Push Notifications Setup',
+        });
+        res.json({ success: true, message: 'Test push notification dispatched' });
+    } catch (error) {
+        console.error('Error sending test push:', error);
+        res.status(500).json({ error: 'Failed to send test push' });
+    }
+});
+
 export default router;

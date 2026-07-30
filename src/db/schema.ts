@@ -182,7 +182,7 @@ export const suggestions = pgTable('suggestions', {
 // Push Subscriptions Table (Web Push)
 export const pushSubscriptions = pgTable('push_subscriptions', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     endpoint: text('endpoint').notNull().unique(),
     p256dh: text('p256dh').notNull(),
     auth: text('auth').notNull(),
