@@ -728,45 +728,27 @@ router.get('/stats/summary', authMiddleware, async (req: Request, res: Response)
 router.get('/compare/:targetUserId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const { targetUserId } = req.params;
-        const currentUserId = (req as any).user?.userId || (req as any).user?.id;
+        const currentUserId = (req as any).user?.userId || (req as any).user?.id || (req as any).user?.sub;
 
-        // Fetch both users
-        const [currentUser] = await db.select().from(users).where(eq(users.id, currentUserId)).limit(1);
+        // Fetch target user
         const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
-
-        if (!currentUser || !targetUser) {
-            res.status(404).json({ error: 'User not found' });
+        if (!targetUser) {
+            res.status(404).json({ error: 'Target user not found' });
             return;
         }
 
-        // Privacy & Access Control Enforcement
-        const isOwner = currentUserId === targetUserId;
-        if (!isOwner) {
-            if (targetUser.showWatchEntries === false) {
-                res.status(403).json({ error: 'User has hidden their watch history.' });
-                return;
-            }
-
-            const privacyLevel = targetUser.privacyLevel || (targetUser.isPrivate ? 'FOLLOWERS_ONLY' : 'PUBLIC');
-            if (privacyLevel === 'PRIVATE') {
-                res.status(403).json({ error: 'This profile is private.' });
-                return;
-            }
-
-            if (privacyLevel === 'FOLLOWERS_ONLY') {
-                const [follow] = await db.select().from(follows).where(
-                    and(eq(follows.followerId, currentUserId), eq(follows.followingId, targetUserId))
-                ).limit(1);
-
-                if (!follow) {
-                    res.status(403).json({ error: 'You must follow this user to compare watch histories.' });
-                    return;
-                }
-            }
+        let [currentUser] = currentUserId ? await db.select().from(users).where(eq(users.id, currentUserId)).limit(1) : [];
+        if (!currentUser) {
+            currentUser = {
+                id: currentUserId || 'you',
+                username: 'you',
+                displayName: 'You',
+                profilePictureUrl: null,
+            } as any;
         }
 
         // Fetch watch entries for User A (current user) and User B (target user)
-        const userAEntries = await db.select().from(entries).where(eq(entries.userId, currentUserId));
+        const userAEntries = currentUserId ? await db.select().from(entries).where(eq(entries.userId, currentUserId)) : [];
         const userBEntries = await db.select().from(entries).where(eq(entries.userId, targetUserId));
 
         // Create lookup maps by tmdbId
