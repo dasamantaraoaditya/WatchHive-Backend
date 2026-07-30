@@ -720,4 +720,143 @@ router.get('/stats/summary', authMiddleware, async (req: Request, res: Response)
     }
 });
 
+/**
+ * GET /api/v1/entries/compare/:targetUserId
+ * Compare current user's watch history with target user's watch history
+ * Subject to privacy settings and follow relationships.
+ */
+router.get('/compare/:targetUserId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { targetUserId } = req.params;
+        const currentUserId = (req as any).user.userId;
+
+        // Fetch both users
+        const [currentUser] = await db.select().from(users).where(eq(users.id, currentUserId)).limit(1);
+        const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
+
+        if (!currentUser || !targetUser) {
+            res.status(404).json({ error: 'User not found' });
+            return;
+        }
+
+        // Privacy & Access Control Enforcement
+        const isOwner = currentUserId === targetUserId;
+        if (!isOwner) {
+            if (targetUser.showWatchEntries === false) {
+                res.status(403).json({ error: 'User has hidden their watch history.' });
+                return;
+            }
+
+            const privacyLevel = targetUser.privacyLevel || (targetUser.isPrivate ? 'FOLLOWERS_ONLY' : 'PUBLIC');
+            if (privacyLevel === 'PRIVATE') {
+                res.status(403).json({ error: 'This profile is private.' });
+                return;
+            }
+
+            if (privacyLevel === 'FOLLOWERS_ONLY') {
+                const [follow] = await db.select().from(follows).where(
+                    and(eq(follows.followerId, currentUserId), eq(follows.followingId, targetUserId))
+                ).limit(1);
+
+                if (!follow) {
+                    res.status(403).json({ error: 'You must follow this user to compare watch histories.' });
+                    return;
+                }
+            }
+        }
+
+        // Fetch watch entries for User A (current user) and User B (target user)
+        const userAEntries = await db.select().from(entries).where(eq(entries.userId, currentUserId));
+        const userBEntries = await db.select().from(entries).where(eq(entries.userId, targetUserId));
+
+        // Create lookup maps by tmdbId
+        const userAMap = new Map<number, typeof userAEntries[0]>();
+        userAEntries.forEach(e => userAMap.set(e.tmdbId, e));
+
+        const userBMap = new Map<number, typeof userBEntries[0]>();
+        userBEntries.forEach(e => userBMap.set(e.tmdbId, e));
+
+        const allTmdbIds = Array.from(new Set([...userAMap.keys(), ...userBMap.keys()]));
+
+        const commonItems: any[] = [];
+        const userAOnlyItems: any[] = [];
+        const userBOnlyItems: any[] = [];
+
+        for (const tmdbId of allTmdbIds) {
+            const entryA = userAMap.get(tmdbId);
+            const entryB = userBMap.get(tmdbId);
+
+            if (entryA && entryB) {
+                commonItems.push({
+                    tmdbId,
+                    title: entryA.title || entryB.title,
+                    type: entryA.type || entryB.type,
+                    entryA: {
+                        id: entryA.id,
+                        rating: entryA.rating,
+                        review: entryA.review,
+                        watchedAt: entryA.watchedAt,
+                    },
+                    entryB: {
+                        id: entryB.id,
+                        rating: entryB.rating,
+                        review: entryB.review,
+                        watchedAt: entryB.watchedAt,
+                    },
+                });
+            } else if (entryA) {
+                userAOnlyItems.push({
+                    tmdbId,
+                    title: entryA.title,
+                    type: entryA.type,
+                    rating: entryA.rating,
+                    watchedAt: entryA.watchedAt,
+                });
+            } else if (entryB) {
+                userBOnlyItems.push({
+                    tmdbId,
+                    title: entryB.title,
+                    type: entryB.type,
+                    rating: entryB.rating,
+                    watchedAt: entryB.watchedAt,
+                });
+            }
+        }
+
+        // Calculate Compatibility / Swarm Match Score
+        const totalUniqueTitles = allTmdbIds.length;
+        const matchPercentage = totalUniqueTitles > 0
+            ? Math.round((commonItems.length / totalUniqueTitles) * 100)
+            : 0;
+
+        res.json({
+            userA: {
+                id: currentUser.id,
+                username: currentUser.username,
+                displayName: currentUser.displayName,
+                profilePictureUrl: currentUser.profilePictureUrl,
+            },
+            userB: {
+                id: targetUser.id,
+                username: targetUser.username,
+                displayName: targetUser.displayName,
+                profilePictureUrl: targetUser.profilePictureUrl,
+            },
+            stats: {
+                matchPercentage,
+                totalCommon: commonItems.length,
+                totalUserAOnly: userAOnlyItems.length,
+                totalUserBOnly: userBOnlyItems.length,
+                totalUnique: totalUniqueTitles,
+            },
+            commonItems,
+            userAOnlyItems,
+            userBOnlyItems,
+        });
+    } catch (error) {
+        console.error('Error comparing watch histories:', error);
+        res.status(500).json({ error: 'Failed to compare watch histories' });
+    }
+});
+
 export default router;
