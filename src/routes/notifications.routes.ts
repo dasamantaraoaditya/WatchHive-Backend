@@ -1,8 +1,69 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import notificationService from '../services/notification.service.js';
+import sseManager from '../services/sse.service.js';
+import jwt from 'jsonwebtoken';
+import { config } from '../config.js';
 
 const router = Router();
+
+/**
+ * @openapi
+ * /api/v1/notifications/stream:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: Real-time SSE notification stream
+ *     parameters:
+ *       - in: query
+ *         name: token
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: SSE event stream
+ */
+router.get('/stream', async (req: Request, res: Response): Promise<void> => {
+    try {
+        let userId: string | null = null;
+
+        // Try auth header first, fallback to query param for EventSource
+        const authHeader = req.headers.authorization;
+        const queryToken = req.query.token as string;
+        const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : queryToken;
+
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, config.jwt.secret) as { userId: string };
+                userId = decoded.userId;
+            } catch {
+                res.status(401).json({ error: 'Invalid or expired token' });
+                return;
+            }
+        }
+
+        if (!userId) {
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
+        }
+
+        // Set SSE Headers
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering for Nginx/Railway proxies
+        res.flushHeaders();
+
+        // Add connection to SSE manager
+        sseManager.addConnection(userId, res);
+
+        // Send initial connection event with current unread count
+        const unreadCount = await notificationService.getUnreadCount(userId);
+        res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', unreadCount })}\n\n`);
+    } catch (error) {
+        console.error('SSE Stream Error:', error);
+        res.status(500).json({ error: 'SSE stream failed' });
+    }
+});
 
 /**
  * @openapi

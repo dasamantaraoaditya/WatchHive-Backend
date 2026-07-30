@@ -1,14 +1,17 @@
 import { db } from '../db/index.js';
 import { notifications } from '../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
+import sseManager from './sse.service.js';
+import pushService from './push.service.js';
 
 export const notificationService = {
     /**
-     * Create a notification for a user
+     * Create a notification for a user.
+     * After DB insert, pushes real-time via SSE and Web Push.
      */
     createNotification: async (
         userId: string,
-        type: any, // type will match the NotificationType enum from schema
+        type: any,
         content: any
     ) => {
         try {
@@ -20,6 +23,19 @@ export const notificationService = {
                 type,
                 content,
             }).returning();
+
+            // 1. Real-time SSE push (instant in-app delivery)
+            sseManager.sendToUser(userId, 'notification', newNotification);
+
+            // Also send updated unread count
+            const unreadCount = await notificationService.getUnreadCount(userId);
+            sseManager.sendToUser(userId, 'unread-count', { count: unreadCount });
+
+            // 2. Web Push (native OS notification for background/closed app)
+            // Fire and forget — don't block the response
+            pushService.sendPushNotification(userId, type, content).catch((err) => {
+                console.error('[Notification] Web push failed (non-blocking):', err);
+            });
 
             return newNotification;
         } catch (error) {

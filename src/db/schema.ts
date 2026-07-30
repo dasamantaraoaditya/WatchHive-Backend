@@ -179,6 +179,19 @@ export const suggestions = pgTable('suggestions', {
     tmdbIndex: index('suggestions_tmdb_id_idx').on(table.tmdbId),
 }));
 
+// Push Subscriptions Table (Web Push)
+export const pushSubscriptions = pgTable('push_subscriptions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+    userIndex: index('push_subscriptions_user_id_idx').on(table.userId),
+}));
+
 // Relations Definitions
 export const usersRelations = relations(users, ({ many }) => ({
     entries: many(entries),
@@ -190,6 +203,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     notifications: many(notifications),
     suggestionsSent: many(suggestions, { relationName: 'sentSuggestions' }),
     suggestionsReceived: many(suggestions, { relationName: 'receivedSuggestions' }),
+    pushSubscriptions: many(pushSubscriptions),
 }));
 
 export const entriesRelations = relations(entries, ({ one, many }) => ({
@@ -231,5 +245,9 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
 export const suggestionsRelations = relations(suggestions, ({ one }) => ({
     fromUser: one(users, { fields: [suggestions.fromUserId], references: [users.id], relationName: 'sentSuggestions' }),
     toUser: one(users, { fields: [suggestions.toUserId], references: [users.id], relationName: 'receivedSuggestions' }),
+}));
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
+    user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
 }));
 
