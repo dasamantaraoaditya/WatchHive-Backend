@@ -735,27 +735,54 @@ router.get('/compare/:targetUserId', authMiddleware, async (req: Request, res: R
             username: users.username,
             displayName: users.displayName,
             profilePictureUrl: users.profilePictureUrl,
+            isPrivate: users.isPrivate,
+            privacyLevel: users.privacyLevel,
+            showWatchEntries: users.showWatchEntries,
         };
 
-        // Fetch target user
+        // Fetch target user & requesting user
         const [targetUser] = await db.select(userSelectFields).from(users).where(eq(users.id, targetUserId)).limit(1);
         if (!targetUser) {
-            res.status(404).json({ error: 'Target user not found' });
+            res.status(404).json({ error: 'User not found' });
             return;
         }
 
-        let [currentUser] = currentUserId ? await db.select(userSelectFields).from(users).where(eq(users.id, currentUserId)).limit(1) : [];
+        const [currentUser] = currentUserId ? await db.select(userSelectFields).from(users).where(eq(users.id, currentUserId)).limit(1) : [];
         if (!currentUser) {
-            currentUser = {
-                id: currentUserId || 'you',
-                username: 'you',
-                displayName: 'You',
-                profilePictureUrl: null,
-            };
+            res.status(401).json({ error: 'Authentication required' });
+            return;
+        }
+
+        // Privacy & Security Access Enforcement
+        const isOwner = currentUserId === targetUserId;
+        if (!isOwner) {
+            // Check if user disabled watch entries visibility
+            if (targetUser.showWatchEntries === false) {
+                res.status(403).json({ error: 'User has hidden their watch history.' });
+                return;
+            }
+
+            // Check profile privacy level
+            const privacyLevel = targetUser.privacyLevel || (targetUser.isPrivate ? 'FOLLOWERS_ONLY' : 'PUBLIC');
+            if (privacyLevel === 'PRIVATE') {
+                res.status(403).json({ error: 'This profile is private.' });
+                return;
+            }
+
+            if (privacyLevel === 'FOLLOWERS_ONLY') {
+                const [followRecord] = await db.select().from(follows).where(
+                    and(eq(follows.followerId, currentUserId), eq(follows.followingId, targetUserId))
+                ).limit(1);
+
+                if (!followRecord) {
+                    res.status(403).json({ error: 'You must follow this user to compare watch histories.' });
+                    return;
+                }
+            }
         }
 
         // Fetch watch entries for User A (current user) and User B (target user)
-        const userAEntries = currentUserId ? await db.select().from(entries).where(eq(entries.userId, currentUserId)) : [];
+        const userAEntries = await db.select().from(entries).where(eq(entries.userId, currentUserId));
         const userBEntries = await db.select().from(entries).where(eq(entries.userId, targetUserId));
 
         // Create lookup maps by tmdbId
