@@ -730,21 +730,28 @@ router.get('/compare/:targetUserId', authMiddleware, async (req: Request, res: R
         const { targetUserId } = req.params;
         const currentUserId = (req as any).user?.userId || (req as any).user?.id || (req as any).user?.sub;
 
+        const userSelectFields = {
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            profilePictureUrl: users.profilePictureUrl,
+        };
+
         // Fetch target user
-        const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
+        const [targetUser] = await db.select(userSelectFields).from(users).where(eq(users.id, targetUserId)).limit(1);
         if (!targetUser) {
             res.status(404).json({ error: 'Target user not found' });
             return;
         }
 
-        let [currentUser] = currentUserId ? await db.select().from(users).where(eq(users.id, currentUserId)).limit(1) : [];
+        let [currentUser] = currentUserId ? await db.select(userSelectFields).from(users).where(eq(users.id, currentUserId)).limit(1) : [];
         if (!currentUser) {
             currentUser = {
                 id: currentUserId || 'you',
                 username: 'you',
                 displayName: 'You',
                 profilePictureUrl: null,
-            } as any;
+            };
         }
 
         // Fetch watch entries for User A (current user) and User B (target user)
