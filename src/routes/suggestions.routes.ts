@@ -39,71 +39,97 @@ const router = Router();
  */
 router.post('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
-        const { toUserId, tmdbId, mediaType = 'movie', title, message } = req.body;
+        const { toUserId, toUserIds, tmdbId, mediaType = 'movie', title, message } = req.body;
         const fromUserId = req.user!.userId;
 
-        if (fromUserId === toUserId) {
-            res.status(400).json({ error: 'You cannot suggest a movie to yourself' });
+        // Parse target user IDs (support single toUserId or array toUserIds)
+        let targetIds: string[] = [];
+        if (Array.isArray(toUserIds) && toUserIds.length > 0) {
+            targetIds = toUserIds.filter((id: any) => typeof id === 'string');
+        } else if (typeof toUserId === 'string' && toUserId.trim()) {
+            targetIds = [toUserId.trim()];
+        }
+
+        // Deduplicate and filter out self
+        targetIds = Array.from(new Set(targetIds)).filter(id => id !== fromUserId);
+
+        if (targetIds.length === 0) {
+            res.status(400).json({ error: 'Please select at least one valid recipient' });
             return;
         }
 
-        // Validate that fromUser follows toUser (or vice-versa depending on interpretation)
-        // User request: "let other people... who I am following... suggest me"
-        // This means toUserId (the recipient) must be someone who followerId (the sender) IS FOLLOWED BY.
-        // Wait, "people who I am following" suggest ME. So "toUser" (me) is followed by "fromUser" (them).
-        // Let's check if there's a follow relationship. 
-        // We'll allow it if fromUserId follows toUserId.
-        const [isFollowing] = await db
-            .select()
-            .from(follows)
-            .where(and(eq(follows.followerId, fromUserId), eq(follows.followingId, toUserId)))
-            .limit(1);
-
-        // Also check reverse follow (just in case they meant friends)
-        const [isFollowedBy] = await db
-            .select()
-            .from(follows)
-            .where(and(eq(follows.followerId, toUserId), eq(follows.followingId, fromUserId)))
-            .limit(1);
-
-        if (!isFollowing && !isFollowedBy) {
-            res.status(403).json({ error: 'You can only suggest movies to users you are connected with' });
-            return;
-        }
-
-        const [suggestion] = await db
-            .insert(suggestions)
-            .values({
-                fromUserId,
-                toUserId,
-                tmdbId,
-                mediaType,
-                message,
-            })
-            .returning();
-
-        // Send notification
         const [actor] = await db
             .select({ displayName: users.displayName, username: users.username })
             .from(users)
             .where(eq(users.id, fromUserId))
             .limit(1);
-        
+
         const actorName = actor?.displayName || actor?.username || 'Someone';
 
-        await notificationService.createNotification(toUserId, 'SUGGESTION', {
-            actorId: fromUserId,
-            actorName,
-            tmdbId,
-            mediaType,
-            title,
-            message
-        });
+        const createdSuggestions: any[] = [];
+        const errors: string[] = [];
 
-        res.status(201).json(suggestion);
+        for (const recipientId of targetIds) {
+            try {
+                // Validate connection (either following or followed by)
+                const [isFollowing] = await db
+                    .select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, fromUserId), eq(follows.followingId, recipientId)))
+                    .limit(1);
+
+                const [isFollowedBy] = await db
+                    .select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, recipientId), eq(follows.followingId, fromUserId)))
+                    .limit(1);
+
+                if (!isFollowing && !isFollowedBy) {
+                    errors.push(`Not connected with user ${recipientId}`);
+                    continue;
+                }
+
+                const [suggestion] = await db
+                    .insert(suggestions)
+                    .values({
+                        fromUserId,
+                        toUserId: recipientId,
+                        tmdbId,
+                        mediaType,
+                        message: message?.trim() || null,
+                    })
+                    .returning();
+
+                // Trigger real-time SSE + Web Push Notification
+                await notificationService.createNotification(recipientId, 'SUGGESTION', {
+                    actorId: fromUserId,
+                    actorName,
+                    tmdbId,
+                    mediaType,
+                    title,
+                    message: message?.trim() || null
+                });
+
+                createdSuggestions.push(suggestion);
+            } catch (err: any) {
+                console.error(`Failed to send suggestion to ${recipientId}:`, err);
+            }
+        }
+
+        if (createdSuggestions.length === 0) {
+            res.status(403).json({ error: errors[0] || 'Could not send suggestions to selected users' });
+            return;
+        }
+
+        res.status(201).json({
+            message: `Suggestion sent to ${createdSuggestions.length} user(s)`,
+            count: createdSuggestions.length,
+            suggestions: createdSuggestions,
+            ...createdSuggestions[0]
+        });
     } catch (error) {
-        console.error('Error sending suggestion:', error);
-        res.status(500).json({ error: 'Failed to send suggestion' });
+        console.error('Error sending suggestions:', error);
+        res.status(500).json({ error: 'Failed to send suggestions' });
     }
 });
 
