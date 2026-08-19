@@ -123,17 +123,25 @@ router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: R
             orderBy: desc(lists.updatedAt),
         });
 
-        // Enrich items with entry details & TMDB posters/titles
+        // Deduplicate items per list
         const enrichedLists = await Promise.all(
             rankingLists.map(async (list) => {
+                const uniqueItemsMap = new Map<number, typeof list.items[0]>();
+                (list.items || []).forEach(item => {
+                    if (!uniqueItemsMap.has(item.tmdbId)) {
+                        uniqueItemsMap.set(item.tmdbId, item);
+                    }
+                });
+                const uniqueItems = Array.from(uniqueItemsMap.values());
+
                 const enrichedItems = await Promise.all(
-                    (list.items || []).map(async (item) => {
+                    uniqueItems.map(async (item) => {
                         const [localEntry] = await db.select({
                             title: entries.title,
                             rating: entries.rating,
                         }).from(entries).where(
                             and(eq(entries.userId, userId), eq(entries.tmdbId, item.tmdbId))
-                        ).limit(1);
+                        ).orderBy(desc(entries.watchedAt)).limit(1);
 
                         let title = localEntry?.title || null;
                         let posterPath: string | null = null;
@@ -293,21 +301,20 @@ router.post('/:listId/items', authMiddleware, async (req: Request, res: Response
             return;
         }
 
-        // Check if item already exists
+        // Check if item already exists in this list
         const [existing] = await db
             .select()
             .from(listItems)
             .where(
                 and(
                     eq(listItems.listId, listId),
-                    eq(listItems.tmdbId, Number(tmdbId)),
-                    eq(listItems.mediaType, mediaType || 'movie')
+                    eq(listItems.tmdbId, Number(tmdbId))
                 )
             )
             .limit(1);
 
         if (existing) {
-            res.status(400).json({ error: 'Item already in list' });
+            res.status(400).json({ error: 'Item is already in this stack' });
             return;
         }
 
@@ -454,31 +461,65 @@ router.get('/:listId/ranked', authMiddleware, async (req: Request, res: Response
             return;
         }
 
-        // Fetch items joined with entries (to get genres/rating from local log if exists)
-        // We use left join because user might rank movies they haven't logged yet
-        const rankedItems = await db
+        // Fetch list items without raw SQL join duplication
+        const rawItems = await db
             .select({
+                id: listItems.id,
+                listId: listItems.listId,
                 tmdbId: listItems.tmdbId,
                 mediaType: listItems.mediaType,
                 orderIndex: listItems.orderIndex,
                 addedAt: listItems.addedAt,
-                // From entries
-                localRating: entries.rating,
-                localReview: entries.review,
-                tags: entries.tags,
-                watchedAt: entries.watchedAt,
-                title: entries.title, // Fallback if entry exists
             })
             .from(listItems)
-            .leftJoin(
-                entries,
-                and(
-                    eq(listItems.tmdbId, entries.tmdbId),
-                    eq(entries.userId, list.userId)
-                )
-            )
             .where(eq(listItems.listId, listId))
             .orderBy(asc(listItems.orderIndex));
+
+        // Deduplicate listItems by tmdbId
+        const uniqueItemsMap = new Map<number, typeof rawItems[0]>();
+        rawItems.forEach(item => {
+            if (!uniqueItemsMap.has(item.tmdbId)) {
+                uniqueItemsMap.set(item.tmdbId, item);
+            }
+        });
+        const uniqueItems = Array.from(uniqueItemsMap.values());
+
+        // Enrich with latest single local entry per tmdbId
+        const rankedItems = await Promise.all(
+            uniqueItems.map(async (item) => {
+                const [localEntry] = await db
+                    .select({
+                        rating: entries.rating,
+                        review: entries.review,
+                        tags: entries.tags,
+                        watchedAt: entries.watchedAt,
+                        title: entries.title,
+                    })
+                    .from(entries)
+                    .where(
+                        and(
+                            eq(entries.userId, list.userId),
+                            eq(entries.tmdbId, item.tmdbId)
+                        )
+                    )
+                    .orderBy(desc(entries.watchedAt))
+                    .limit(1);
+
+                return {
+                    id: item.id,
+                    listId: item.listId,
+                    tmdbId: item.tmdbId,
+                    mediaType: item.mediaType,
+                    orderIndex: item.orderIndex,
+                    addedAt: item.addedAt,
+                    localRating: localEntry?.rating || null,
+                    localReview: localEntry?.review || null,
+                    tags: localEntry?.tags || [],
+                    watchedAt: localEntry?.watchedAt || null,
+                    title: localEntry?.title || null,
+                };
+            })
+        );
 
         // Note: For movies without local entries, frontend will fetch metadata from TMDB.
         // For filtering, if we only have local metadata, we filter here.
