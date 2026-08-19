@@ -90,19 +90,36 @@ router.post('/:userId', authMiddleware, async (req: Request, res: Response): Pro
             .limit(1);
         const actorName = actor?.displayName || actor?.username || 'Someone';
 
-        // 3. Always enter a pending follow request state (requiring target user approval)
-        const [request] = await db
-            .insert(followRequests)
-            .values({ senderId: followerId, recipientId: followingId })
-            .returning();
+        // Check target user's privacy level
+        const isPrivateAccount = userToFollow.privacyLevel === 'FOLLOWERS_ONLY' || 
+                                 userToFollow.privacyLevel === 'PRIVATE' || 
+                                 userToFollow.isPrivate === true;
 
-        await notificationService.createNotification(followingId, 'FOLLOW_REQUEST', {
-            actorId: followerId,
-            actorName,
-            requestId: request.id
-        });
+        if (isPrivateAccount) {
+            // Require approval for private accounts
+            const [request] = await db
+                .insert(followRequests)
+                .values({ senderId: followerId, recipientId: followingId })
+                .returning();
 
-        res.status(201).json({ message: 'Follow request sent', status: 'requested' });
+            await notificationService.createNotification(followingId, 'FOLLOW_REQUEST', {
+                actorId: followerId,
+                actorName,
+                requestId: request.id
+            });
+
+            res.status(201).json({ message: 'Follow request sent', status: 'requested' });
+        } else {
+            // Direct instant follow for public accounts
+            await db.insert(follows).values({ followerId, followingId });
+
+            await notificationService.createNotification(followingId, 'FOLLOW_ACCEPT', {
+                actorId: followerId,
+                actorName
+            });
+
+            res.status(201).json({ message: 'Followed user successfully', status: 'following' });
+        }
     } catch (error) {
         console.error('Error following user:', error);
         res.status(500).json({ error: 'Failed to follow user' });
