@@ -416,9 +416,41 @@ router.delete('/:userId', authMiddleware, async (req: Request, res: Response): P
 router.get('/:userId/followers', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.params.userId;
+        const currentUserId = req.user!.userId;
         const page = parseInt(req.query.page as string, 10) || 1;
         const limit = parseInt(req.query.limit as string, 10) || 20;
         const offset = (page - 1) * limit;
+
+        // Privacy check
+        if (userId !== currentUserId) {
+            const [targetUser] = await db
+                .select({ isPrivate: users.isPrivate, privacyLevel: users.privacyLevel })
+                .from(users)
+                .where(eq(users.id, userId))
+                .limit(1);
+
+            if (!targetUser) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            const isPrivateAccount = targetUser.privacyLevel === 'FOLLOWERS_ONLY' || 
+                                     targetUser.privacyLevel === 'PRIVATE' || 
+                                     targetUser.isPrivate === true;
+
+            if (isPrivateAccount) {
+                const [followRecord] = await db
+                    .select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, currentUserId), eq(follows.followingId, userId)))
+                    .limit(1);
+
+                if (!followRecord) {
+                    res.status(403).json({ error: 'This profile is private. Follow to view followers list.' });
+                    return;
+                }
+            }
+        }
 
         const [followersList, [{ total }]] = await Promise.all([
             db.select({
@@ -475,9 +507,41 @@ router.get('/:userId/followers', authMiddleware, async (req: Request, res: Respo
 router.get('/:userId/following', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.params.userId;
+        const currentUserId = req.user!.userId;
         const page = parseInt(req.query.page as string, 10) || 1;
         const limit = parseInt(req.query.limit as string, 10) || 20;
         const offset = (page - 1) * limit;
+
+        // Privacy check
+        if (userId !== currentUserId) {
+            const [targetUser] = await db
+                .select({ isPrivate: users.isPrivate, privacyLevel: users.privacyLevel })
+                .from(users)
+                .where(eq(users.id, userId))
+                .limit(1);
+
+            if (!targetUser) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            const isPrivateAccount = targetUser.privacyLevel === 'FOLLOWERS_ONLY' || 
+                                     targetUser.privacyLevel === 'PRIVATE' || 
+                                     targetUser.isPrivate === true;
+
+            if (isPrivateAccount) {
+                const [followRecord] = await db
+                    .select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, currentUserId), eq(follows.followingId, userId)))
+                    .limit(1);
+
+                if (!followRecord) {
+                    res.status(403).json({ error: 'This profile is private. Follow to view following list.' });
+                    return;
+                }
+            }
+        }
 
         const [followingList, [{ total }]] = await Promise.all([
             db.select({

@@ -621,15 +621,17 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
         const incomingRequestId = incomingReq ? incomingReq.id : null;
 
         // Privacy determination
-        const privacyLevel = user.privacyLevel || (user.isPrivate ? 'FOLLOWERS_ONLY' : 'PUBLIC');
+        const isPrivateAccount = user.privacyLevel === 'FOLLOWERS_ONLY' || 
+                                 user.privacyLevel === 'PRIVATE' || 
+                                 user.isPrivate === true;
         
         let canViewStats = isOwner;
         if (!isOwner) {
-            if (isRequested) {
+            if (isRequested || user.privacyLevel === 'PRIVATE') {
                 canViewStats = false;
-            } else if (privacyLevel === 'PUBLIC') {
+            } else if (!isPrivateAccount) {
                 canViewStats = true;
-            } else if (privacyLevel === 'FOLLOWERS_ONLY' && isFollowing) {
+            } else if (isPrivateAccount && isFollowing) {
                 canViewStats = true;
             }
         }
