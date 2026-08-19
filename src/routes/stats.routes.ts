@@ -32,22 +32,25 @@ const router = Router();
 router.get('/detailed', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user.userId;
-        const days = parseInt(req.query.days as string) || 30;
+        const daysParam = parseInt(req.query.days as string);
+        const days = isNaN(daysParam) ? 30 : daysParam;
         const typeFilter = req.query.type as string;
         const genreFilter = req.query.genre as string;
-        const minRating = parseInt(req.query.minRating as string) || 0;
-
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - days);
+        const minRating = parseFloat(req.query.minRating as string) || 0;
 
         // 1. Build Base Conditions
-        const conditions = [
-            eq(entries.userId, userId),
-            gte(entries.watchedAt, startDate)
-        ];
+        const conditions = [eq(entries.userId, userId)];
+
+        if (days > 0) {
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - days);
+            conditions.push(gte(entries.watchedAt, startDate));
+        }
 
         if (typeFilter) conditions.push(eq(entries.type, typeFilter as any));
-        if (minRating > 0) conditions.push(gte(sql`CAST(${entries.rating} AS INTEGER)`, minRating));
+        if (minRating > 0) {
+            conditions.push(gte(sql`CAST(NULLIF(${entries.rating}, '') AS NUMERIC)`, minRating));
+        }
 
         const whereClause = and(...conditions);
 
@@ -64,6 +67,18 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             .where(whereClause)
             .orderBy(desc(entries.watchedAt));
 
+        // Also fetch all user tags for availableGenres filter dropdown
+        const allUserEntries = await db.select({ tags: entries.tags }).from(entries).where(eq(entries.userId, userId));
+        const genreMap = new Map<string, number>();
+        allUserEntries.forEach(e => {
+            if (e.tags && Array.isArray(e.tags)) {
+                e.tags.forEach(tag => genreMap.set(tag, (genreMap.get(tag) || 0) + 1));
+            }
+        });
+        const availableGenres = Array.from(genreMap.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([name]) => name);
+
         // Filter by genre in memory if tag filter is provided
         const filteredEntries = genreFilter 
             ? userEntries.filter(e => e.tags && Array.isArray(e.tags) && e.tags.some(t => t.toLowerCase() === genreFilter.toLowerCase()))
@@ -71,7 +86,8 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
 
         // 3. Aggregate Time Series (Daily counts + Item lists)
         const timeSeriesMap = new Map<string, { count: number, items: any[] }>();
-        for (let i = 0; i < days; i++) {
+        const daysSpan = days > 0 ? days : 30;
+        for (let i = 0; i < daysSpan; i++) {
             const d = new Date();
             d.setDate(d.getDate() - i);
             timeSeriesMap.set(d.toISOString().split('T')[0], { count: 0, items: [] });
@@ -79,11 +95,12 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
 
         filteredEntries.forEach(e => {
             const dateStr = new Date(e.watchedAt).toISOString().split('T')[0];
-            if (timeSeriesMap.has(dateStr)) {
-                const data = timeSeriesMap.get(dateStr)!;
-                data.count++;
-                data.items.push({ id: e.id, title: e.title, type: e.type, rating: e.rating, watchedAt: e.watchedAt });
+            if (!timeSeriesMap.has(dateStr)) {
+                timeSeriesMap.set(dateStr, { count: 0, items: [] });
             }
+            const data = timeSeriesMap.get(dateStr)!;
+            data.count++;
+            data.items.push({ id: e.id, title: e.title, type: e.type, rating: e.rating, watchedAt: e.watchedAt });
         });
 
         const timeSeries = Array.from(timeSeriesMap.entries())
