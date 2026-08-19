@@ -107,19 +107,7 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             .map(([date, data]) => ({ date, count: data.count, items: data.items }))
             .sort((a, b) => a.date.localeCompare(b.date));
 
-        // 4. Aggregate Genre Breakdown (Top 20 for filters)
-        const genreMap = new Map<string, number>();
-        userEntries.forEach(e => {
-            if (e.tags && Array.isArray(e.tags)) {
-                e.tags.forEach(tag => genreMap.set(tag, (genreMap.get(tag) || 0) + 1));
-            }
-        });
-
-        const availableGenres = Array.from(genreMap.entries())
-            .sort((a, b) => b[1] - a[1])
-            .map(([name]) => name);
-
-        // 5. Aggregate Type Breakdown
+        // 4. Aggregate Type Breakdown
         const typeMap = new Map<string, number>();
         filteredEntries.forEach(e => {
             typeMap.set(e.type, (typeMap.get(e.type) || 0) + 1);
