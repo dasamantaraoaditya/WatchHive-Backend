@@ -127,6 +127,14 @@ router.post(
                 }
             }
 
+            if (tmdbId && !isWatching) {
+                // If logging a completed watch for a title, automatically mark any active currently-watching session for this title as completed
+                await db
+                    .update(entries)
+                    .set({ isWatching: false, completedAt: new Date(), updatedAt: new Date() })
+                    .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId), eq(entries.isWatching, true)));
+            }
+
             // Create entry
             const [newEntry] = await db.insert(entries).values({
                 userId,
@@ -567,9 +575,17 @@ router.put(
 
             // Update entry
             const updateData = { ...req.body };
-            if (existingEntry.isWatching && updateData.isWatching === false) {
+            if (existingEntry.isWatching && (updateData.isWatching === false || updateData.rating || updateData.review)) {
+                updateData.isWatching = false;
                 updateData.completedAt = new Date();
-                updateData.watchedAt = new Date();
+                if (!updateData.watchedAt) updateData.watchedAt = new Date();
+            }
+            if (existingEntry.tmdbId && updateData.isWatching === false) {
+                // Clear any other active currently-watching sessions for this title
+                await db
+                    .update(entries)
+                    .set({ isWatching: false, completedAt: new Date(), updatedAt: new Date() })
+                    .where(and(eq(entries.userId, userId), eq(entries.tmdbId, existingEntry.tmdbId), eq(entries.isWatching, true)));
             }
             if (updateData.watchedAt) updateData.watchedAt = new Date(updateData.watchedAt);
             if (updateData.startedAt) updateData.startedAt = new Date(updateData.startedAt);
