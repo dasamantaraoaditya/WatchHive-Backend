@@ -199,7 +199,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             .offset(offset);
 
         // Deduplicate rawEntries by (userId + tmdbId): if a user started watching a title and completed it, keep only the completed/reviewed entry
-        const deduplicatedRawEntries = rawEntries.filter((e, _idx, arr) => {
+        const deduplicatedRawEntries = (rawEntries as any[]).filter((e: any, _idx: number, arr: any[]) => {
             if (!e.tmdbId) return true;
             const sameUserTmdbEntries = arr.filter(item => item.tmdbId === e.tmdbId && item.userId === e.userId);
             if (sameUserTmdbEntries.length > 1) {
@@ -213,7 +213,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
 
         // Sort by "Trending Score" (Mix of Date & Engagement)
         // Note: Drizzle result already has counts mapped as properties
-        const entriesWithScores = deduplicatedRawEntries.map(entry => {
+        const entriesWithScores = (deduplicatedRawEntries as any[]).map(entry => {
             const likes = entry.likesCount || 0;
             const comments = entry.commentsCount || 0;
             const engagement = likes + (comments * 2);
@@ -277,7 +277,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         const feedItems: any[] = [];
         let suggestionIndex = (page - 1) * 2;
 
-        const mappedEntries = entriesWithScores.map(entry => ({
+        const mappedEntries = (entriesWithScores as any[]).map(entry => ({
             type: 'ENTRY',
             id: entry.id,
             timestamp: entry.updatedAt,

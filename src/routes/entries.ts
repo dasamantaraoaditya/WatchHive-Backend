@@ -450,7 +450,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
 
 
         // Map Drizzle result to Prisma-like structure for frontend compatibility
-        const formattedEntries = entriesList.map(e => ({
+        const formattedEntries = (entriesList as any[]).map(e => ({
             ...e,
             rating: e.rating ? parseFloat(e.rating) : null,
             suggestedByUser: e.suggestedByUser && e.suggestedByUser.id ? e.suggestedByUser : null,
