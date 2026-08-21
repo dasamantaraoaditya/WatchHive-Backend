@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { db } from '../db/index.js';
-import { entries } from '../db/schema.js';
-import { eq, desc } from 'drizzle-orm';
+import { entries, users, suggestions, listItems, lists } from '../db/schema.js';
+import { eq, desc, and, isNotNull, aliasedTable, count } from 'drizzle-orm';
 
 const router = Router();
 
@@ -483,6 +483,214 @@ function computeDailyTimeSeries(allEntries: any[]) {
 }
 
 /**
+ * Compute Suggestion Analytics & Recommender Influence Rankings
+ */
+async function computeSuggestionAnalytics(userId: string) {
+    try {
+        // 1. Fetch suggestions sent to this user
+        const receivedSuggestions = await db
+            .select({
+                id: suggestions.id,
+                fromUserId: suggestions.fromUserId,
+                tmdbId: suggestions.tmdbId,
+                mediaType: suggestions.mediaType,
+                createdAt: suggestions.createdAt,
+                fromUser: {
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl,
+                }
+            })
+            .from(suggestions)
+            .innerJoin(users, eq(suggestions.fromUserId, users.id))
+            .where(eq(suggestions.toUserId, userId));
+
+        // 2. Fetch user's entries that have suggestedByUserId
+        const suggestorAlias = aliasedTable(users, 'suggestor_user');
+        const suggestedEntries = await db
+            .select({
+                id: entries.id,
+                suggestedByUserId: entries.suggestedByUserId,
+                rating: entries.rating,
+                isWatching: entries.isWatching,
+                review: entries.review,
+                suggestor: {
+                    id: suggestorAlias.id,
+                    username: suggestorAlias.username,
+                    displayName: suggestorAlias.displayName,
+                    profilePictureUrl: suggestorAlias.profilePictureUrl,
+                }
+            })
+            .from(entries)
+            .innerJoin(suggestorAlias, eq(entries.suggestedByUserId, suggestorAlias.id))
+            .where(and(eq(entries.userId, userId), isNotNull(entries.suggestedByUserId)));
+
+        // 3. Fetch user's watchlist items that have suggestedByUserId
+        const userWatchlist = await db.query.lists.findFirst({
+            where: and(eq(lists.userId, userId), eq(lists.name, 'Watchlist')),
+            with: {
+                items: {
+                    where: isNotNull(listItems.suggestedByUserId),
+                    with: {
+                        suggestedByUser: {
+                            columns: {
+                                id: true,
+                                username: true,
+                                displayName: true,
+                                profilePictureUrl: true,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const watchlistSuggestedItems = userWatchlist?.items || [];
+
+        const recommenderMap = new Map<string, {
+            user: { id: string; username: string; displayName: string | null; profilePictureUrl: string | null };
+            suggestedCount: number;
+            watchedCount: number;
+            currentlyWatchingCount: number;
+            ratings: number[];
+            highHitCount: number;
+        }>();
+
+        receivedSuggestions.forEach(s => {
+            if (!s.fromUser || !s.fromUserId) return;
+            if (!recommenderMap.has(s.fromUserId)) {
+                recommenderMap.set(s.fromUserId, {
+                    user: s.fromUser,
+                    suggestedCount: 0,
+                    watchedCount: 0,
+                    currentlyWatchingCount: 0,
+                    ratings: [],
+                    highHitCount: 0,
+                });
+            }
+            recommenderMap.get(s.fromUserId)!.suggestedCount++;
+        });
+
+        suggestedEntries.forEach(e => {
+            if (!e.suggestor || !e.suggestedByUserId) return;
+            if (!recommenderMap.has(e.suggestedByUserId)) {
+                recommenderMap.set(e.suggestedByUserId, {
+                    user: e.suggestor,
+                    suggestedCount: 0,
+                    watchedCount: 0,
+                    currentlyWatchingCount: 0,
+                    ratings: [],
+                    highHitCount: 0,
+                });
+            }
+            const stats = recommenderMap.get(e.suggestedByUserId)!;
+            stats.watchedCount++;
+            if (e.isWatching) stats.currentlyWatchingCount++;
+            
+            if (e.rating) {
+                const r = parseFloat(e.rating);
+                if (r > 0) {
+                    stats.ratings.push(r);
+                    if (r >= 8.0) stats.highHitCount++;
+                }
+            }
+        });
+
+        watchlistSuggestedItems.forEach(item => {
+            if (!item.suggestedByUser || !item.suggestedByUserId) return;
+            if (!recommenderMap.has(item.suggestedByUserId)) {
+                recommenderMap.set(item.suggestedByUserId, {
+                    user: item.suggestedByUser,
+                    suggestedCount: 0,
+                    watchedCount: 0,
+                    currentlyWatchingCount: 0,
+                    ratings: [],
+                    highHitCount: 0,
+                });
+            }
+            const stats = recommenderMap.get(item.suggestedByUserId)!;
+            stats.suggestedCount = Math.max(stats.suggestedCount, stats.watchedCount + 1);
+        });
+
+        const recommendersList = Array.from(recommenderMap.values()).map(r => {
+            const totalSuggested = Math.max(r.suggestedCount, r.watchedCount);
+            const conversionRate = totalSuggested > 0 ? Math.round((r.watchedCount / totalSuggested) * 100) : 0;
+            const avgRating = r.ratings.length > 0
+                ? parseFloat((r.ratings.reduce((a, b) => a + b, 0) / r.ratings.length).toFixed(1))
+                : null;
+            
+            const influenceScore = (r.watchedCount * 15) + ((avgRating || 6) * 10) + (r.highHitCount * 20);
+
+            let badge = 'Film Friend';
+            if (conversionRate >= 75 && r.watchedCount >= 2) badge = '🏆 Top Taste Maker';
+            else if (r.highHitCount >= 2 || (avgRating && avgRating >= 8.0)) badge = '🎯 High Hit Rate';
+            else if (r.watchedCount >= 3) badge = '🔥 Trend Setter';
+
+            return {
+                userId: r.user.id,
+                username: r.user.username,
+                displayName: r.user.displayName,
+                profilePictureUrl: r.user.profilePictureUrl,
+                totalSuggested,
+                watchedCount: r.watchedCount,
+                currentlyWatchingCount: r.currentlyWatchingCount,
+                conversionRate,
+                avgRating,
+                highHitCount: r.highHitCount,
+                influenceScore: Math.round(influenceScore),
+                badge,
+            };
+        }).sort((a, b) => b.influenceScore - a.influenceScore);
+
+        const totalSuggestionsReceived = recommendersList.reduce((acc, r) => acc + r.totalSuggested, 0);
+        const totalSuggestionsWatched = recommendersList.reduce((acc, r) => acc + r.watchedCount, 0);
+        const overallConversionRate = totalSuggestionsReceived > 0 
+            ? Math.round((totalSuggestionsWatched / totalSuggestionsReceived) * 100)
+            : 0;
+
+        const topInfluencer = recommendersList[0] || null;
+        const bestTasteMatch = [...recommendersList]
+            .filter(r => r.avgRating !== null)
+            .sort((a, b) => (b.avgRating || 0) - (a.avgRating || 0))[0] || null;
+
+        const [suggestionsSent] = await db
+            .select({ count: count() })
+            .from(suggestions)
+            .where(eq(suggestions.fromUserId, userId));
+
+        return {
+            summary: {
+                totalSuggestionsReceived,
+                totalSuggestionsWatched,
+                overallConversionRate,
+                topInfluencerName: topInfluencer ? (topInfluencer.displayName || topInfluencer.username) : null,
+                topInfluencerUsername: topInfluencer ? topInfluencer.username : null,
+                bestTasteMatchUsername: bestTasteMatch ? bestTasteMatch.username : null,
+            },
+            recommenders: recommendersList,
+            outgoingImpact: {
+                totalSent: suggestionsSent?.count || 0,
+            }
+        };
+    } catch (err) {
+        console.error('Error computing suggestion analytics:', err);
+        return {
+            summary: {
+                totalSuggestionsReceived: 0,
+                totalSuggestionsWatched: 0,
+                overallConversionRate: 0,
+                topInfluencerName: null,
+                topInfluencerUsername: null,
+                bestTasteMatchUsername: null,
+            },
+            recommenders: [],
+            outgoingImpact: { totalSent: 0 }
+        };
+    }
+}
+
+/**
  * GET /api/v1/mindlens/insights
  */
 router.get('/insights', authMiddleware, async (req: Request, res: Response): Promise<void> => {
@@ -580,6 +788,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
         const behavioralTrails = computeBehavioralTrails(userEntries);
         const badges = evaluateUserBadges(userEntries);
         const dailyTimeSeries = computeDailyTimeSeries(userEntries);
+        const suggestionAnalytics = await computeSuggestionAnalytics(userId);
 
         // 7. Aesthetic Profile Palette
         const AESTHETIC_GENRES: Record<string, string[]> = {
@@ -629,6 +838,9 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
         } else if (timeOfDay.morning > (userEntries.length * 0.25)) {
             insights.push("You integrate movie/TV watching into your morning routine to kickstart creative energy.");
         }
+        if (suggestionAnalytics.summary.topInfluencerUsername) {
+            insights.push(`**@${suggestionAnalytics.summary.topInfluencerUsername}** is your #1 Cinematic Influencer on WatchHive!`);
+        }
 
         res.json({
             hasEnoughData: true,
@@ -647,6 +859,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             behavioralTrails,
             badges,
             dailyTimeSeries,
+            suggestionAnalytics,
             themes: topThemes.map(([name, score]) => ({ name, score })),
             timeDistribution: timeOfDay,
             insights,
