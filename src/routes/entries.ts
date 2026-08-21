@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { db } from '../db/index.js';
-import { users, entries, follows, likes, comments, followRequests } from '../db/schema.js';
-import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg } from 'drizzle-orm';
+import { users, entries, follows, likes, comments, followRequests, suggestions } from '../db/schema.js';
+import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg, aliasedTable } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { xpService, XpAction } from '../services/xp.service.js';
@@ -106,7 +106,21 @@ router.post(
                 startedAt,
                 completedAt,
                 watchLocation,
+                suggestedByUserId,
             } = req.body;
+
+            let finalSuggestedByUserId = suggestedByUserId || null;
+            if (!finalSuggestedByUserId && tmdbId) {
+                const [matchingSuggestion] = await db
+                    .select({ fromUserId: suggestions.fromUserId })
+                    .from(suggestions)
+                    .where(and(eq(suggestions.toUserId, userId), eq(suggestions.tmdbId, tmdbId)))
+                    .orderBy(desc(suggestions.createdAt))
+                    .limit(1);
+                if (matchingSuggestion) {
+                    finalSuggestedByUserId = matchingSuggestion.fromUserId;
+                }
+            }
 
             let entryTags: string[] = Array.isArray(tags) ? [...tags] : [];
 
@@ -127,36 +141,85 @@ router.post(
                 }
             }
 
-            if (tmdbId && !isWatching) {
-                // If logging a completed watch for a title, automatically mark any active currently-watching session for this title as completed
-                await db
-                    .update(entries)
-                    .set({ isWatching: false, completedAt: new Date(), updatedAt: new Date() })
-                    .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId), eq(entries.isWatching, true)));
+            let targetEntryId: string | null = null;
+
+            if (tmdbId) {
+                // Fetch existing entries for this user and title
+                const existingEntriesList = await db
+                    .select()
+                    .from(entries)
+                    .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)));
+
+                // Prefer updating an active currently-watching entry or an unrated placeholder
+                const activeWatchingEntry = existingEntriesList.find(e => e.isWatching);
+                const placeholderEntry = existingEntriesList.find(e => e.rating === null && !e.review);
+                const targetExisting = activeWatchingEntry || placeholderEntry;
+
+                if (targetExisting && (!isWatching || rating || review)) {
+                    const finalIsWatching = isWatching !== undefined ? isWatching : false;
+                    await db
+                        .update(entries)
+                        .set({
+                            title,
+                            type: type as any,
+                            watchedAt: watchedAt ? new Date(watchedAt) : new Date(),
+                            rating: rating ? rating.toString() : targetExisting.rating,
+                            review: review !== undefined ? (review || null) : targetExisting.review,
+                            tags: entryTags.length > 0 ? entryTags : targetExisting.tags,
+                            isRewatch: isRewatch !== undefined ? isRewatch : targetExisting.isRewatch,
+                            isWatching: finalIsWatching,
+                            completedAt: !finalIsWatching ? (completedAt ? new Date(completedAt) : new Date()) : null,
+                            watchLocation: watchLocation !== undefined ? (watchLocation || null) : targetExisting.watchLocation,
+                            suggestedByUserId: finalSuggestedByUserId || targetExisting.suggestedByUserId,
+                            updatedAt: new Date(),
+                        })
+                        .where(eq(entries.id, targetExisting.id));
+
+                    targetEntryId = targetExisting.id;
+
+                    // Clean up any remaining duplicate empty/watching placeholder entries for this title
+                    for (const dup of existingEntriesList) {
+                        if (dup.id !== targetExisting.id && (dup.isWatching || (dup.rating === null && !dup.review))) {
+                            await db.delete(entries).where(eq(entries.id, dup.id));
+                        }
+                    }
+                }
             }
 
-            // Create entry
-            const [newEntry] = await db.insert(entries).values({
-                userId,
-                tmdbId,
-                title,
-                type: type as any,
-                watchedAt: watchedAt ? new Date(watchedAt) : new Date(),
-                rating: rating ? rating.toString() : null,
-                review: review || null,
-                tags: entryTags,
-                isRewatch: isRewatch || false,
-                isWatching: isWatching || false,
-                startedAt: startedAt ? new Date(startedAt) : (isWatching ? new Date() : null),
-                completedAt: completedAt ? new Date(completedAt) : null,
-                watchLocation: watchLocation || null,
-            }).returning();
+            if (!targetEntryId) {
+                // Create entry
+                const [newEntry] = await db.insert(entries).values({
+                    userId,
+                    tmdbId,
+                    title,
+                    type: type as any,
+                    watchedAt: watchedAt ? new Date(watchedAt) : new Date(),
+                    rating: rating ? rating.toString() : null,
+                    review: review || null,
+                    tags: entryTags,
+                    isRewatch: isRewatch || false,
+                    isWatching: isWatching || false,
+                    startedAt: startedAt ? new Date(startedAt) : (isWatching ? new Date() : null),
+                    completedAt: completedAt ? new Date(completedAt) : (!isWatching ? new Date() : null),
+                    watchLocation: watchLocation || null,
+                    suggestedByUserId: finalSuggestedByUserId,
+                }).returning();
+                targetEntryId = newEntry.id;
+            }
 
             // Fetch fully populated entry for response
             const entry = await db.query.entries.findFirst({
-                where: eq(entries.id, newEntry.id),
+                where: eq(entries.id, targetEntryId),
                 with: {
                     user: {
+                        columns: {
+                            id: true,
+                            username: true,
+                            displayName: true,
+                            profilePictureUrl: true,
+                        }
+                    },
+                    suggestedByUser: {
                         columns: {
                             id: true,
                             username: true,
@@ -169,8 +232,8 @@ router.post(
 
             // Need to manually add counts due to Drizzle _count limitation in findFirst
             const [[{ likesCount }], [{ commentsCount }]] = await Promise.all([
-                db.select({ likesCount: count() }).from(likes).where(eq(likes.entryId, newEntry.id)),
-                db.select({ commentsCount: count() }).from(comments).where(eq(comments.entryId, newEntry.id))
+                db.select({ likesCount: count() }).from(likes).where(eq(likes.entryId, targetEntryId!)),
+                db.select({ commentsCount: count() }).from(comments).where(eq(comments.entryId, targetEntryId!))
             ]);
 
             // Award XP to the user
@@ -338,11 +401,14 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
         const safeLimit = Math.min(Math.max(parseInt(limit as string, 10) || 20, 1), 100);
         const safeOffset = Math.max(parseInt(offset as string, 10) || 0, 0);
 
+        const suggestor = aliasedTable(users, 'suggestor');
+
         // Get entries with pagination and manual counts
         const [entriesList, [{ total }]] = await Promise.all([
             db.select({
                 id: entries.id,
                 userId: entries.userId,
+                suggestedByUserId: entries.suggestedByUserId,
                 tmdbId: entries.tmdbId,
                 title: entries.title,
                 type: entries.type,
@@ -363,11 +429,18 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                     displayName: users.displayName,
                     profilePictureUrl: users.profilePictureUrl
                 },
+                suggestedByUser: {
+                    id: suggestor.id,
+                    username: suggestor.username,
+                    displayName: suggestor.displayName,
+                    profilePictureUrl: suggestor.profilePictureUrl
+                },
                 likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
                 commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number)
             })
                 .from(entries)
                 .innerJoin(users, eq(entries.userId, users.id))
+                .leftJoin(suggestor, eq(entries.suggestedByUserId, suggestor.id))
                 .where(whereClause)
                 .orderBy(sortOrder)
                 .limit(safeLimit)
@@ -379,11 +452,29 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
         // Map Drizzle result to Prisma-like structure for frontend compatibility
         const formattedEntries = entriesList.map(e => ({
             ...e,
-            _count: { likes: e.likesCount, comments: e.commentsCount }
+            rating: e.rating ? parseFloat(e.rating) : null,
+            suggestedByUser: e.suggestedByUser && e.suggestedByUser.id ? e.suggestedByUser : null,
+            _count: {
+                likes: e.likesCount,
+                comments: e.commentsCount
+            }
         }));
 
+        // Deduplicate entries for the same user & tmdbId if duplicate entries exist from past testing
+        const deduplicatedEntries = formattedEntries.filter((e, _idx, arr) => {
+            if (!e.tmdbId) return true;
+            const sameTmdbEntries = arr.filter(item => item.tmdbId === e.tmdbId && item.userId === e.userId);
+            if (sameTmdbEntries.length > 1) {
+                const hasRatedVersion = sameTmdbEntries.some(item => item.id !== e.id && (item.rating != null || (item.review && item.review.trim().length > 0)));
+                if (e.rating == null && (!e.review || e.review.trim().length === 0) && hasRatedVersion) {
+                    return false;
+                }
+            }
+            return true;
+        });
+
         res.json({
-            entries: formattedEntries,
+            entries: deduplicatedEntries,
             pagination: {
                 total,
                 limit: safeLimit,
@@ -602,6 +693,14 @@ router.put(
                 where: eq(entries.id, id),
                 with: {
                     user: {
+                        columns: {
+                            id: true,
+                            username: true,
+                            displayName: true,
+                            profilePictureUrl: true,
+                        }
+                    },
+                    suggestedByUser: {
                         columns: {
                             id: true,
                             username: true,

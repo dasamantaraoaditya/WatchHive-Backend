@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { lists, listItems, entries, users, follows } from '../db/schema.js';
+import { lists, listItems, entries, users, follows, suggestions } from '../db/schema.js';
 import { eq, and, desc, asc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
@@ -37,6 +37,16 @@ router.get('/watchlist', authMiddleware, async (req: Request, res: Response): Pr
             with: {
                 items: {
                     orderBy: desc(listItems.addedAt),
+                    with: {
+                        suggestedByUser: {
+                            columns: {
+                                id: true,
+                                username: true,
+                                displayName: true,
+                                profilePictureUrl: true,
+                            }
+                        }
+                    }
                 },
             },
         });
@@ -326,6 +336,19 @@ router.post('/:listId/items', authMiddleware, async (req: Request, res: Response
             .orderBy(desc(listItems.orderIndex))
             .limit(1);
 
+        let finalSuggestedByUserId = req.body.suggestedByUserId || null;
+        if (!finalSuggestedByUserId) {
+            const [matchingSuggestion] = await db
+                .select({ fromUserId: suggestions.fromUserId })
+                .from(suggestions)
+                .where(and(eq(suggestions.toUserId, userId), eq(suggestions.tmdbId, Number(tmdbId))))
+                .orderBy(desc(suggestions.createdAt))
+                .limit(1);
+            if (matchingSuggestion) {
+                finalSuggestedByUserId = matchingSuggestion.fromUserId;
+            }
+        }
+
         const [newItem] = await db
             .insert(listItems)
             .values({
@@ -333,10 +356,25 @@ router.post('/:listId/items', authMiddleware, async (req: Request, res: Response
                 tmdbId: Number(tmdbId),
                 mediaType: mediaType || 'movie',
                 orderIndex: lastItem ? lastItem.orderIndex + 1 : 0,
+                suggestedByUserId: finalSuggestedByUserId,
             })
             .returning();
 
-        res.json(newItem);
+        const itemWithSuggestor = await db.query.listItems.findFirst({
+            where: eq(listItems.id, newItem.id),
+            with: {
+                suggestedByUser: {
+                    columns: {
+                        id: true,
+                        username: true,
+                        displayName: true,
+                        profilePictureUrl: true,
+                    }
+                }
+            }
+        });
+
+        res.json(itemWithSuggestor || newItem);
     } catch (error) {
         console.error('Error adding to list:', error);
         res.status(500).json({ error: 'Failed to add item to list' });

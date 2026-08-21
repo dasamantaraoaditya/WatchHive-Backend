@@ -65,12 +65,14 @@ export const entries = pgTable('entries', {
     startedAt: timestamp('started_at'),
     completedAt: timestamp('completed_at'),
     watchLocation: text('watch_location'),
+    suggestedByUserId: text('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
     userIndex: index('entries_user_id_idx').on(table.userId),
     watchedAtIndex: index('entries_watched_at_idx').on(table.watchedAt),
     tmdbIndex: index('entries_tmdb_id_idx').on(table.tmdbId),
+    suggestedByIndex: index('entries_suggested_by_user_id_idx').on(table.suggestedByUserId),
 }));
 
 // Follows Table
@@ -146,6 +148,7 @@ export const listItems = pgTable('list_items', {
     tmdbId: integer('tmdb_id').notNull(),
     mediaType: varchar('media_type', { length: 20 }).default('movie').notNull(),
     orderIndex: integer('order_index').notNull(),
+    suggestedByUserId: text('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     addedAt: timestamp('added_at').defaultNow().notNull(),
 }, (table) => ({
     listIndex: index('list_items_list_id_idx').on(table.listId),
@@ -207,7 +210,8 @@ export const usersRelations = relations(users, ({ many }) => ({
 }));
 
 export const entriesRelations = relations(entries, ({ one, many }) => ({
-    user: one(users, { fields: [entries.userId], references: [users.id] }),
+    user: one(users, { fields: [entries.userId], references: [users.id], relationName: 'userEntries' }),
+    suggestedByUser: one(users, { fields: [entries.suggestedByUserId], references: [users.id], relationName: 'suggestedEntries' }),
     likes: many(likes),
     comments: many(comments),
 }));
@@ -236,6 +240,7 @@ export const listsRelations = relations(lists, ({ one, many }) => ({
 
 export const listItemsRelations = relations(listItems, ({ one }) => ({
     list: one(lists, { fields: [listItems.listId], references: [lists.id] }),
+    suggestedByUser: one(users, { fields: [listItems.suggestedByUserId], references: [users.id], relationName: 'suggestedListItems' }),
 }));
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({

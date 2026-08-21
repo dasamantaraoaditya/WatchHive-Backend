@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { users, entries, follows } from '../db/schema.js';
-import { eq, desc, sql, inArray, and, or, not } from 'drizzle-orm';
+import { eq, desc, sql, inArray, and, or, not, aliasedTable } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 
@@ -142,10 +142,13 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         // Include self in the feed
         const relevantUserIds = [...followedIds, userId];
 
+        const suggestor = aliasedTable(users, 'suggestor');
+
         // 2. Fetch Entries (Followed + Self)
         const rawEntries = await db.select({
             id: entries.id,
             userId: entries.userId,
+            suggestedByUserId: entries.suggestedByUserId,
             tmdbId: entries.tmdbId,
             title: entries.title,
             type: entries.type,
@@ -168,6 +171,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 isPrivate: users.isPrivate,
                 privacyLevel: users.privacyLevel
             },
+            suggestedByUser: {
+                id: suggestor.id,
+                username: suggestor.username,
+                displayName: suggestor.displayName,
+                profilePictureUrl: suggestor.profilePictureUrl
+            },
             likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
             commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number),
             isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.entry_id = ${entries.id} AND likes.user_id = ${userId})`,
@@ -175,6 +184,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         })
             .from(entries)
             .innerJoin(users, eq(entries.userId, users.id))
+            .leftJoin(suggestor, eq(entries.suggestedByUserId, suggestor.id))
             .where(
                 and(
                     inArray(entries.userId, relevantUserIds),
@@ -188,9 +198,22 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             .limit(limit)
             .offset(offset);
 
+        // Deduplicate rawEntries by (userId + tmdbId): if a user started watching a title and completed it, keep only the completed/reviewed entry
+        const deduplicatedRawEntries = rawEntries.filter((e, _idx, arr) => {
+            if (!e.tmdbId) return true;
+            const sameUserTmdbEntries = arr.filter(item => item.tmdbId === e.tmdbId && item.userId === e.userId);
+            if (sameUserTmdbEntries.length > 1) {
+                const hasCompletedVersion = sameUserTmdbEntries.some(item => item.id !== e.id && (item.rating != null || (item.review && item.review.trim().length > 0) || (!item.isWatching && item.completedAt)));
+                if (e.isWatching || (e.rating == null && (!e.review || e.review.trim().length === 0) && hasCompletedVersion)) {
+                    return false;
+                }
+            }
+            return true;
+        });
+
         // Sort by "Trending Score" (Mix of Date & Engagement)
         // Note: Drizzle result already has counts mapped as properties
-        const entriesWithScores = rawEntries.map(entry => {
+        const entriesWithScores = deduplicatedRawEntries.map(entry => {
             const likes = entry.likesCount || 0;
             const comments = entry.commentsCount || 0;
             const engagement = likes + (comments * 2);
@@ -260,6 +283,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             timestamp: entry.updatedAt,
             data: {
                 ...entry,
+                suggestedByUser: entry.suggestedByUser && entry.suggestedByUser.id ? entry.suggestedByUser : null,
                 _count: { likes: entry.likesCount, comments: entry.commentsCount },
                 isLiked: entry.isLiked,
                 isCommented: entry.isCommented,
