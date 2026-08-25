@@ -363,6 +363,43 @@ router.get('/popular/tv', authMiddleware, async (req: Request, res: Response): P
 
 /**
  * @openapi
+ * /api/v1/tmdb/trending:
+ *   get:
+ *     tags: [TMDb]
+ *     summary: Get trending movies/TV shows (defaults to all/week)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: mediaType
+ *         schema:
+ *           type: string
+ *           enum: [movie, tv, all]
+ *           default: all
+ *       - in: query
+ *         name: timeWindow
+ *         schema:
+ *           type: string
+ *           enum: [day, week]
+ *           default: week
+ *     responses:
+ *       200:
+ *         description: Trending items list
+ */
+router.get('/trending', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const mediaType = (req.query.mediaType as 'movie' | 'tv' | 'all') || 'all';
+        const timeWindow = (req.query.timeWindow as 'day' | 'week') || 'week';
+        const results = await tmdbService.getTrending(mediaType, timeWindow);
+        res.json(results);
+    } catch (error) {
+        console.error('Error getting trending:', error);
+        res.status(500).json({ error: 'Failed to get trending' });
+    }
+});
+
+/**
+ * @openapi
  * /api/v1/tmdb/trending/{mediaType}/{timeWindow}:
  *   get:
  *     tags: [TMDb]
@@ -386,6 +423,7 @@ router.get('/popular/tv', authMiddleware, async (req: Request, res: Response): P
  *       200:
  *         description: Trending items list
  */
+
 router.get('/trending/:mediaType/:timeWindow', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const { mediaType, timeWindow } = req.params;
