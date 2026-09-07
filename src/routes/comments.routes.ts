@@ -282,6 +282,8 @@ router.delete('/:commentId', authMiddleware, async (req: Request, res: Response)
             return;
         }
 
+        // Delete child replies first if deleting a parent comment
+        await db.delete(comments).where(eq(comments.parentCommentId, commentId));
         await db.delete(comments).where(eq(comments.id, commentId));
 
         const [{ commentCount }] = await db

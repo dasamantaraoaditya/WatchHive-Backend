@@ -195,6 +195,19 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
     userIndex: index('push_subscriptions_user_id_idx').on(table.userId),
 }));
 
+// Device Tokens Table (Mobile Push via FCM)
+export const deviceTokens = pgTable('device_tokens', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    token: text('token').notNull().unique(),
+    platform: varchar('platform', { length: 20 }).default('android').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    userIndex: index('device_tokens_user_id_idx').on(table.userId),
+    tokenIndex: index('device_tokens_token_idx').on(table.token),
+}));
+
 // Relations Definitions
 export const usersRelations = relations(users, ({ many }) => ({
     entries: many(entries),
@@ -207,6 +220,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     suggestionsSent: many(suggestions, { relationName: 'sentSuggestions' }),
     suggestionsReceived: many(suggestions, { relationName: 'receivedSuggestions' }),
     pushSubscriptions: many(pushSubscriptions),
+    deviceTokens: many(deviceTokens),
 }));
 
 export const entriesRelations = relations(entries, ({ one, many }) => ({
@@ -254,5 +268,9 @@ export const suggestionsRelations = relations(suggestions, ({ one }) => ({
 
 export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
     user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
+}));
+
+export const deviceTokensRelations = relations(deviceTokens, ({ one }) => ({
+    user: one(users, { fields: [deviceTokens.userId], references: [users.id] }),
 }));
 

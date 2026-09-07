@@ -16,8 +16,8 @@ export const config = {
     jwt: {
         secret: process.env.JWT_SECRET!,
         refreshSecret: process.env.JWT_REFRESH_SECRET!,
-        expiresIn: process.env.JWT_EXPIRES_IN || '15m',
-        refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+        expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+        refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '90d',
     },
 
     cors: {
@@ -52,6 +52,10 @@ export const config = {
         publicKey: process.env.VAPID_PUBLIC_KEY || '',
         privateKey: process.env.VAPID_PRIVATE_KEY || '',
         subject: process.env.VAPID_SUBJECT || 'mailto:admin@watchhive.com',
+    },
+
+    firebase: {
+        serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT || '',
     },
 };
 

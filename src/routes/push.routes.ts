@@ -126,10 +126,95 @@ router.delete('/unsubscribe', authMiddleware, async (req: Request, res: Response
 
 /**
  * @openapi
+ * /api/v1/push/device-token:
+ *   post:
+ *     tags: [Push]
+ *     summary: Register mobile device FCM token
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token:
+ *                 type: string
+ *               platform:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Device token registered
+ */
+router.post('/device-token', authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const userId = req.user!.userId;
+        const { token, platform } = req.body;
+
+        if (!token || typeof token !== 'string') {
+            res.status(400).json({ error: 'Device token is required' });
+            return;
+        }
+
+        const success = await pushService.saveDeviceToken(userId, token, platform);
+        if (success) {
+            res.json({ success: true, message: 'Device token registered' });
+        } else {
+            res.status(500).json({ error: 'Failed to register device token' });
+        }
+    } catch (error) {
+        console.error('[Push] Error registering device token:', error);
+        res.status(500).json({ error: 'Failed to register device token' });
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/push/device-token:
+ *   delete:
+ *     tags: [Push]
+ *     summary: Unregister mobile device FCM token upon logout
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Device token removed
+ */
+router.delete('/device-token', authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const { token } = req.body;
+
+        if (!token || typeof token !== 'string') {
+            res.status(400).json({ error: 'Device token is required' });
+            return;
+        }
+
+        const success = await pushService.removeDeviceToken(token);
+        res.json({ success, message: success ? 'Device token removed' : 'Token not found' });
+    } catch (error) {
+        console.error('[Push] Error removing device token:', error);
+        res.status(500).json({ error: 'Failed to remove device token' });
+    }
+});
+
+/**
+ * @openapi
  * /api/v1/push/test:
  *   post:
  *     tags: [Push]
- *     summary: Send a test push notification to current user
+ *     summary: Send a test push notification to current user (Web Push + Mobile FCM)
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -140,8 +225,8 @@ router.post('/test', authMiddleware, async (req: Request, res: Response) => {
     try {
         const userId = req.user!.userId;
         await pushService.sendPushNotification(userId, 'LIKE', {
-            actorName: 'WatchHive Test Bot',
-            entryTitle: 'Push Notifications Setup',
+            actorName: 'WatchHive Buzz Bot',
+            entryTitle: 'Push Notifications Live Test',
         });
         res.json({ success: true, message: 'Test push notification dispatched' });
     } catch (error) {

@@ -1,6 +1,10 @@
 import webpush from 'web-push';
+import { initializeApp, cert, type App } from 'firebase-admin/app';
+import { getMessaging, type MulticastMessage, type SendResponse } from 'firebase-admin/messaging';
+import fs from 'fs';
+import path from 'path';
 import { db } from '../db/index.js';
-import { pushSubscriptions } from '../db/schema.js';
+import { pushSubscriptions, deviceTokens } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
 
@@ -11,6 +15,34 @@ if (config.vapid.publicKey && config.vapid.privateKey) {
         config.vapid.publicKey,
         config.vapid.privateKey
     );
+}
+
+// Configure Firebase Admin for Mobile Push (FCM)
+let firebaseApp: App | null = null;
+if (config.firebase?.serviceAccountKey) {
+    try {
+        let serviceAccount: any;
+        const key = config.firebase.serviceAccountKey.trim();
+        const resolvedPath = path.isAbsolute(key) ? key : path.resolve(process.cwd(), key);
+        if (key.startsWith('{')) {
+            serviceAccount = JSON.parse(key);
+        } else if (fs.existsSync(resolvedPath)) {
+            serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf-8'));
+        } else if (fs.existsSync(key)) {
+            serviceAccount = JSON.parse(fs.readFileSync(key, 'utf-8'));
+        }
+
+        if (serviceAccount) {
+            firebaseApp = initializeApp({
+                credential: cert(serviceAccount),
+            });
+            console.log('[Push] Firebase Admin initialized for Mobile Push.');
+        }
+    } catch (err) {
+        console.error('[Push] Failed to initialize Firebase Admin SDK:', err);
+    }
+} else {
+    console.log('[Push] Firebase service account key not provided; mobile FCM push inactive.');
 }
 
 /**
@@ -141,65 +173,185 @@ export const pushService = {
             return false;
         }
     },
+    /**
+     * Save a mobile device FCM token for a user
+     */
+    saveDeviceToken: async (userId: string, token: string, platform = 'android') => {
+        try {
+            const [existing] = await db
+                .select()
+                .from(deviceTokens)
+                .where(eq(deviceTokens.token, token))
+                .limit(1);
+
+            if (existing) {
+                await db
+                    .update(deviceTokens)
+                    .set({
+                        userId,
+                        platform,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(deviceTokens.token, token));
+            } else {
+                await db.insert(deviceTokens).values({
+                    userId,
+                    token,
+                    platform,
+                });
+            }
+
+            return true;
+        } catch (error) {
+            console.error('[Push] Error saving device token:', error);
+            return false;
+        }
+    },
 
     /**
-     * Send push notification to all of a user's subscriptions
+     * Remove a mobile device FCM token upon logout
+     */
+    removeDeviceToken: async (token: string) => {
+        try {
+            await db
+                .delete(deviceTokens)
+                .where(eq(deviceTokens.token, token));
+            return true;
+        } catch (error) {
+            console.error('[Push] Error removing device token:', error);
+            return false;
+        }
+    },
+
+    /**
+     * Send push notification to all of a user's subscriptions (Web Push + Mobile FCM)
      */
     sendPushNotification: async (userId: string, type: string, content: any) => {
-        if (!config.vapid.publicKey || !config.vapid.privateKey) {
-            return; // VAPID not configured, skip push
+        const pushTitle = formatPushTitle(type);
+        const pushBody = formatPushBody(type, content);
+        const notificationUrl = getNotificationUrl(type, content);
+
+        // 1. Web Push Dispatch
+        if (config.vapid.publicKey && config.vapid.privateKey) {
+            try {
+                const subscriptions = await db
+                    .select()
+                    .from(pushSubscriptions)
+                    .where(eq(pushSubscriptions.userId, userId));
+
+                if (subscriptions.length > 0) {
+                    const payload = JSON.stringify({
+                        title: pushTitle,
+                        body: pushBody,
+                        icon: '/icons/icon-192x192.png',
+                        badge: '/icons/icon-96x96.png',
+                        url: notificationUrl,
+                        tag: `watchhive-${type}-${Date.now()}`,
+                    });
+
+                    const results = await Promise.allSettled(
+                        subscriptions.map(async (sub) => {
+                            try {
+                                await webpush.sendNotification(
+                                    {
+                                        endpoint: sub.endpoint,
+                                        keys: {
+                                            p256dh: sub.p256dh,
+                                            auth: sub.auth,
+                                        },
+                                    },
+                                    payload
+                                );
+                            } catch (error: any) {
+                                if (error.statusCode === 410 || error.statusCode === 404) {
+                                    console.log(`[Push] Removing expired web subscription for user ${userId}`);
+                                    await db
+                                        .delete(pushSubscriptions)
+                                        .where(eq(pushSubscriptions.endpoint, sub.endpoint));
+                                } else {
+                                    console.error(`[Push] Error sending to ${sub.endpoint}:`, error.message);
+                                }
+                            }
+                        })
+                    );
+
+                    const successful = results.filter(r => r.status === 'fulfilled').length;
+                    if (successful > 0) {
+                        console.log(`[Push] Web push sent to ${successful}/${subscriptions.length} subscriptions for user ${userId}`);
+                    }
+                }
+            } catch (error) {
+                console.error('[Push] Error in Web Push sendPushNotification:', error);
+            }
         }
 
+        // 2. Mobile FCM Push Dispatch
         try {
-            const subscriptions = await db
+            const mobileTokens = await db
                 .select()
-                .from(pushSubscriptions)
-                .where(eq(pushSubscriptions.userId, userId));
+                .from(deviceTokens)
+                .where(eq(deviceTokens.userId, userId));
 
-            if (subscriptions.length === 0) return;
+            if (mobileTokens.length > 0) {
+                if (!firebaseApp) {
+                    console.log(`[Push] User ${userId} has ${mobileTokens.length} registered mobile device(s), but Firebase Admin is unconfigured.`);
+                } else {
+                    const tokens = mobileTokens.map(t => t.token);
 
-            const payload = JSON.stringify({
-                title: formatPushTitle(type),
-                body: formatPushBody(type, content),
-                icon: '/icons/icon-192x192.png',
-                badge: '/icons/icon-96x96.png',
-                url: getNotificationUrl(type, content),
-                tag: `watchhive-${type}-${Date.now()}`,
-            });
-
-            const results = await Promise.allSettled(
-                subscriptions.map(async (sub) => {
-                    try {
-                        await webpush.sendNotification(
-                            {
-                                endpoint: sub.endpoint,
-                                keys: {
-                                    p256dh: sub.p256dh,
-                                    auth: sub.auth,
+                    const fcmPayload: MulticastMessage = {
+                        tokens,
+                        notification: {
+                            title: pushTitle,
+                            body: pushBody,
+                        },
+                        data: {
+                            type: String(type),
+                            title: pushTitle,
+                            body: pushBody,
+                            url: notificationUrl,
+                            ...Object.fromEntries(
+                                Object.entries(content || {}).map(([k, v]) => [k, String(v ?? '')])
+                            ),
+                        },
+                        android: {
+                            priority: 'high',
+                            notification: {
+                                channelId: 'watchhive_high_importance_channel',
+                                icon: 'ic_launcher',
+                                color: '#FFB700',
+                            },
+                        },
+                        apns: {
+                            payload: {
+                                aps: {
+                                    sound: 'default',
+                                    badge: 1,
                                 },
                             },
-                            payload
-                        );
-                    } catch (error: any) {
-                        // 410 Gone or 404 = subscription expired, remove it
-                        if (error.statusCode === 410 || error.statusCode === 404) {
-                            console.log(`[Push] Removing expired subscription for user ${userId}`);
-                            await db
-                                .delete(pushSubscriptions)
-                                .where(eq(pushSubscriptions.endpoint, sub.endpoint));
-                        } else {
-                            console.error(`[Push] Error sending to ${sub.endpoint}:`, error.message);
-                        }
-                    }
-                })
-            );
+                        },
+                    };
 
-            const successful = results.filter(r => r.status === 'fulfilled').length;
-            if (successful > 0) {
-                console.log(`[Push] Sent to ${successful}/${subscriptions.length} subscriptions for user ${userId}`);
+                    const messaging = getMessaging(firebaseApp);
+                    const response = await messaging.sendEachForMulticast(fcmPayload);
+                    console.log(`[Push] FCM sent: ${response.successCount} successful, ${response.failureCount} failed out of ${tokens.length}`);
+
+                    // Prune dead/invalid tokens
+                    response.responses.forEach(async (resp: SendResponse, idx: number) => {
+                        if (!resp.success) {
+                            const errCode = resp.error?.code;
+                            if (
+                                errCode === 'messaging/invalid-registration-token' ||
+                                errCode === 'messaging/registration-token-not-registered'
+                            ) {
+                                console.log(`[Push] Removing invalid FCM token ${tokens[idx]}`);
+                                await db.delete(deviceTokens).where(eq(deviceTokens.token, tokens[idx]));
+                            }
+                        }
+                    });
+                }
             }
-        } catch (error) {
-            console.error('[Push] Error in sendPushNotification:', error);
+        } catch (fcmError) {
+            console.error('[Push] Error in FCM sendPushNotification:', fcmError);
         }
     },
 

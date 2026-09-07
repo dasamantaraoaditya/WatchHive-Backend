@@ -123,22 +123,40 @@ router.post(
             }
 
             let entryTags: string[] = Array.isArray(tags) ? [...tags] : [];
+            let resolvedTitle: string = title ? title.trim() : '';
 
             if (tmdbId) {
                 try {
                     let genres: string[] = [];
+                    let tmdbTitle: string | null = null;
                     if (type === 'MOVIE') {
                         const details = await tmdbService.getMovieDetails(tmdbId);
                         genres = details.genres.map(g => g.name);
+                        tmdbTitle = details.title || (details as any).original_title || null;
                     } else if (type === 'TV_SHOW') {
                         const details = await tmdbService.getTVShowDetails(tmdbId);
                         genres = details.genres.map(g => g.name);
+                        tmdbTitle = (details as any).name || (details as any).original_name || null;
                     }
                     // Merge and deduplicate
                     entryTags = Array.from(new Set([...entryTags, ...genres]));
+
+                    // If title is missing, generic, or 'this title' / 'untitled', override with verified TMDB title
+                    const isGeneric = !resolvedTitle ||
+                        resolvedTitle.toLowerCase() === 'this title' ||
+                        resolvedTitle.toLowerCase() === 'untitled' ||
+                        resolvedTitle.toLowerCase().startsWith('movie #') ||
+                        resolvedTitle.toLowerCase().startsWith('media #');
+                    if (isGeneric && tmdbTitle) {
+                        resolvedTitle = tmdbTitle;
+                    }
                 } catch (tmdbError) {
-                    console.error('Failed to auto-fetch genres', tmdbError);
+                    console.error('Failed to auto-fetch TMDB details', tmdbError);
                 }
+            }
+
+            if (!resolvedTitle) {
+                resolvedTitle = 'Untitled';
             }
 
             let targetEntryId: string | null = null;
@@ -160,7 +178,7 @@ router.post(
                     await db
                         .update(entries)
                         .set({
-                            title,
+                            title: resolvedTitle,
                             type: type as any,
                             watchedAt: watchedAt ? new Date(watchedAt) : new Date(),
                             rating: rating ? rating.toString() : targetExisting.rating,
@@ -191,7 +209,7 @@ router.post(
                 const [newEntry] = await db.insert(entries).values({
                     userId,
                     tmdbId,
-                    title,
+                    title: resolvedTitle,
                     type: type as any,
                     watchedAt: watchedAt ? new Date(watchedAt) : new Date(),
                     rating: rating ? rating.toString() : null,
