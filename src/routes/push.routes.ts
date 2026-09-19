@@ -211,6 +211,20 @@ router.delete('/device-token', authMiddleware, async (req: Request, res: Respons
 
 /**
  * @openapi
+ * /api/v1/push/status:
+ *   get:
+ *     tags: [Push]
+ *     summary: Get push notification service configuration and health status
+ *     responses:
+ *       200:
+ *         description: Push service status
+ */
+router.get('/status', (_req: Request, res: Response) => {
+    res.json(pushService.getStatus());
+});
+
+/**
+ * @openapi
  * /api/v1/push/test:
  *   post:
  *     tags: [Push]
@@ -224,11 +238,18 @@ router.delete('/device-token', authMiddleware, async (req: Request, res: Respons
 router.post('/test', authMiddleware, async (req: Request, res: Response) => {
     try {
         const userId = req.user!.userId;
+        const status = pushService.getStatus();
+
         await pushService.sendPushNotification(userId, 'LIKE', {
             actorName: 'WatchHive Buzz Bot',
             entryTitle: 'Push Notifications Live Test',
         });
-        res.json({ success: true, message: 'Test push notification dispatched' });
+
+        res.json({
+            success: true,
+            message: 'Test push notification dispatched',
+            status,
+        });
     } catch (error) {
         console.error('Error sending test push:', error);
         res.status(500).json({ error: 'Failed to send test push' });

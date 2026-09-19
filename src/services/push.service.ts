@@ -19,29 +19,73 @@ if (config.vapid.publicKey && config.vapid.privateKey) {
 
 // Configure Firebase Admin for Mobile Push (FCM)
 let firebaseApp: App | null = null;
+let firebaseInitError: string | null = null;
+
+function parseServiceAccount(rawKey: string): any {
+    let key = rawKey.trim();
+
+    // 1. Strip surrounding single or double quotes
+    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+        key = key.slice(1, -1).trim();
+    }
+
+    // 2. Base64 encoded JSON support (standard for cloud environments like Railway)
+    if (!key.startsWith('{') && /^[A-Za-z0-9+/=]+$/.test(key.replace(/\s+/g, ''))) {
+        try {
+            const decoded = Buffer.from(key, 'base64').toString('utf-8').trim();
+            if (decoded.startsWith('{')) {
+                key = decoded;
+            }
+        } catch {
+            // Not valid base64 or doesn't decode to JSON; fall through to file checks
+        }
+    }
+
+    // 3. Raw or unescaped JSON string
+    if (key.startsWith('{')) {
+        const parsed = JSON.parse(key);
+        if (parsed.private_key && typeof parsed.private_key === 'string') {
+            parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+        }
+        return parsed;
+    }
+
+    // 4. File path
+    const resolvedPath = path.isAbsolute(key) ? key : path.resolve(process.cwd(), key);
+    if (fs.existsSync(resolvedPath)) {
+        const content = fs.readFileSync(resolvedPath, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (parsed.private_key && typeof parsed.private_key === 'string') {
+            parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+        }
+        return parsed;
+    } else if (fs.existsSync(key)) {
+        const content = fs.readFileSync(key, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (parsed.private_key && typeof parsed.private_key === 'string') {
+            parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+        }
+        return parsed;
+    }
+
+    throw new Error(`Firebase service account key is neither valid JSON, base64 JSON, nor an existing file path at ${resolvedPath}`);
+}
+
 if (config.firebase?.serviceAccountKey) {
     try {
-        let serviceAccount: any;
-        const key = config.firebase.serviceAccountKey.trim();
-        const resolvedPath = path.isAbsolute(key) ? key : path.resolve(process.cwd(), key);
-        if (key.startsWith('{')) {
-            serviceAccount = JSON.parse(key);
-        } else if (fs.existsSync(resolvedPath)) {
-            serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf-8'));
-        } else if (fs.existsSync(key)) {
-            serviceAccount = JSON.parse(fs.readFileSync(key, 'utf-8'));
-        }
-
+        const serviceAccount = parseServiceAccount(config.firebase.serviceAccountKey);
         if (serviceAccount) {
             firebaseApp = initializeApp({
                 credential: cert(serviceAccount),
             });
             console.log('[Push] Firebase Admin initialized for Mobile Push.');
         }
-    } catch (err) {
+    } catch (err: any) {
+        firebaseInitError = err?.message || String(err);
         console.error('[Push] Failed to initialize Firebase Admin SDK:', err);
     }
 } else {
+    firebaseInitError = 'FIREBASE_SERVICE_ACCOUNT_KEY environment variable not provided';
     console.log('[Push] Firebase service account key not provided; mobile FCM push inactive.');
 }
 
@@ -359,6 +403,16 @@ export const pushService = {
      * Get VAPID public key for frontend
      */
     getVapidPublicKey: () => config.vapid.publicKey,
+
+    /**
+     * Get push services configuration & health status
+     */
+    getStatus: () => ({
+        webPushConfigured: Boolean(config.vapid.publicKey && config.vapid.privateKey),
+        fcmConfigured: Boolean(firebaseApp),
+        hasFirebaseKeyEnv: Boolean(config.firebase?.serviceAccountKey),
+        firebaseInitError,
+    }),
 };
 
 export default pushService;

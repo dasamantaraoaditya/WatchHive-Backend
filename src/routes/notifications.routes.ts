@@ -182,7 +182,7 @@ router.patch('/:notificationId/read', authMiddleware, async (req: Request, res: 
  *       200:
  *         description: Successfully marked all as read
  */
-router.patch('/read-all', authMiddleware, async (req: Request, res: Response) => {
+const handleReadAll = async (req: Request, res: Response) => {
     try {
         const userId = req.user!.userId;
         await notificationService.markAllAsRead(userId);
@@ -190,6 +190,9 @@ router.patch('/read-all', authMiddleware, async (req: Request, res: Response) =>
     } catch (error) {
         res.status(500).json({ error: 'Failed' });
     }
-});
+};
+
+router.patch('/read-all', authMiddleware, handleReadAll);
+router.post('/read-all', authMiddleware, handleReadAll);
 
 export default router;
