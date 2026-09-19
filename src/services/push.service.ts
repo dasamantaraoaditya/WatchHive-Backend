@@ -361,7 +361,7 @@ export const pushService = {
                             priority: 'high',
                             notification: {
                                 channelId: 'watchhive_high_importance_channel',
-                                icon: 'ic_launcher',
+                                icon: 'ic_notification',
                                 color: '#FFB700',
                             },
                         },
