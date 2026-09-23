@@ -542,7 +542,7 @@ router.get(
             const userId = (req as any).user.userId;
 
             const entry = await db.query.entries.findFirst({
-                where: and(eq(entries.id, id), eq(entries.userId, userId)),
+                where: eq(entries.id, id),
                 with: {
                     user: {
                         columns: {
@@ -550,6 +550,8 @@ router.get(
                             username: true,
                             displayName: true,
                             profilePictureUrl: true,
+                            isPrivate: true,
+                            privacyLevel: true,
                         }
                     },
                     likes: {
@@ -577,15 +579,34 @@ router.get(
                 return res.status(404).json({ error: 'Entry not found' });
             }
 
+            // If entry owner is not current user, verify privacy
+            if (entry.userId !== userId) {
+                const author = entry.user as any;
+                const isPrivate = author?.privacyLevel === 'PRIVATE' || author?.privacyLevel === 'FOLLOWERS_ONLY' || author?.isPrivate === true;
+                if (isPrivate) {
+                    const [isFollower] = await db
+                        .select()
+                        .from(follows)
+                        .where(and(eq(follows.followerId, userId), eq(follows.followingId, entry.userId)))
+                        .limit(1);
+                    if (!isFollower) {
+                        return res.status(403).json({ error: 'This post is private.' });
+                    }
+                }
+            }
+
             // Manually add counts
             const [[{ likesCount }], [{ commentsCount }]] = await Promise.all([
                 db.select({ likesCount: count() }).from(likes).where(eq(likes.entryId, id)),
                 db.select({ commentsCount: count() }).from(comments).where(eq(comments.entryId, id))
             ]);
 
+            const isLiked = entry.likes?.some((l: any) => l.userId === userId) ?? false;
+
             res.json({
                 entry: {
                     ...entry,
+                    isLiked,
                     _count: { likes: likesCount, comments: commentsCount }
                 }
             });

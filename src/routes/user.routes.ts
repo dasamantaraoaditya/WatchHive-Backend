@@ -654,7 +654,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 _count: {
                     followers: 0,
                     following: 0,
-                    entries: 0
+                    entries: 0,
+                    watches: 0,
+                    watching: 0,
+                    watchlist: 0
                 },
                 isFollowing: isFollowing,
                 isRequested: isRequested,
@@ -669,20 +672,32 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
         const [
             [{ followersCount }],
             [{ followingCount }],
-            [{ entriesCount }]
+            [{ entriesCount }],
+            [{ watchingCount }],
+            watchlist
         ] = await Promise.all([
             db.select({ followersCount: count() }).from(follows).where(eq(follows.followingId, targetId)),
             db.select({ followingCount: count() }).from(follows).where(eq(follows.followerId, targetId)),
-            db.select({ entriesCount: count() }).from(entries).where(eq(entries.userId, targetId))
+            db.select({ entriesCount: count() }).from(entries).where(and(eq(entries.userId, targetId), eq(entries.isWatching, false))),
+            db.select({ watchingCount: count() }).from(entries).where(and(eq(entries.userId, targetId), eq(entries.isWatching, true))),
+            db.query.lists.findFirst({
+                where: and(eq(lists.userId, targetId), eq(lists.name, 'Watchlist')),
+                with: { items: true }
+            })
         ]);
+
+        const watchlistCount = Array.isArray(watchlist?.items) ? watchlist.items.length : 0;
 
         res.json({
             ...user,
             profilePictureUrl: await getAvatarUrl(user.profilePictureUrl),
             _count: {
-                followers: followersCount,
-                following: followingCount,
-                entries: entriesCount
+                followers: Number(followersCount) || 0,
+                following: Number(followingCount) || 0,
+                entries: Number(entriesCount) || 0,
+                watches: Number(entriesCount) || 0,
+                watching: Number(watchingCount) || 0,
+                watchlist: watchlistCount
             },
             isFollowing: isFollowing,
             isRequested: isRequested,
