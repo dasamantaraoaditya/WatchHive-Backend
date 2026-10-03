@@ -252,11 +252,11 @@ export const authService = {
                     },
                     body: JSON.stringify({
                         personalizations: [{ to: [{ email }] }],
-                        from: { email: config.email.from, name: 'WatchHive' },
-                        subject: 'Reset Your WatchHive Password',
+                        from: { email: config.email.from, name: 'WatchersHive' },
+                        subject: 'Reset Your WatchersHive Password',
                         content: [{
                             type: 'text/html',
-                            value: `<p>Hello,</p><p>Click the link below to reset your WatchHive password. This link is valid for 1 hour:</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you did not request this, please ignore this email.</p>`,
+                            value: `<p>Hello,</p><p>Click the link below to reset your WatchersHive password. This link is valid for 1 hour:</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you did not request this, please ignore this email.</p>`,
                         }],
                     }),
                 });

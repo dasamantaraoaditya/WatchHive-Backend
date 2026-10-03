@@ -7,17 +7,17 @@ const options: swaggerJsdoc.Options = {
     definition: {
         openapi: '3.0.0',
         info: {
-            title: 'WatchHive API Documentation',
+            title: 'WatchersHive API Documentation',
             version,
-            description: 'API documentation for the WatchHive backend services supporting social features for movie enthusiasts.',
+            description: 'API documentation for the WatchersHive backend services supporting social features for movie enthusiasts.',
             license: {
                 name: 'MIT',
                 url: 'https://spdx.org/licenses/MIT.html',
             },
             contact: {
-                name: 'WatchHive Support',
-                url: 'https://watchhive.com',
-                email: 'support@watchhive.com',
+                name: 'WatchersHive Support',
+                url: 'https://watchershive.com',
+                email: 'support@watchershive.com',
             },
         },
         servers: [

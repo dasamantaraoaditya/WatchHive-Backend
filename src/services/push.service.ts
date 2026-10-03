@@ -103,7 +103,7 @@ function formatPushTitle(type: string): string {
         case 'FOLLOW_REJECT': return '❌ Follow Declined';
         case 'SUGGESTION': return '🎬 Movie Suggestion';
         case 'MENTION': return '📢 Mentioned You';
-        default: return '🐝 WatchHive';
+        default: return '🐝 WatchersHive';
     }
 }
 

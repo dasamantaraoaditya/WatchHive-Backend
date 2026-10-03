@@ -48,8 +48,14 @@ if (config.cors.origin) {
 if (config.nodeEnv === 'development') {
     allowedOrigins.push('http://localhost:3000', 'http://localhost:5173');
 } else {
-    // Also allow the backend's own production URL for Swagger UI
-    allowedOrigins.push('https://watchhive-api-production.up.railway.app');
+    // Also allow the backend's own production URL for Swagger UI and production domains
+    allowedOrigins.push(
+        'https://watchhive-api-production.up.railway.app',
+        'https://watchershive.com',
+        'https://www.watchershive.com',
+        'https://watchershive.vercel.app',
+        'https://watchhive-web.vercel.app',
+    );
 }
 
 app.use(
