@@ -54,6 +54,8 @@ if (config.nodeEnv === 'development') {
         'https://watchershive.com',
         'https://www.watchershive.com',
         'https://watchershive.vercel.app',
+        'https://watcherhive.com',
+        'https://www.watcherhive.com',
         'https://watchhive-web.vercel.app',
     );
 }
