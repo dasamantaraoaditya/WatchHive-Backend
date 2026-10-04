@@ -554,6 +554,14 @@ router.get(
                             privacyLevel: true,
                         }
                     },
+                    suggestedByUser: {
+                        columns: {
+                            id: true,
+                            username: true,
+                            displayName: true,
+                            profilePictureUrl: true,
+                        }
+                    },
                     likes: {
                         columns: {
                             userId: true
