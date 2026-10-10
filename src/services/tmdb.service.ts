@@ -191,6 +191,21 @@ class TMDbService {
   }
 
   /**
+   * Find movie or TV show by external ID (e.g. IMDb ID)
+   */
+  async findByExternalId(externalId: string, source: string = 'imdb_id'): Promise<any> {
+    try {
+      return await this.requestWithRetry<any>({
+        url: `/find/${externalId}`,
+        params: { external_source: source },
+      });
+    } catch (error) {
+      console.error('Error finding by external ID:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get movie details by TMDb ID
    */
   async getMovieDetails(movieId: number): Promise<TMDbMovieDetails> {

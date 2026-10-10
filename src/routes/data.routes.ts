@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import { entries, lists, listItems } from '../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
+import tmdbService from '../services/tmdb.service.js';
 
 const router = Router();
 
@@ -213,6 +214,162 @@ router.get('/export/lists', authMiddleware, (req: Request, res: Response) => {
     res.redirect(307, `/api/v1/data/export?include=lists&format=${req.query.format || 'json'}`);
 });
 
+// ─── IMPORT PREVIEW ──────────────────────────────────────────────────────────
+// POST /api/v1/data/import/preview
+// Body: { entries?: [...], lists?: [...] }
+
+router.post('/import/preview', authMiddleware, async (req: Request, res: Response): Promise<any> => {
+    try {
+        const userId = (req as any).user.userId;
+        const body = req.body as { entries?: any[]; lists?: any[] };
+        const rawEntries = Array.isArray(body.entries) ? body.entries : [];
+        const rawLists = Array.isArray(body.lists) ? body.lists : [];
+
+        // Fetch existing entries for current user to detect duplicates
+        const existingEntries = await db
+            .select({ tmdbId: entries.tmdbId, watchedAt: entries.watchedAt })
+            .from(entries)
+            .where(eq(entries.userId, userId));
+
+        const existingKeys = new Set(
+            existingEntries.map(e => {
+                const day = e.watchedAt ? new Date(e.watchedAt).toISOString().split('T')[0] : 'unknown';
+                return `${e.tmdbId}|${day}`;
+            })
+        );
+        const existingTmdbIds = new Set(existingEntries.map(e => e.tmdbId));
+        const seenInFile = new Set<string>();
+
+        const previewEntries = [];
+        const searchCache = new Map<string, any>();
+
+        for (const rawItem of rawEntries) {
+            const item: Record<string, any> = { ...rawItem };
+            if (!item.title && item.name) item.title = item.name;
+            if (!item.title || !String(item.title).trim()) continue;
+            item.title = String(item.title).trim();
+
+            // If tmdbId is already provided, mark matched
+            if (item.tmdbId) {
+                item.matchStatus = 'MATCHED';
+                item.matchedTitle = item.matchedTitle || item.title;
+                item.type = item.type || 'MOVIE';
+            } else {
+                let matched = false;
+
+                // 1. Try finding by IMDb ID if available
+                if (item.imdbId && typeof tmdbService.findByExternalId === 'function') {
+                    try {
+                        const findRes = await tmdbService.findByExternalId(item.imdbId);
+                        const m = findRes?.movie_results?.[0];
+                        const t = findRes?.tv_results?.[0];
+                        if (m) {
+                            item.tmdbId = m.id;
+                            item.matchedTitle = m.title;
+                            item.matchedYear = (m.release_date || '').slice(0, 4);
+                            item.posterPath = m.poster_path;
+                            item.type = 'MOVIE';
+                            item.matchStatus = 'MATCHED';
+                            matched = true;
+                        } else if (t) {
+                            item.tmdbId = t.id;
+                            item.matchedTitle = t.name;
+                            item.matchedYear = (t.first_air_date || '').slice(0, 4);
+                            item.posterPath = t.poster_path;
+                            item.type = 'TV_SHOW';
+                            item.matchStatus = 'MATCHED';
+                            matched = true;
+                        }
+                    } catch { /* ignore external ID error */ }
+                }
+
+                // 2. Try TMDb multi search (with cache)
+                if (!matched) {
+                    try {
+                        const searchQuery = item.year ? `${item.title} ${item.year}` : item.title;
+                        const cacheKey = `${searchQuery.toLowerCase().trim()}|${item.type || 'ANY'}`;
+                        let top = searchCache.get(cacheKey);
+
+                        if (top === undefined) {
+                            const searchRes = await tmdbService.searchMulti(searchQuery);
+                            if (searchRes?.results?.length > 0) {
+                                const candidates = searchRes.results.filter(
+                                    (r: any) => r.media_type === 'movie' || r.media_type === 'tv'
+                                );
+                                top = candidates.find((r: any) => {
+                                    if (item.type === 'TV_SHOW') return r.media_type === 'tv';
+                                    if (item.type === 'MOVIE') return r.media_type === 'movie';
+                                    return true;
+                                }) || candidates[0] || searchRes.results[0] || null;
+                            } else {
+                                top = null;
+                            }
+                            searchCache.set(cacheKey, top);
+                        }
+
+                        if (top) {
+                            item.tmdbId = top.id;
+                            item.matchedTitle = (top as any).title || (top as any).name;
+                            item.matchedYear = ((top as any).release_date || (top as any).first_air_date || '').slice(0, 4);
+                            item.posterPath = (top as any).poster_path || null;
+                            if (!item.type) {
+                                item.type = (top as any).media_type === 'tv' ? 'TV_SHOW' : 'MOVIE';
+                            }
+                            item.matchStatus = 'MATCHED';
+                            matched = true;
+                        }
+                    } catch (e: any) {
+                        console.warn(`TMDB multi search preview error for "${item.title}":`, e.message);
+                    }
+                }
+
+                if (!matched) {
+                    item.matchStatus = 'UNMATCHED';
+                    item.tmdbId = null;
+                }
+            }
+
+            // Duplicate detection check
+            if (item.tmdbId) {
+                const day = item.watchedAt ? new Date(item.watchedAt).toISOString().split('T')[0] : null;
+                const fileKey = day ? `${item.tmdbId}|${day}` : `${item.tmdbId}|nodate`;
+
+                if (day && existingKeys.has(`${item.tmdbId}|${day}`)) {
+                    item.isDuplicate = true;
+                    item.duplicateReason = 'Already in library on this date';
+                } else if (!day && existingTmdbIds.has(Number(item.tmdbId))) {
+                    item.isDuplicate = true;
+                    item.duplicateReason = 'Already in your library';
+                } else if (seenInFile.has(fileKey)) {
+                    item.isDuplicate = true;
+                    item.duplicateReason = 'Duplicate entry in file';
+                } else {
+                    item.isDuplicate = false;
+                    seenInFile.add(fileKey);
+                }
+            }
+
+            previewEntries.push(item);
+        }
+
+        const matchedCount = previewEntries.filter(e => e.matchStatus === 'MATCHED').length;
+        const unmatchedCount = previewEntries.filter(e => e.matchStatus === 'UNMATCHED').length;
+        const duplicateCount = previewEntries.filter(e => e.isDuplicate).length;
+
+        return res.json({
+            total: previewEntries.length,
+            matchedCount,
+            unmatchedCount,
+            duplicateCount,
+            entries: previewEntries,
+            lists: rawLists,
+        });
+    } catch (error) {
+        console.error('Import preview error:', error);
+        res.status(500).json({ error: 'Failed to preview import data' });
+    }
+});
+
 // ─── COMBINED IMPORT ─────────────────────────────────────────────────────────
 // POST /api/v1/data/import
 // Body: { entries?: [...], lists?: [...] }
@@ -237,36 +394,157 @@ router.post('/import', authMiddleware, async (req: Request, res: Response): Prom
                     return `${e.tmdbId}|${day}`;
                 })
             );
+            const existingTmdbIds = new Set(existingEntries.map(e => e.tmdbId));
 
             let imported = 0, skipped = 0;
             const errors: string[] = [];
             const validTypes = ['MOVIE', 'TV_SHOW', 'EPISODE'];
+            const defaultPrevYearJan1 = new Date(new Date().getFullYear() - 1, 0, 1, 0, 0, 0);
 
             for (const item of body.entries) {
                 try {
-                    if (!item.tmdbId || !item.title || !item.type) { errors.push(`Missing required fields: ${JSON.stringify(item).slice(0, 60)}`); skipped++; continue; }
-                    if (!validTypes.includes(item.type)) { errors.push(`Invalid type "${item.type}" for "${item.title}"`); skipped++; continue; }
+                    if (!item.title && item.name) item.title = item.name;
+                    if (!item.title || !String(item.title).trim()) {
+                        errors.push(`Missing title for entry: ${JSON.stringify(item).slice(0, 60)}`);
+                        skipped++;
+                        continue;
+                    }
+                    item.title = String(item.title).trim();
 
-                    const watchedDate = item.watchedAt ? new Date(item.watchedAt) : new Date();
-                    const key = `${item.tmdbId}|${watchedDate.toISOString().split('T')[0]}`;
-                    if (existingKeys.has(key)) { skipped++; continue; }
+                    // Normalize entry type
+                    if (item.type) {
+                        const tUpper = String(item.type).toUpperCase().trim();
+                        if (tUpper === 'MOVIE' || tUpper === 'FILM') item.type = 'MOVIE';
+                        else if (['TV_SHOW', 'TV', 'SERIES', 'SHOW', 'DRAMA', 'ANIME'].includes(tUpper)) item.type = 'TV_SHOW';
+                        else if (tUpper === 'EPISODE') item.type = 'EPISODE';
+                    }
+
+                    // If tmdbId is missing, resolve it using TMDb search
+                    if (!item.tmdbId) {
+                        if (item.imdbId && typeof tmdbService.findByExternalId === 'function') {
+                            try {
+                                const findRes = await tmdbService.findByExternalId(item.imdbId);
+                                const m = findRes?.movie_results?.[0];
+                                const t = findRes?.tv_results?.[0];
+                                if (m) {
+                                    item.tmdbId = m.id;
+                                    if (!item.type) item.type = 'MOVIE';
+                                } else if (t) {
+                                    item.tmdbId = t.id;
+                                    if (!item.type) item.type = 'TV_SHOW';
+                                }
+                            } catch { /* ignore external lookup error */ }
+                        }
+
+                        if (!item.tmdbId) {
+                            try {
+                                const searchQuery = item.year ? `${item.title} ${item.year}` : item.title;
+                                const searchRes = await tmdbService.searchMulti(searchQuery);
+                                if (searchRes?.results?.length > 0) {
+                                    const mediaCandidates = searchRes.results.filter(
+                                        (r: any) => r.media_type === 'movie' || r.media_type === 'tv'
+                                    );
+                                    const match = mediaCandidates.find((r: any) => {
+                                        if (item.type === 'TV_SHOW') return r.media_type === 'tv';
+                                        if (item.type === 'MOVIE') return r.media_type === 'movie';
+                                        return true;
+                                    }) || mediaCandidates[0] || searchRes.results[0];
+
+                                    if (match) {
+                                        item.tmdbId = match.id;
+                                        if (!item.type) {
+                                            item.type = (match as any).media_type === 'tv' ? 'TV_SHOW' : 'MOVIE';
+                                        }
+                                    }
+                                }
+                            } catch (e: any) {
+                                console.warn(`TMDB multi search error for "${item.title}":`, e.message);
+                            }
+                        }
+                    }
+
+                    if (!item.type) item.type = 'MOVIE';
+
+                    if (!item.tmdbId) {
+                        errors.push(`Could not match "${item.title}" on TMDb`);
+                        skipped++;
+                        continue;
+                    }
+
+                    if (!validTypes.includes(item.type)) {
+                        item.type = 'MOVIE';
+                    }
+
+                    let watchedDate: Date | null = null;
+                    if (item.watchedAt) {
+                        const parsed = new Date(item.watchedAt);
+                        if (!isNaN(parsed.getTime())) watchedDate = parsed;
+                    }
+
+                    // Duplicate detection:
+                    // 1. If watch date is provided: skip if already logged on that exact day
+                    // 2. If no watch date is provided: skip if user already has this movie in their library
+                    const day = watchedDate ? watchedDate.toISOString().split('T')[0] : null;
+                    const key = day ? `${item.tmdbId}|${day}` : `${item.tmdbId}|nodate`;
+
+                    if (day && existingKeys.has(key)) {
+                        skipped++;
+                        continue;
+                    }
+                    if (!day && existingTmdbIds.has(Number(item.tmdbId))) {
+                        skipped++;
+                        continue;
+                    }
+
+                    let ratingVal: string | null = null;
+                    if (item.rating != null && item.rating !== '') {
+                        const parsedNum = parseFloat(String(item.rating));
+                        if (!isNaN(parsedNum)) {
+                            ratingVal = Math.min(10, Math.max(0, parsedNum)).toFixed(1);
+                        }
+                    }
+
+                    let parsedStartedAt: Date | null = null;
+                    if (item.startedAt) {
+                        const d = new Date(item.startedAt);
+                        if (!isNaN(d.getTime())) parsedStartedAt = d;
+                    }
+
+                    let parsedCompletedAt: Date | null = null;
+                    if (item.completedAt) {
+                        const d = new Date(item.completedAt);
+                        if (!isNaN(d.getTime())) parsedCompletedAt = d;
+                    }
+
+                    let tagList: string[] = [];
+                    if (Array.isArray(item.tags)) {
+                        tagList = item.tags.map(String).filter(Boolean);
+                    } else if (typeof item.tags === 'string' && item.tags.trim()) {
+                        tagList = item.tags.split(/[,|]/).map((t: string) => t.trim()).filter(Boolean);
+                    }
+
+                    // For imports without watch date: default to Jan 1 of previous year
+                    const finalWatchedDate = watchedDate || defaultPrevYearJan1;
 
                     await db.insert(entries).values({
                         userId,
                         tmdbId: Number(item.tmdbId),
                         title: String(item.title),
                         type: item.type as any,
-                        watchedAt: watchedDate,
-                        rating: item.rating != null ? String(item.rating) : null,
-                        review: item.review ?? null,
-                        tags: Array.isArray(item.tags) ? item.tags : [],
+                        watchedAt: finalWatchedDate,
+                        rating: ratingVal,
+                        review: item.review ? String(item.review) : null,
+                        tags: tagList,
                         isRewatch: Boolean(item.isRewatch),
                         isWatching: Boolean(item.isWatching),
-                        startedAt: item.startedAt ? new Date(item.startedAt) : null,
-                        completedAt: item.completedAt ? new Date(item.completedAt) : null,
-                        watchLocation: item.watchLocation ?? null,
+                        startedAt: parsedStartedAt,
+                        completedAt: parsedCompletedAt,
+                        watchLocation: item.watchLocation ? String(item.watchLocation) : null,
+                        createdAt: finalWatchedDate,
+                        updatedAt: finalWatchedDate,
                     });
-                    existingKeys.add(key);
+                    if (day) existingKeys.add(key);
+                    existingTmdbIds.add(Number(item.tmdbId));
                     imported++;
                 } catch (e: any) {
                     errors.push(`"${item.title || 'unknown'}": ${e.message}`);
@@ -316,6 +594,14 @@ router.post('/import', authMiddleware, async (req: Request, res: Response): Prom
                 let nextOrder = (lastItem?.orderIndex ?? -1) + 1;
 
                 for (const item of importList.items) {
+                    if (!item.tmdbId && item.title) {
+                        try {
+                            const searchRes = await tmdbService.searchMulti(item.title);
+                            const match = searchRes?.results?.[0];
+                            if (match) item.tmdbId = match.id;
+                        } catch { /* ignore */ }
+                    }
+
                     if (!item.tmdbId) { itemsSkipped++; continue; }
                     const tmdbId = Number(item.tmdbId);
                     if (existingIds.has(tmdbId)) { itemsSkipped++; continue; }
