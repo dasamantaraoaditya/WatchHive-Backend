@@ -8,8 +8,7 @@ import { users, follows, entries, lists, listItems, followRequests } from '../db
 import { eq, or, and, ilike, not, count, exists, desc } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 
-import { S3Client, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import multerS3 from 'multer-s3';
 
 const router = Router();
@@ -25,22 +24,11 @@ const s3 = new S3Client({
     forcePathStyle: true, // Often required for S3-compatible providers
 });
 
-// Helper to generate a presigned URL for an avatar
-const getAvatarUrl = async (key: string | null): Promise<string | null> => {
-    if (!key) return null;
-    if (key.startsWith('http')) return key; // Already a full URL (legacy or external)
+import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
-    try {
-        const command = new GetObjectCommand({
-            Bucket: process.env.AWS_S3_BUCKET_NAME,
-            Key: key,
-        });
-        // URL valid for 1 hour
-        return await getSignedUrl(s3, command, { expiresIn: 3600 });
-    } catch (err) {
-        console.error('Error generating presigned URL:', err);
-        return null;
-    }
+// Helper to generate a permanent URL for an avatar
+const getAvatarUrl = async (key: string | null): Promise<string | null> => {
+    return resolveAvatarUrl(key);
 };
 
 // Configure multer for Railway Bucket uploads

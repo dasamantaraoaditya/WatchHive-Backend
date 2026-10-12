@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 import { db } from '../db/index.js';
 import { entries, users, suggestions, listItems, lists } from '../db/schema.js';
 import { eq, desc, and, isNotNull, aliasedTable, count } from 'drizzle-orm';
+import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -631,7 +632,7 @@ async function computeSuggestionAnalytics(userId: string) {
                 userId: r.user.id,
                 username: r.user.username,
                 displayName: r.user.displayName,
-                profilePictureUrl: r.user.profilePictureUrl,
+                profilePictureUrl: resolveAvatarUrl(r.user.profilePictureUrl),
                 totalSuggested,
                 watchedCount: r.watchedCount,
                 currentlyWatchingCount: r.currentlyWatchingCount,

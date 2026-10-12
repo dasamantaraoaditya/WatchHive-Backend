@@ -4,6 +4,7 @@ import { users, entries, follows } from '../db/schema.js';
 import { eq, desc, sql, inArray, and, or, not, aliasedTable } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
+import { formatUserWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -283,7 +284,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             timestamp: entry.updatedAt || entry.completedAt || entry.startedAt || entry.watchedAt,
             data: {
                 ...entry,
-                suggestedByUser: entry.suggestedByUser && entry.suggestedByUser.id ? entry.suggestedByUser : null,
+                user: entry.user ? formatUserWithAvatar(entry.user) : entry.user,
+                suggestedByUser: entry.suggestedByUser && entry.suggestedByUser.id ? formatUserWithAvatar(entry.suggestedByUser) : null,
                 _count: { likes: entry.likesCount, comments: entry.commentsCount },
                 isLiked: entry.isLiked,
                 isCommented: entry.isCommented,

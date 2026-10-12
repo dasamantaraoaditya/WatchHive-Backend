@@ -6,6 +6,7 @@ import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg, aliasedT
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { xpService, XpAction } from '../services/xp.service.js';
+import { formatUserWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -265,6 +266,8 @@ router.post(
                 message: 'Entry created successfully',
                 entry: {
                     ...entry,
+                    user: entry?.user ? formatUserWithAvatar(entry.user) : entry?.user,
+                    suggestedByUser: entry?.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
                     _count: { likes: likesCount, comments: commentsCount }
                 },
             });
@@ -471,7 +474,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
         const formattedEntries = (entriesList as any[]).map(e => ({
             ...e,
             rating: e.rating ? parseFloat(e.rating) : null,
-            suggestedByUser: e.suggestedByUser && e.suggestedByUser.id ? e.suggestedByUser : null,
+            user: e.user ? formatUserWithAvatar(e.user) : e.user,
+            suggestedByUser: e.suggestedByUser && e.suggestedByUser.id ? formatUserWithAvatar(e.suggestedByUser) : null,
             _count: {
                 likes: e.likesCount,
                 comments: e.commentsCount
@@ -614,6 +618,12 @@ router.get(
             res.json({
                 entry: {
                     ...entry,
+                    user: entry.user ? formatUserWithAvatar(entry.user) : entry.user,
+                    suggestedByUser: entry.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
+                    comments: entry.comments?.map((c: any) => ({
+                        ...c,
+                        user: c.user ? formatUserWithAvatar(c.user) : c.user,
+                    })),
                     isLiked,
                     _count: { likes: likesCount, comments: commentsCount }
                 }
@@ -767,6 +777,8 @@ router.put(
                 message: 'Entry updated successfully',
                 entry: {
                     ...entry,
+                    user: entry?.user ? formatUserWithAvatar(entry.user) : entry?.user,
+                    suggestedByUser: entry?.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
                     _count: { likes: likesCount, comments: commentsCount }
                 },
             });
@@ -1008,18 +1020,18 @@ router.get('/compare/:targetUserId', authMiddleware, async (req: Request, res: R
             : 0;
 
         res.json({
-            userA: {
+            userA: formatUserWithAvatar({
                 id: currentUser.id,
                 username: currentUser.username,
                 displayName: currentUser.displayName,
                 profilePictureUrl: currentUser.profilePictureUrl,
-            },
-            userB: {
+            }),
+            userB: formatUserWithAvatar({
                 id: targetUser.id,
                 username: targetUser.username,
                 displayName: targetUser.displayName,
                 profilePictureUrl: targetUser.profilePictureUrl,
-            },
+            }),
             stats: {
                 matchPercentage,
                 totalCommon: commonItems.length,

@@ -10,6 +10,7 @@ import {
 import { AppError } from '../middleware/error.middleware.js';
 import crypto from 'crypto';
 import { config } from '../config.js';
+import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 export interface RegisterData {
     username: string;
@@ -96,7 +97,7 @@ export const authService = {
                 username: user.username,
                 email: user.email,
                 displayName: user.displayName,
-                profilePictureUrl: user.profilePictureUrl,
+                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: !!user.passwordHash,
             },
@@ -163,7 +164,7 @@ export const authService = {
                 username: user.username,
                 email: user.email,
                 displayName: user.displayName,
-                profilePictureUrl: user.profilePictureUrl,
+                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: true,
             },

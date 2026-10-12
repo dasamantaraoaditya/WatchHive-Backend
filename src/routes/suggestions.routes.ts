@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { users, suggestions, follows } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
+import { formatUserWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -171,7 +172,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
                 };
             }
             acc[key].suggestions.push(item.suggestion);
-            acc[key].suggestors.push(item.fromUser);
+            acc[key].suggestors.push(formatUserWithAvatar(item.fromUser));
             return acc;
         }, {});
 

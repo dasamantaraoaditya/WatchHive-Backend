@@ -5,6 +5,7 @@ import { users, entries, likes } from '../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
 import { xpService, XpAction } from '../services/xp.service.js';
+import { formatUserWithAvatar, formatUsersWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -231,7 +232,7 @@ router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Pro
         ]);
 
         res.json({
-            likes: likesList,
+            likes: formatUsersWithAvatar(likesList),
             pagination: {
                 page,
                 limit,
@@ -352,7 +353,10 @@ router.get('/user/:userId', authMiddleware, async (req: Request, res: Response):
         ]);
 
         res.json({
-            entries: likesList,
+            entries: (likesList as any[]).map(e => ({
+                ...e,
+                user: formatUserWithAvatar(e.user),
+            })),
             pagination: {
                 page,
                 limit,

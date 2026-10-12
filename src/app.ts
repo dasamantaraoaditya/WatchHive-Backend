@@ -23,6 +23,7 @@ import pushRoutes from './routes/push.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import suggestionsRoutes from './routes/suggestions.routes.js';
 import dataRoutes from './routes/data.routes.js';
+import avatarRoutes from './routes/avatar.routes.js';
 import { apiLimiter } from './middleware/rate-limit.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -124,6 +125,11 @@ app.get('/health', async (_req, res) => {
 if (config.nodeEnv === 'development') {
     app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 }
+
+// Public avatar streaming endpoints
+app.use('/api/v1/avatars', avatarRoutes);
+app.use('/api/v1/users/avatar', avatarRoutes);
+app.use('/avatars', avatarRoutes);
 
 // General API rate limiting
 app.use('/api/v1', apiLimiter);
