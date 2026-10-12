@@ -7,6 +7,7 @@ import {
     generateRefreshToken,
 } from '../utils/jwt.util.js';
 import { AppError } from '../middleware/error.middleware.js';
+import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
@@ -196,7 +197,7 @@ export const googleAuthService = {
                 username: user.username,
                 email: user.email,
                 displayName: user.displayName,
-                profilePictureUrl: user.profilePictureUrl,
+                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: true,
                 hasPassword: false, // will be refreshed via getMe() in AuthContext
             },
