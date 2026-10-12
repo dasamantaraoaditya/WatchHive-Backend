@@ -213,14 +213,101 @@ router.get('/export/lists', authMiddleware, (req: Request, res: Response) => {
     res.redirect(307, `/api/v1/data/export?include=lists&format=${req.query.format || 'json'}`);
 });
 
+function parseCsvToEntries(csvText: string): any[] {
+    const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) return [];
+
+    let headerIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+        const l = lines[i].toLowerCase();
+        if (l.includes('title') && (l.includes('tmdb') || l.includes('rating') || l.includes('type') || l.includes('watched') || l.includes('date'))) {
+            headerIndex = i;
+            break;
+        }
+    }
+    if (headerIndex === -1) return [];
+
+    const parseCsvRow = (row: string): string[] => {
+        const result: string[] = [];
+        let insideQuote = false;
+        let entry = '';
+        for (let i = 0; i < row.length; i++) {
+            const char = row[i];
+            if (char === '"') {
+                if (insideQuote && i + 1 < row.length && row[i + 1] === '"') {
+                    entry += '"';
+                    i++;
+                } else {
+                    insideQuote = !insideQuote;
+                }
+            } else if (char === ',' && !insideQuote) {
+                result.push(entry);
+                entry = '';
+            } else {
+                entry += char;
+            }
+        }
+        result.push(entry);
+        return result;
+    };
+
+    const headers = parseCsvRow(lines[headerIndex]).map(h => h.trim().toLowerCase());
+    const entriesResult: any[] = [];
+
+    for (let i = headerIndex + 1; i < lines.length; i++) {
+        if (lines[i].startsWith('#')) break;
+        const values = parseCsvRow(lines[i]);
+        if (values.length < 2) continue;
+
+        const row: Record<string, string> = {};
+        headers.forEach((h, idx) => {
+            row[h] = values[idx]?.trim() ?? '';
+        });
+
+        const title = row['title'] || row['name'] || '';
+        if (!title) continue;
+
+        const tmdbId = parseInt(row['tmdbid'] || row['tmdb_id'] || '0') || 0;
+        const rawType = (row['type'] || 'MOVIE').toUpperCase();
+        const type = rawType.includes('TV') ? 'TV_SHOW' : 'MOVIE';
+        const rating = row['rating'] ? parseFloat(row['rating']) : null;
+        const watchedAt = row['watchedat'] || row['watched at'] || row['watched date'] || row['date'] || null;
+        const review = row['review'] || null;
+        const tags = row['tags'] ? row['tags'].split('|').map(t => t.trim()).filter(Boolean) : [];
+        const isRewatch = row['isrewatch'] === 'true' || row['is_rewatch'] === 'true';
+        const isWatching = row['iswatching'] === 'true' || row['is_watching'] === 'true';
+        const watchLocation = row['watchlocation'] || row['watch_location'] || null;
+
+        entriesResult.push({
+            tmdbId,
+            title,
+            type,
+            rating,
+            watchedAt,
+            review,
+            tags,
+            isRewatch,
+            isWatching,
+            watchLocation,
+            isImported: true,
+        });
+    }
+
+    return entriesResult;
+}
+
 // ─── COMBINED IMPORT ─────────────────────────────────────────────────────────
 // POST /api/v1/data/import
-// Body: { entries?: [...], lists?: [...] }
+// Body: { entries?: [...], lists?: [...], csv?: string }
 
 router.post('/import', authMiddleware, async (req: Request, res: Response): Promise<any> => {
     try {
         const userId = (req as any).user.userId;
-        const body = req.body as { entries?: any[]; lists?: any[] };
+        const body = (typeof req.body === 'object' && req.body !== null ? req.body : {}) as { entries?: any[]; lists?: any[]; csv?: string };
+
+        if (body.csv && (!body.entries || body.entries.length === 0)) {
+            body.entries = parseCsvToEntries(body.csv);
+        }
 
         const summary: Record<string, unknown> = { message: 'Import complete' };
 
@@ -251,6 +338,11 @@ router.post('/import', authMiddleware, async (req: Request, res: Response): Prom
                     const key = `${item.tmdbId}|${watchedDate.toISOString().split('T')[0]}`;
                     if (existingKeys.has(key)) { skipped++; continue; }
 
+                    const tagsList = Array.isArray(item.tags) ? [...item.tags] : [];
+                    if (!tagsList.includes('imported')) {
+                        tagsList.push('imported');
+                    }
+
                     await db.insert(entries).values({
                         userId,
                         tmdbId: Number(item.tmdbId),
@@ -259,9 +351,10 @@ router.post('/import', authMiddleware, async (req: Request, res: Response): Prom
                         watchedAt: watchedDate,
                         rating: item.rating != null ? String(item.rating) : null,
                         review: item.review ?? null,
-                        tags: Array.isArray(item.tags) ? item.tags : [],
+                        tags: tagsList,
                         isRewatch: Boolean(item.isRewatch),
                         isWatching: Boolean(item.isWatching),
+                        isImported: true,
                         startedAt: item.startedAt ? new Date(item.startedAt) : null,
                         completedAt: item.completedAt ? new Date(item.completedAt) : null,
                         watchLocation: item.watchLocation ?? null,

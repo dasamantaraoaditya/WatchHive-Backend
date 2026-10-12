@@ -177,6 +177,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 displayName: suggestor.displayName,
                 profilePictureUrl: suggestor.profilePictureUrl
             },
+            isImported: entries.isImported,
             likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
             commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number),
             isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.entry_id = ${entries.id} AND likes.user_id = ${userId})`,
@@ -191,7 +192,10 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                     or(
                         eq(entries.userId, userId),
                         not(eq(users.privacyLevel, 'PRIVATE'))
-                    )
+                    ),
+                    // Exclude imported entries and watch history from the community feed
+                    sql`(${entries.isImported} IS NOT TRUE)`,
+                    sql`(NOT ('imported' = ANY(COALESCE(${entries.tags}, ARRAY[]::text[]))))`
                 )
             )
             .orderBy(desc(entries.updatedAt))
@@ -211,16 +215,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             return true;
         });
 
-        // Sort by "Trending Score" (Mix of Date & Engagement)
-        // Note: Drizzle result already has counts mapped as properties
-        const entriesWithScores = (deduplicatedRawEntries as any[]).map(entry => {
-            const likes = entry.likesCount || 0;
-            const comments = entry.commentsCount || 0;
-            const engagement = likes + (comments * 2);
-            const hoursAge = Math.max(0.5, (Date.now() - new Date(entry.updatedAt).getTime()) / (1000 * 60 * 60));
-            const score = (engagement + 1) / Math.pow(hoursAge + 2, 1.5);
-            return { entry, score };
-        }).sort((a, b) => b.score - a.score).map(x => x.entry);
+        // Sort chronologically by latest activity date (started watching, completed, reviewed, or logged)
+        const sortedEntries = (deduplicatedRawEntries as any[]).sort((a, b) => {
+            const timeA = new Date(a.updatedAt || a.completedAt || a.startedAt || a.createdAt || a.watchedAt).getTime();
+            const timeB = new Date(b.updatedAt || b.completedAt || b.startedAt || b.createdAt || b.watchedAt).getTime();
+            return timeB - timeA;
+        });
 
         // 3. Advanced Suggestions Generation
         let suggestions: any[] = [];
@@ -277,10 +277,10 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         const feedItems: any[] = [];
         let suggestionIndex = (page - 1) * 2;
 
-        const mappedEntries = (entriesWithScores as any[]).map(entry => ({
+        const mappedEntries = (sortedEntries as any[]).map(entry => ({
             type: 'ENTRY',
             id: entry.id,
-            timestamp: entry.updatedAt,
+            timestamp: entry.updatedAt || entry.completedAt || entry.startedAt || entry.watchedAt,
             data: {
                 ...entry,
                 suggestedByUser: entry.suggestedByUser && entry.suggestedByUser.id ? entry.suggestedByUser : null,

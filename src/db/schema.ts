@@ -66,6 +66,7 @@ export const entries = pgTable('entries', {
     completedAt: timestamp('completed_at'),
     watchLocation: text('watch_location'),
     suggestedByUserId: text('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    isImported: boolean('is_imported').default(false).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
