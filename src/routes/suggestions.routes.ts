@@ -185,6 +185,62 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
 
 /**
  * @openapi
+ * /api/v1/suggestions/sent:
+ *   get:
+ *     tags: [Suggestions]
+ *     summary: Get suggestions sent by the current user (suggested items)
+ */
+router.get('/sent', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+
+        const results = await db
+            .select({
+                suggestion: suggestions,
+                toUser: {
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl
+                }
+            })
+            .from(suggestions)
+            .innerJoin(users, eq(suggestions.toUserId, users.id))
+            .where(eq(suggestions.fromUserId, userId))
+            .orderBy(desc(suggestions.createdAt));
+
+        // Group by tmdbId
+        const grouped = results.reduce((acc: any, item) => {
+            const key = `${item.suggestion.mediaType}-${item.suggestion.tmdbId}`;
+            if (!acc[key]) {
+                acc[key] = {
+                    tmdbId: item.suggestion.tmdbId,
+                    mediaType: item.suggestion.mediaType,
+                    suggestions: [],
+                    suggestors: [],
+                    recipients: []
+                };
+            }
+            const formattedRecipient = formatUserWithAvatar(item.toUser);
+            acc[key].suggestions.push({
+                ...item.suggestion,
+                recipient: formattedRecipient
+            });
+            if (formattedRecipient && !acc[key].recipients.some((r: any) => r.id === formattedRecipient.id)) {
+                acc[key].recipients.push(formattedRecipient);
+            }
+            return acc;
+        }, {});
+
+        res.json(Object.values(grouped));
+    } catch (error) {
+        console.error('Error fetching sent suggestions:', error);
+        res.status(500).json({ error: 'Failed to fetch sent suggestions' });
+    }
+});
+
+/**
+ * @openapi
  * /api/v1/suggestions/{id}:
  *   delete:
  *     tags: [Suggestions]
