@@ -69,6 +69,8 @@ export const entries = pgTable('entries', {
     watchLocation: text('watch_location'),
     suggestedByUserId: text('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     isImported: boolean('is_imported').default(false).notNull(),
+    posterPath: text('poster_path'),
+    backdropPath: text('backdrop_path'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({

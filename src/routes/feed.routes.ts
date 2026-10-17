@@ -164,6 +164,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             watchLocation: entries.watchLocation,
             createdAt: entries.createdAt,
             updatedAt: entries.updatedAt,
+            posterPath: entries.posterPath,
+            backdropPath: entries.backdropPath,
             user: {
                 id: users.id,
                 username: users.username,

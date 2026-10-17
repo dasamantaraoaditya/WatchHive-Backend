@@ -156,6 +156,8 @@ router.post(
                 completedAt,
                 watchLocation,
                 suggestedByUserId,
+                posterPath,
+                backdropPath,
             } = req.body;
 
             let finalSuggestedByUserId = suggestedByUserId || null;
@@ -173,6 +175,8 @@ router.post(
 
             let entryTags: string[] = Array.isArray(tags) ? [...tags] : [];
             let resolvedTitle: string = title ? title.trim() : '';
+            let tmdbPoster: string | null = null;
+            let tmdbBackdrop: string | null = null;
 
             if (tmdbId) {
                 try {
@@ -182,10 +186,14 @@ router.post(
                         const details = await tmdbService.getMovieDetails(tmdbId);
                         genres = details.genres.map(g => g.name);
                         tmdbTitle = details.title || (details as any).original_title || null;
+                        tmdbPoster = details.poster_path;
+                        tmdbBackdrop = details.backdrop_path;
                     } else if (type === 'TV_SHOW') {
                         const details = await tmdbService.getTVShowDetails(tmdbId);
                         genres = details.genres.map(g => g.name);
                         tmdbTitle = (details as any).name || (details as any).original_name || null;
+                        tmdbPoster = details.poster_path;
+                        tmdbBackdrop = details.backdrop_path;
                     }
                     // Merge and deduplicate
                     entryTags = Array.from(new Set([...entryTags, ...genres]));
@@ -238,6 +246,8 @@ router.post(
                             completedAt: !finalIsWatching ? (completedAt ? new Date(completedAt) : new Date()) : null,
                             watchLocation: watchLocation !== undefined ? (watchLocation || null) : targetExisting.watchLocation,
                             suggestedByUserId: finalSuggestedByUserId || targetExisting.suggestedByUserId,
+                            posterPath: posterPath || tmdbPoster || targetExisting.posterPath,
+                            backdropPath: backdropPath || tmdbBackdrop || targetExisting.backdropPath,
                             updatedAt: new Date(),
                         })
                         .where(eq(entries.id, targetExisting.id));
@@ -270,6 +280,8 @@ router.post(
                     completedAt: completedAt ? new Date(completedAt) : (!isWatching ? new Date() : null),
                     watchLocation: watchLocation || null,
                     suggestedByUserId: finalSuggestedByUserId,
+                    posterPath: posterPath || tmdbPoster || null,
+                    backdropPath: backdropPath || tmdbBackdrop || null,
                 }).returning();
                 targetEntryId = newEntry.id;
             }
@@ -508,6 +520,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                 watchLocation: entries.watchLocation,
                 createdAt: entries.createdAt,
                 updatedAt: entries.updatedAt,
+                posterPath: entries.posterPath,
+                backdropPath: entries.backdropPath,
                 user: {
                     id: users.id,
                     username: users.username,
