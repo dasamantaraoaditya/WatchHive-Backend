@@ -66,9 +66,10 @@ export const googleAuthService = {
                 name: payload.name || payload.email.split('@')[0],
                 picture: payload.picture,
             };
-        } catch (error) {
+        } catch (error: any) {
+            console.error('[GoogleAuth] Token verification failed:', error?.message || error);
             if (error instanceof AppError) throw error;
-            throw new AppError('Failed to verify Google token', 401);
+            throw new AppError(`Failed to verify Google token: ${error?.message || 'Invalid token'}`, 401);
         }
     },
 
