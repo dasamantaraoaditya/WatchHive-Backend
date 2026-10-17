@@ -72,21 +72,15 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
 
         for (const recipientId of targetIds) {
             try {
-                // Validate connection (either following or followed by)
-                const [isFollowing] = await db
-                    .select()
-                    .from(follows)
-                    .where(and(eq(follows.followerId, fromUserId), eq(follows.followingId, recipientId)))
-                    .limit(1);
-
+                // Validate that the recipient is a follower of the current user
                 const [isFollowedBy] = await db
                     .select()
                     .from(follows)
                     .where(and(eq(follows.followerId, recipientId), eq(follows.followingId, fromUserId)))
                     .limit(1);
 
-                if (!isFollowing && !isFollowedBy) {
-                    errors.push(`Not connected with user ${recipientId}`);
+                if (!isFollowedBy) {
+                    errors.push(`User ${recipientId} is not following you`);
                     continue;
                 }
 
