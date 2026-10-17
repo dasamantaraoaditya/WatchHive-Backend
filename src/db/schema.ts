@@ -67,7 +67,7 @@ export const entries = pgTable('entries', {
     startedAt: timestamp('started_at'),
     completedAt: timestamp('completed_at'),
     watchLocation: text('watch_location'),
-    suggestedByUserId: text('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    suggestedByUserId: uuid('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     isImported: boolean('is_imported').default(false).notNull(),
     posterPath: text('poster_path'),
     backdropPath: text('backdrop_path'),
@@ -153,7 +153,7 @@ export const listItems = pgTable('list_items', {
     tmdbId: integer('tmdb_id').notNull(),
     mediaType: varchar('media_type', { length: 20 }).default('movie').notNull(),
     orderIndex: integer('order_index').notNull(),
-    suggestedByUserId: text('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    suggestedByUserId: uuid('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     addedAt: timestamp('added_at').defaultNow().notNull(),
 }, (table) => ({
     listIndex: index('list_items_list_id_idx').on(table.listId),
@@ -190,7 +190,7 @@ export const suggestions = pgTable('suggestions', {
 // Push Subscriptions Table (Web Push)
 export const pushSubscriptions = pgTable('push_subscriptions', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     endpoint: text('endpoint').notNull().unique(),
     p256dh: text('p256dh').notNull(),
     auth: text('auth').notNull(),
@@ -203,7 +203,7 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
 // Device Tokens Table (Mobile Push via FCM)
 export const deviceTokens = pgTable('device_tokens', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     token: text('token').notNull().unique(),
     platform: varchar('platform', { length: 20 }).default('android').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
