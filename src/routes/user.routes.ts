@@ -485,10 +485,15 @@ router.get('/suggested', authMiddleware, async (req: Request, res: Response, nex
         const currentId = req.user!.userId;
         const limit = 5;
 
-        // Fetch users the current user is NOT following, excluding themselves
-        // In PostgreSQL logic, we filter where NOT EXISTS in follows
+        // Suggested users: strictly users who follow the current user,
+        // but whom the current user is not following yet (or requested)
         const whereClause = and(
             not(eq(users.id, currentId)),
+            exists(
+                db.select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, users.id), eq(follows.followingId, currentId)))
+            ),
             not(exists(
                 db.select()
                     .from(follows)
@@ -576,13 +581,19 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
         const isOwner = targetId === currentId;
         
         // Fetch follow status first to check permissions if needed
-        const [followStatus] = await db
-            .select()
-            .from(follows)
-            .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
-            .limit(1);
+        const [followStatus, followerStatus] = await Promise.all([
+            db.select()
+                .from(follows)
+                .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
+                .limit(1),
+            db.select()
+                .from(follows)
+                .where(and(eq(follows.followerId, targetId), eq(follows.followingId, currentId)))
+                .limit(1),
+        ]);
 
         const isFollowing = !!followStatus;
+        const isFollower = !!followerStatus;
 
         // Fetch follow request status
         const [followReq] = await db
@@ -651,6 +662,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                     watchlist: 0
                 },
                 isFollowing: isFollowing,
+                isFollower: isFollower,
                 isRequested: isRequested,
                 isIncomingRequest: isIncomingRequest,
                 incomingRequestId: incomingRequestId,
@@ -691,6 +703,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 watchlist: watchlistCount
             },
             isFollowing: isFollowing,
+            isFollower: isFollower,
             isRequested: isRequested,
             isIncomingRequest: isIncomingRequest,
             incomingRequestId: incomingRequestId,
