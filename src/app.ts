@@ -52,6 +52,7 @@ if (config.nodeEnv === 'development') {
     // Also allow the backend's own production URL for Swagger UI and production domains
     allowedOrigins.push(
         'https://watchhive-api-production.up.railway.app',
+        'https://watchhive-api-staging.up.railway.app',
         'https://watchershive.com',
         'https://www.watchershive.com',
         'https://watchershive.vercel.app',
@@ -66,7 +67,11 @@ app.use(
         origin: (origin, callback) => {
             // Allow requests with no origin (mobile apps, curl, etc.)
             if (!origin) return callback(null, true);
-            if (allowedOrigins.includes(origin)) {
+            if (
+                allowedOrigins.includes(origin) ||
+                origin.endsWith('.vercel.app') ||
+                origin.endsWith('.up.railway.app')
+            ) {
                 return callback(null, true);
             }
             return callback(new Error(`CORS: origin ${origin} not allowed`));
