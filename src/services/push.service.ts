@@ -4,7 +4,7 @@ import { getMessaging, type MulticastMessage, type SendResponse } from 'firebase
 import fs from 'fs';
 import path from 'path';
 import { db } from '../db/index.js';
-import { pushSubscriptions, deviceTokens } from '../db/schema.js';
+import { pushSubscriptions, deviceTokens, users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
 
@@ -103,6 +103,8 @@ function formatPushTitle(type: string): string {
         case 'FOLLOW_REJECT': return '❌ Follow Declined';
         case 'SUGGESTION': return '🎬 Movie Suggestion';
         case 'MENTION': return '📢 Mentioned You';
+        case 'FRIEND_STARTED_WATCHING': return '👁️ Started Watching';
+        case 'FRIEND_LOGGED_WATCH': return '🎬 Finished Watching';
         default: return '🐝 WatchersHive';
     }
 }
@@ -112,7 +114,7 @@ function formatPushTitle(type: string): string {
  */
 function formatPushBody(type: string, content: any): string {
     const actor = content.actorName || 'Someone';
-    const title = content.entryTitle || '';
+    const title = content.entryTitle || 'a title';
 
     switch (type) {
         case 'LIKE':
@@ -137,6 +139,18 @@ function formatPushBody(type: string, content: any): string {
                 : `${actor} sent you a movie suggestion`;
         case 'MENTION':
             return `${actor} mentioned you`;
+        case 'FRIEND_STARTED_WATCHING':
+            return `${actor} started watching "${title}"`;
+        case 'FRIEND_LOGGED_WATCH': {
+            if (content.rating && content.review) {
+                return `${actor} watched and reviewed "${title}" (${content.rating}★)`;
+            } else if (content.rating) {
+                return `${actor} watched "${title}" (${content.rating}★)`;
+            } else if (content.review) {
+                return `${actor} reviewed "${title}"`;
+            }
+            return `${actor} finished watching "${title}"`;
+        }
         default:
             return `${actor} interacted with your content`;
     }
@@ -150,6 +164,8 @@ function getNotificationUrl(type: string, _content: any): string {
         case 'LIKE':
         case 'COMMENT':
         case 'REPLY':
+        case 'FRIEND_STARTED_WATCHING':
+        case 'FRIEND_LOGGED_WATCH':
             return '/watch-hive/feed';
         case 'FOLLOW':
         case 'FOLLOW_REQUEST':
@@ -271,6 +287,24 @@ export const pushService = {
      * Send push notification to all of a user's subscriptions (Web Push + Mobile FCM)
      */
     sendPushNotification: async (userId: string, type: string, content: any) => {
+        // If user disabled push notifications for following activity, suppress push
+        if (type === 'FRIEND_STARTED_WATCHING' || type === 'FRIEND_LOGGED_WATCH') {
+            try {
+                const [recipient] = await db
+                    .select({ notifyFollowingActivity: users.notifyFollowingActivity })
+                    .from(users)
+                    .where(eq(users.id, userId))
+                    .limit(1);
+
+                if (recipient && recipient.notifyFollowingActivity === false) {
+                    console.log(`[Push] User ${userId} has disabled following activity alerts. Suppressing push notification.`);
+                    return;
+                }
+            } catch (prefErr) {
+                console.error('[Push] Error checking user notification preference:', prefErr);
+            }
+        }
+
         const pushTitle = formatPushTitle(type);
         const pushBody = formatPushBody(type, content);
         const notificationUrl = getNotificationUrl(type, content);

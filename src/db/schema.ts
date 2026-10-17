@@ -17,7 +17,8 @@ import { relations } from 'drizzle-orm';
 // Enums
 export const entryTypeEnum = pgEnum('EntryType', ['MOVIE', 'TV_SHOW', 'EPISODE']);
 export const notificationTypeEnum = pgEnum('NotificationType', [
-    'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'FOLLOW_REJECT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION', 'SUGGESTION'
+    'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'FOLLOW_REJECT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION', 'SUGGESTION',
+    'FRIEND_STARTED_WATCHING', 'FRIEND_LOGGED_WATCH'
 ]);
 export const listTypeEnum = pgEnum('ListType', ['WATCHLIST', 'RANKING_STACK', 'COLLECTION']);
 export const privacyLevelEnum = pgEnum('PrivacyLevel', ['PUBLIC', 'FOLLOWERS_ONLY', 'PRIVATE']);
@@ -39,6 +40,7 @@ export const users = pgTable('users', {
     showCurrentlyWatching: boolean('show_currently_watching').default(true).notNull(),
     showWatchlist: boolean('show_watchlist').default(true).notNull(),
     showRankings: boolean('show_rankings').default(true).notNull(),
+    notifyFollowingActivity: boolean('notify_following_activity').default(true).notNull(),
     xp: integer('xp').default(0).notNull(),
     level: integer('level').default(1).notNull(),
     badges: jsonb('badges').default([]).notNull(),

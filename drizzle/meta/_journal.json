@@ -43,6 +43,13 @@
       "when": 1791824996564,
       "tag": "0005_classy_cerise",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792190000000,
+      "tag": "0006_peaceful_friend_activity",
+      "breakpoints": true
     }
   ]
 }

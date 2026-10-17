@@ -97,6 +97,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
+                notifyFollowingActivity: users.notifyFollowingActivity,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
                 entriesCount: count(entries.id),
@@ -165,7 +166,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 router.put('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
-        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings } = req.body;
+        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings, notifyFollowingActivity } = req.body;
 
         if (displayName !== undefined && String(displayName).trim().length > 50) {
             res.status(400).json({ error: 'Display name cannot exceed 50 characters' });
@@ -194,6 +195,7 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 ...(showCurrentlyWatching !== undefined && { showCurrentlyWatching }),
                 ...(showWatchlist !== undefined && { showWatchlist }),
                 ...(showRankings !== undefined && { showRankings }),
+                ...(notifyFollowingActivity !== undefined && { notifyFollowingActivity }),
                 updatedAt: new Date(),
             })
             .where(eq(users.id, userId))
@@ -211,6 +213,7 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
+                notifyFollowingActivity: users.notifyFollowingActivity,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
             });

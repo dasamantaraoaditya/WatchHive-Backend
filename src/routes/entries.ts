@@ -7,8 +7,56 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { xpService, XpAction } from '../services/xp.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
+import notificationService from '../services/notification.service.js';
 
 const router = Router();
+
+/**
+ * Helper to dispatch friend watching activity notifications to followers
+ */
+async function notifyFollowersOfActivity(params: {
+    actorId: string;
+    actorName: string;
+    actorAvatar?: string | null;
+    entryId: string;
+    entryTitle: string;
+    mediaType?: string;
+    rating?: number | null;
+    review?: string | null;
+    isWatching: boolean;
+    tmdbId?: number | null;
+}) {
+    try {
+        const userFollowers = await db
+            .select({ followerId: follows.followerId })
+            .from(follows)
+            .where(eq(follows.followingId, params.actorId));
+
+        if (!userFollowers || userFollowers.length === 0) return;
+
+        const notifType = params.isWatching ? 'FRIEND_STARTED_WATCHING' : 'FRIEND_LOGGED_WATCH';
+        const notifContent = {
+            actorId: params.actorId,
+            actorName: params.actorName,
+            actorAvatar: params.actorAvatar || null,
+            entryId: params.entryId,
+            entryTitle: params.entryTitle,
+            type: params.mediaType || 'MOVIE',
+            rating: params.rating ?? null,
+            review: params.review ? params.review.slice(0, 100) : null,
+            isWatching: params.isWatching,
+            tmdbId: params.tmdbId ?? null,
+        };
+
+        await Promise.allSettled(
+            userFollowers.map(f =>
+                notificationService.createNotification(f.followerId, notifType, notifContent)
+            )
+        );
+    } catch (err) {
+        console.error('[Notification] Error dispatching follower activity notifications:', err);
+    }
+}
 
 // Validation middleware
 const validateEntry = [
@@ -261,6 +309,22 @@ router.post(
             if (review && review.trim().length > 10) {
                 await xpService.awardXp(userId, XpAction.WRITE_REVIEW);
             }
+
+            // Notify followers about watching activity (fire & forget)
+            const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
+            const actorAvatar = entry?.user?.profilePictureUrl || null;
+            notifyFollowersOfActivity({
+                actorId: userId,
+                actorName,
+                actorAvatar,
+                entryId: targetEntryId,
+                entryTitle: resolvedTitle,
+                mediaType: type,
+                rating: rating ? Number(rating) : null,
+                review: review || null,
+                isWatching: Boolean(isWatching),
+                tmdbId: tmdbId ? Number(tmdbId) : null,
+            }).catch(err => console.error('[FollowerActivity] Notification error on create:', err));
 
             res.status(201).json({
                 message: 'Entry created successfully',
@@ -772,6 +836,39 @@ router.put(
                 db.select({ likesCount: count() }).from(likes).where(eq(likes.entryId, id)),
                 db.select({ commentsCount: count() }).from(comments).where(eq(comments.entryId, id))
             ]);
+
+            // Notify followers if watching status changed (fire & forget)
+            if (existingEntry.isWatching && updateData.isWatching === false) {
+                const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
+                const actorAvatar = entry?.user?.profilePictureUrl || null;
+                notifyFollowersOfActivity({
+                    actorId: userId,
+                    actorName,
+                    actorAvatar,
+                    entryId: id,
+                    entryTitle: entry?.title || existingEntry.title,
+                    mediaType: entry?.type || existingEntry.type,
+                    rating: updateData.rating ? Number(updateData.rating) : (existingEntry.rating ? Number(existingEntry.rating) : null),
+                    review: updateData.review !== undefined ? updateData.review : existingEntry.review,
+                    isWatching: false,
+                    tmdbId: entry?.tmdbId || existingEntry.tmdbId,
+                }).catch(err => console.error('[FollowerActivity] Notification error on PUT:', err));
+            } else if (!existingEntry.isWatching && updateData.isWatching === true) {
+                const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
+                const actorAvatar = entry?.user?.profilePictureUrl || null;
+                notifyFollowersOfActivity({
+                    actorId: userId,
+                    actorName,
+                    actorAvatar,
+                    entryId: id,
+                    entryTitle: entry?.title || existingEntry.title,
+                    mediaType: entry?.type || existingEntry.type,
+                    rating: null,
+                    review: null,
+                    isWatching: true,
+                    tmdbId: entry?.tmdbId || existingEntry.tmdbId,
+                }).catch(err => console.error('[FollowerActivity] Notification error on PUT:', err));
+            }
 
             res.json({
                 message: 'Entry updated successfully',
