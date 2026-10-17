@@ -266,13 +266,25 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             }
         }
 
-        // Pre-fetch user's watched IDs to mark items in feed
-        const userEntriesList = await db
-            .select({ tmdbId: entries.tmdbId, type: entries.type })
-            .from(entries)
-            .where(eq(entries.userId, userId));
+        // Pre-fetch only candidate items on this page that the user has watched
+        const candidateTmdbIds = Array.from(new Set([
+            ...sortedEntries.map((e: any) => e.tmdbId),
+            ...suggestions.map((s: any) => s.id)
+        ])).filter((id): id is number => typeof id === 'number' && id > 0);
 
-        const watchedTmdbSet = new Set(userEntriesList.map(e => `${e.type}-${e.tmdbId}`));
+        const watchedTmdbSet = new Set<string>();
+        if (candidateTmdbIds.length > 0) {
+            const matchedWatched = await db
+                .select({ tmdbId: entries.tmdbId, type: entries.type })
+                .from(entries)
+                .where(
+                    and(
+                        eq(entries.userId, userId),
+                        inArray(entries.tmdbId, candidateTmdbIds)
+                    )
+                );
+            matchedWatched.forEach(e => watchedTmdbSet.add(`${e.type}-${e.tmdbId}`));
+        }
 
         // 4. Mix Content Strategy
         const feedItems: any[] = [];

@@ -86,9 +86,48 @@ export interface TMDbTVShowDetails extends TMDbTVShow {
   "watch/providers"?: TMDbWatchProvidersResponse;
 }
 
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+class TMDbCache {
+  private cache = new Map<string, CacheEntry<any>>();
+  private readonly maxEntries: number;
+
+  constructor(maxEntries = 3000) {
+    this.maxEntries = maxEntries;
+  }
+
+  get<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.data;
+  }
+
+  set<T>(key: string, data: T, ttlMs: number): void {
+    if (this.cache.size >= this.maxEntries) {
+      const keysToDelete = Array.from(this.cache.keys()).slice(0, Math.floor(this.maxEntries * 0.2));
+      for (const k of keysToDelete) {
+        this.cache.delete(k);
+      }
+    }
+    this.cache.set(key, { data, expiresAt: Date.now() + ttlMs });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
 class TMDbService {
   private apiKey: string;
   private client: AxiosInstance;
+  private cache = new TMDbCache(3000);
 
   constructor() {
     if (!TMDB_API_KEY) {
@@ -96,20 +135,46 @@ class TMDbService {
     }
     this.apiKey = TMDB_API_KEY;
 
-    // Create a dedicated axios instance with proper timeouts
-    // and fresh connection handling to prevent ETIMEDOUT / ECONNRESET
+    // Use connection pooling with keepAlive to reuse TCP/TLS connections
     this.client = axios.create({
       baseURL: TMDB_BASE_URL,
-      timeout: 3000, // 3 second timeout (fail fast instead of hanging)
-      httpAgent: new http.Agent({ keepAlive: false }),
-      httpsAgent: new https.Agent({ keepAlive: false }),
+      timeout: 4000,
+      httpAgent: new http.Agent({ keepAlive: true, maxSockets: 50, keepAliveMsecs: 60000 }),
+      httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 50, keepAliveMsecs: 60000 }),
     });
   }
 
   /**
-   * Internal helper: make a request with automatic retries on transient failures
+   * Determine optimal TTL based on TMDb endpoint
    */
-  private async requestWithRetry<T>(config: AxiosRequestConfig, retries = 1): Promise<T> {
+  private getTtlForUrl(url: string = ''): number {
+    if (url.includes('/trending/')) return 60 * 60 * 1000; // 1 hour
+    if (url.includes('/recommendations')) return 6 * 60 * 60 * 1000; // 6 hours
+    if (url.includes('/search/')) return 15 * 60 * 1000; // 15 mins
+    if (url.includes('/discover/')) return 30 * 60 * 1000; // 30 mins
+    if (url.includes('/watch/providers')) return 12 * 60 * 60 * 1000; // 12 hours
+    if (url.startsWith('/movie/') || url.startsWith('/tv/')) return 24 * 60 * 60 * 1000; // 24 hours
+    return 30 * 60 * 1000; // default 30 mins
+  }
+
+  /**
+   * Internal helper: make a request with automatic caching & retries on transient failures
+   */
+  private async requestWithRetry<T>(config: AxiosRequestConfig, retries = 1, ttlMs?: number): Promise<T> {
+    const queryParams = new URLSearchParams();
+    if (config.params) {
+      Object.entries(config.params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null) queryParams.set(k, String(v));
+      });
+    }
+    const cacheKey = `${config.url || ''}?${queryParams.toString()}`;
+
+    // Return from in-memory cache if valid
+    const cached = this.cache.get<T>(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+
     let lastError: Error | null = null;
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -120,7 +185,10 @@ class TMDbService {
             ...config.params,
           },
         });
-        return response.data;
+        const data = response.data;
+        const effectiveTtl = ttlMs ?? this.getTtlForUrl(config.url);
+        this.cache.set(cacheKey, data, effectiveTtl);
+        return data;
       } catch (error: any) {
         lastError = error;
         const code = error?.code || error?.cause?.code || '';
@@ -194,6 +262,10 @@ class TMDbService {
    * Get movie details by TMDb ID
    */
   async getMovieDetails(movieId: number): Promise<TMDbMovieDetails> {
+    const enrichedKey = `enriched:movie:${movieId}`;
+    const cached = this.cache.get<TMDbMovieDetails>(enrichedKey);
+    if (cached) return cached;
+
     try {
       const details = await this.requestWithRetry<TMDbMovieDetails>({
         url: `/movie/${movieId}`,
@@ -213,6 +285,7 @@ class TMDbService {
             // Silently ignore OMDB timeouts or network glitches
           }
         }
+        this.cache.set(enrichedKey, details, 24 * 60 * 60 * 1000);
       }
       return details;
     } catch (error: any) {
@@ -228,6 +301,10 @@ class TMDbService {
    * Get TV show details by TMDb ID
    */
   async getTVShowDetails(tvId: number): Promise<TMDbTVShowDetails> {
+    const enrichedKey = `enriched:tv:${tvId}`;
+    const cached = this.cache.get<TMDbTVShowDetails>(enrichedKey);
+    if (cached) return cached;
+
     try {
       const details = await this.requestWithRetry<TMDbTVShowDetails>({
         url: `/tv/${tvId}`,
@@ -246,6 +323,7 @@ class TMDbService {
             // Silently ignore OMDB timeouts or network glitches
           }
         }
+        this.cache.set(enrichedKey, details, 24 * 60 * 60 * 1000);
       }
       return details;
     } catch (error: any) {
