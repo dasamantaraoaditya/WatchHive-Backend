@@ -669,7 +669,8 @@ async function computeSuggestionAnalytics(userId: string) {
                 topInfluencerUsername: topInfluencer ? topInfluencer.username : null,
                 bestTasteMatchUsername: bestTasteMatch ? bestTasteMatch.username : null,
             },
-            recommenders: recommendersList,
+            // Return only the top 5 influencers
+            recommenders: recommendersList.slice(0, 5),
             outgoingImpact: {
                 totalSent: suggestionsSent?.count || 0,
             }
