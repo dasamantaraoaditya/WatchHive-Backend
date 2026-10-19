@@ -400,10 +400,19 @@ export const pushService = {
                             },
                         },
                         apns: {
+                            headers: {
+                                'apns-priority': '10',
+                                'apns-push-type': 'alert',
+                            },
                             payload: {
                                 aps: {
+                                    alert: {
+                                        title: pushTitle,
+                                        body: pushBody,
+                                    },
                                     sound: 'default',
                                     badge: 1,
+                                    contentAvailable: true,
                                 },
                             },
                         },
@@ -413,10 +422,12 @@ export const pushService = {
                     const response = await messaging.sendEachForMulticast(fcmPayload);
                     console.log(`[Push] FCM sent: ${response.successCount} successful, ${response.failureCount} failed out of ${tokens.length}`);
 
-                    // Prune dead/invalid tokens
+                    // Prune dead/invalid tokens & log error details
                     response.responses.forEach(async (resp: SendResponse, idx: number) => {
                         if (!resp.success) {
                             const errCode = resp.error?.code;
+                            const errMsg = resp.error?.message;
+                            console.error(`[Push] FCM delivery failed for token ${tokens[idx]?.substring(0, 10)}...: ${errCode} - ${errMsg}`);
                             if (
                                 errCode === 'messaging/invalid-registration-token' ||
                                 errCode === 'messaging/registration-token-not-registered'
