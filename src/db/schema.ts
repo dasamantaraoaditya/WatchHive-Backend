@@ -30,6 +30,7 @@ export const users = pgTable('users', {
     email: varchar('email', { length: 255 }).unique().notNull(),
     passwordHash: text('password_hash'),
     googleId: varchar('google_id', { length: 255 }).unique(),
+    appleId: varchar('apple_id', { length: 255 }).unique(),
     displayName: varchar('display_name', { length: 255 }),
     bio: text('bio'),
     profilePictureUrl: text('profile_picture_url'),
@@ -211,6 +212,27 @@ export const deviceTokens = pgTable('device_tokens', {
 }, (table) => ({
     userIndex: index('device_tokens_user_id_idx').on(table.userId),
     tokenIndex: index('device_tokens_token_idx').on(table.token),
+}));
+
+// Reports Table (UGC Moderation - Apple Guideline 1.2)
+export const reports = pgTable('reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    reporterId: uuid('reporter_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    targetType: varchar('target_type', { length: 20 }).notNull(), // 'ENTRY', 'COMMENT', 'USER'
+    targetId: varchar('target_id', { length: 255 }).notNull(),
+    reason: varchar('reason', { length: 50 }).notNull(), // 'SPAM', 'HARASSMENT', 'INAPPROPRIATE', 'OFFENSIVE', 'OTHER'
+    details: text('details'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Blocked Users Table (UGC Moderation - Apple Guideline 1.2)
+export const blockedUsers = pgTable('blocked_users', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    blockerId: uuid('blocker_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    blockedId: uuid('blocked_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+    uniqueBlock: unique().on(table.blockerId, table.blockedId),
 }));
 
 // Relations Definitions
