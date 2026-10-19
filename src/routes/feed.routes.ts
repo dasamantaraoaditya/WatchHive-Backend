@@ -242,7 +242,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 .orderBy(desc(sql`COALESCE(${entries.updatedAt}, ${entries.completedAt}, ${entries.startedAt}, ${entries.createdAt}, ${entries.watchedAt})`))
                 .limit(3);
 
-            let tmdbRecs: any[] = [];
+            const tmdbRecs: any[] = [];
 
             // Fetch TMDb recommendations for the user's primary/latest watched title
             if (userRecentEntries.length > 0) {
