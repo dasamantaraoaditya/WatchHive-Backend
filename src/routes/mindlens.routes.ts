@@ -7,7 +7,7 @@ import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 const router = Router();
 
-// Genre to Psychological Theme Mapping
+// Genre to Psychological Theme Mapping (Uses & Gratifications Theory)
 const GENRE_THEMES: Record<string, string> = {
     'Action': 'Adrenaline Seeking',
     'Adventure': 'Exploration & Novelty',
@@ -31,462 +31,398 @@ const GENRE_THEMES: Record<string, string> = {
     'Western': 'Independence & Justice',
 };
 
-const MOOD_MAP: Record<string, string> = {
-    'Comedy': 'Lighthearted',
-    'Animation': 'Lighthearted',
-    'Family': 'Lighthearted',
-    'Horror': 'Tense',
-    'Thriller': 'Tense',
-    'Mystery': 'Tense',
-    'Crime': 'Tense',
-    'Drama': 'Reflective',
-    'History': 'Reflective',
-    'Documentary': 'Reflective',
-    'War': 'Reflective',
-    'Action': 'Excited',
-    'Adventure': 'Excited',
-    'Sci-Fi': 'Excited',
-    'Science Fiction': 'Excited',
-    'Fantasy': 'Excited',
-    'Romance': 'Sentimental',
-    'Music': 'Sentimental',
+// Russell's Circumplex Model of Affect Coordinates: [Valence (-1..1), Arousal (-1..1)]
+const GENRE_AFFECT_COORDINATES: Record<string, [number, number]> = {
+    'Comedy': [0.85, -0.15],
+    'Animation': [0.70, 0.20],
+    'Family': [0.75, -0.25],
+    'Romance': [0.65, -0.30],
+    'Music': [0.60, 0.10],
+    'Action': [0.30, 0.85],
+    'Adventure': [0.55, 0.65],
+    'Sci-Fi': [0.25, 0.70],
+    'Science Fiction': [0.25, 0.70],
+    'Fantasy': [0.50, 0.50],
+    'Thriller': [-0.25, 0.85],
+    'Horror': [-0.60, 0.90],
+    'Crime': [-0.20, 0.65],
+    'Mystery': [0.00, 0.55],
+    'Drama': [-0.25, -0.50],
+    'History': [0.05, -0.40],
+    'Documentary': [0.15, -0.55],
+    'War': [-0.55, 0.50],
+    'Western': [0.10, 0.40],
 };
 
-const SOUL_PERSONAS = [
+// 6 Scientifically Grounded Cognitive Archetypes
+interface CognitiveArchetype {
+    id: string;
+    name: string;
+    tagline: string;
+    description: string;
+    icon: string;
+    color: string;
+    scientificBasis: string;
+    coreTraits: string[];
+}
+
+const COGNITIVE_ARCHETYPES: CognitiveArchetype[] = [
     {
-        name: 'The Contract Killer',
-        description: 'Cold, calculated, and high-stakes. You prefer narratives where every choice is a life-or-death decision.',
-        icon: '🎯',
-        imageUrl: 'https://i.giphy.com/media/l3q2wJsC23ikJg9xe/giphy.gif',
-        color: '#ef4444',
-        criteria: { themes: ['Justice & Order Seeking', 'Suspense & Stimulation'], moods: ['Tense'] }
+        id: 'contemplative_eudaimonist',
+        name: 'The Contemplative Eudaimonist',
+        tagline: 'Seeking Meaning, Catharsis & Emotional Depth',
+        description: 'You treat cinema as an emotional and philosophical mirror, gravitating toward character-driven narratives, moral complexity, and human vulnerability.',
+        icon: 'psychology',
+        color: '#8b5cf6', // Violet
+        scientificBasis: 'Oliver & Raney (2011) Eudaimonic Media Consumption Theory',
+        coreTraits: ['High Empathy Processing', 'Moral Nuance', 'Emotional Resilience']
     },
     {
-        name: 'The Sharp Lawyer',
-        description: 'Analytical and sharp-witted. You love dissecting arguments and finding the elusive truth in complex dramas.',
-        icon: '⚖️',
-        imageUrl: 'https://i.giphy.com/media/l0EwYGlvQ7STj3mNy/giphy.gif',
-        color: '#3b82f6',
-        criteria: { themes: ['Justice & Order Seeking', 'Context & Perspective'], moods: ['Reflective'] }
+        id: 'adrenaline_synthesizer',
+        name: 'The Adrenaline Synthesizer',
+        tagline: 'High-Tempo Stimulus & Dopamine Momentum',
+        description: 'You are energized by physiological activation, fast-paced world-building, suspense, and high-stakes cinematic momentum.',
+        icon: 'bolt',
+        color: '#f59e0b', // Amber
+        scientificBasis: 'Zillmann (1988) Excitatory Homeostasis Model',
+        coreTraits: ['Dopamine Seeking', 'High Arousal Appetite', 'Dynamic Pacing']
     },
     {
-        name: 'The Master Judge',
-        description: 'Moral clarity and heavy decisions. You gravitate towards stories that explore right, wrong, and the gray areas in between.',
-        icon: '👨‍⚖️',
-        imageUrl: 'https://i.giphy.com/media/1lAOemoi0KhPMzxczT/giphy.gif',
-        color: '#6b7280',
-        criteria: { themes: ['Justice & Order Seeking', 'History'], moods: ['Reflective'] }
+        id: 'comfort_restorer',
+        name: 'The Comfort Restorer',
+        tagline: 'Emotional Grounding, Warmth & Stress Alleviation',
+        description: 'You utilize cinema for affective self-care and mental decompression, turning to trusted narratives, humor, and wholesome worlds for psychological safety.',
+        icon: 'spa',
+        color: '#10b981', // Emerald
+        scientificBasis: 'Uses & Gratifications Stress Reduction Hypothesis',
+        coreTraits: ['Affective Safety', 'Rewatch Comfort', 'Optimistic Recharge']
     },
     {
-        name: 'The Wise Teacher',
-        description: 'Always seeking knowledge. You view cinema as a lens to learn about the complexities of history and human nature.',
-        icon: '🎓',
-        imageUrl: 'https://i.giphy.com/media/PudZiAbQDUEik/giphy.gif',
-        color: '#10b981',
-        criteria: { themes: ['Intellectual Curiosity', 'Context & Perspective'], moods: ['Reflective'] }
+        id: 'analytic_purist',
+        name: 'The Analytic Purist',
+        tagline: 'Technical Rigor, Discerning Standards & Craft',
+        description: 'You evaluate cinema through a deliberate critical lens, holding direction, screenplay execution, and thematic coherence to uncompromising standards.',
+        icon: 'balance',
+        color: '#3b82f6', // Blue
+        scientificBasis: 'Bourdieu Aesthetic Distinction & Discretion Metric',
+        coreTraits: ['High Critical Rigor', 'Selective Acclaim', 'Structural Insight']
     },
     {
-        name: 'The Creator God',
-        description: 'Limitless imagination. You love sprawling worlds that defy reality and the visionary minds that build them.',
-        icon: '⚛️',
-        imageUrl: 'https://i.giphy.com/media/BqiGk3yGk7f12/giphy.gif',
-        color: '#d946ef',
-        criteria: { themes: ['Escapism & Creativity', 'Imagination & Playfulness'], moods: ['Lighthearted', 'Excited'] }
+        id: 'eclectic_polymath',
+        name: 'The Eclectic Polymath',
+        tagline: 'High Cognitive Openness & Boundary-Crossing Taste',
+        description: 'Your appetite spans disparate genres, eras, and aesthetic horizons with high information entropy and an adventurous resistance to echo chambers.',
+        icon: 'public',
+        color: '#06b6d4', // Cyan
+        scientificBasis: 'Shannon Information Entropy & Cognitive Openness to Experience',
+        coreTraits: ['High Genre Entropy', 'Novelty Seeking', 'Curious Exploration']
     },
     {
-        name: 'The Vengeful Batman',
-        description: 'You are a guardian of the shadows. Justice, grit, and the complex morality of the night guide your viewing.',
-        icon: '🦇',
-        imageUrl: 'https://i.giphy.com/media/l396BoOTIFem9xqUM/giphy.gif',
-        color: '#1e293b',
-        criteria: { themes: ['Justice & Order Seeking', 'Adrenaline Seeking'], moods: ['Tense'] }
-    },
-    {
-        name: 'The Agent of Chaos',
-        description: 'You enjoy the unpredictability of it all. High adrenaline and suspense keep you coming back for more.',
-        icon: '🤡',
-        imageUrl: 'https://i.giphy.com/media/F9yAvk7Xpr0c/giphy.gif',
-        color: '#8b5cf6',
-        criteria: { themes: ['Thrill Seeking', 'Adrenaline Seeking'], moods: ['Excited'] }
-    },
-    {
-        name: 'The Ancient Vampire',
-        description: 'Gothic, immortal, and elegantly dark. You prefer stories that transcend time and explore the seductive side of danger.',
-        icon: '🧛',
-        imageUrl: 'https://i.giphy.com/media/cjKfH7n0R8XaDPwlV0/giphy.gif',
-        color: '#991b1b',
-        criteria: { themes: ['Thrill Seeking', 'Escapism & Creativity'], moods: ['Tense', 'Sentimental'] }
-    },
-    {
-        name: 'The Sandman',
-        description: 'Lord of Dreams. Surreal, philosophical, and atmospheric narratives are where your mind truly feels at home.',
-        icon: '⏳',
-        imageUrl: 'https://i.giphy.com/media/mguPrVJAnEHIY/giphy.gif',
-        color: '#0ea5e9',
-        criteria: { themes: ['Imagination & Playfulness', 'Future-Oriented Thinking'], moods: ['Reflective'] }
-    },
-    {
-        name: 'The Mamba Mentality',
-        description: 'Relentless focus and competitive fire. You are drawn to stories of triumph, failure, and the obsession with greatness.',
-        icon: '🐍',
-        imageUrl: 'https://i.giphy.com/media/xT1XGT9ersM295XGgw/giphy.gif',
-        color: '#eab308',
-        criteria: { themes: ['Intensity & Conflict Awareness', 'Adrenaline Seeking'], moods: ['Excited'] }
-    },
-    {
-        name: 'The Smooth Soul',
-        description: 'Aesthetic, rhythmic, and high-vibing. You prioritize visual and auditory beauty in every cinematic experience.',
-        icon: '🎶',
-        imageUrl: 'https://i.giphy.com/media/xT0BKk9aPtLzKJiRx6/giphy.gif',
-        color: '#22c55e',
-        criteria: { themes: ['Aesthetic Appreciation', 'Stress Relief & Optimism'], moods: ['Lighthearted'] }
-    },
-    {
-        name: 'The Devilish Rebel',
-        description: 'You are drawn to the dark side of ambition and the seductive power of rebellion. Rules are just suggestions to you.',
-        icon: '😈',
-        imageUrl: 'https://i.giphy.com/media/P7JmDW7IkB7TW/giphy.gif',
-        color: '#f43f5e',
-        criteria: { themes: ['Thrill Seeking', 'Intensity & Conflict Awareness'], moods: ['Excited', 'Tense'] }
-    },
+        id: 'social_connector',
+        name: 'The Social Connector',
+        tagline: 'Cinema as Shared Currency & Relational Bridge',
+        description: 'You experience cinema socially, actively trading recommendations with friends and converting peer taste into meaningful shared discussions.',
+        icon: 'groups',
+        color: '#ec4899', // Pink
+        scientificBasis: 'McPherson et al. Homophily & Social Resonance Theory',
+        coreTraits: ['High Suggestion Velocity', 'Peer Resonance', 'Collaborative Taste']
+    }
 ];
 
 /**
- * Predict current mental state/mood based on recent watch history (last 5-7 items)
+ * Compute Shannon Information Entropy across genre distribution
  */
-function computeCurrentMoodPrediction(recentEntries: any[]) {
+function computeTasteEntropy(entriesList: any[]) {
+    const genreWeights: Record<string, number> = {};
+    let totalWeight = 0;
+
+    entriesList.forEach(entry => {
+        // Exclude heavily disliked entries (< 5.0) from taste affinity calculations
+        const rating = entry.rating ? parseFloat(entry.rating) : null;
+        if (rating !== null && rating < 5.0) return;
+
+        if (entry.tags && Array.isArray(entry.tags) && entry.tags.length > 0) {
+            entry.tags.forEach((tag: string, index: number) => {
+                const normTag = tag.trim();
+                for (const genre of Object.keys(GENRE_THEMES)) {
+                    if (normTag.toLowerCase().includes(genre.toLowerCase())) {
+                        // Primary tag gets full weight 1.0; secondary tags get 0.3
+                        const weight = index === 0 ? 1.0 : 0.3;
+                        genreWeights[genre] = (genreWeights[genre] || 0) + weight;
+                        totalWeight += weight;
+                        break;
+                    }
+                }
+            });
+        }
+    });
+
+    const distinctGenres = Object.keys(genreWeights).length;
+    if (distinctGenres === 0 || totalWeight === 0) {
+        return {
+            entropy: 0,
+            normalizedBreadth: 0.5,
+            label: 'Calibrating Taste',
+            description: 'Log more entries to map your genre dispersion.',
+            genreDistribution: [],
+        };
+    }
+
+    // Shannon Entropy H = -Sum(p * log2(p))
+    let entropy = 0;
+    const genreDistribution: { genre: string; percentage: number; weight: number }[] = [];
+
+    for (const [genre, weight] of Object.entries(genreWeights)) {
+        const p = weight / totalWeight;
+        if (p > 0) {
+            entropy -= p * Math.log2(p);
+        }
+        genreDistribution.push({
+            genre,
+            percentage: Math.round(p * 100),
+            weight: parseFloat(weight.toFixed(1)),
+        });
+    }
+
+    genreDistribution.sort((a, b) => b.weight - a.weight);
+
+    // Theoretical maximum entropy for K distinct genres = log2(K)
+    const maxEntropy = Math.log2(Math.max(distinctGenres, 2));
+    const normalizedBreadth = Math.min(1.0, Math.max(0.0, parseFloat((entropy / maxEntropy).toFixed(2))));
+
+    let label = 'Balanced Explorer';
+    let description = 'Healthy core taste with steady exploratory branches.';
+
+    if (normalizedBreadth >= 0.75) {
+        label = 'Eclectic Polymath';
+        description = `High cognitive openness across ${distinctGenres} distinct genres with wide appetite for novelty.`;
+    } else if (normalizedBreadth < 0.40) {
+        label = 'Genre Specialist';
+        description = `Strong focus on favorite comfort genres with high stylistic consistency.`;
+    }
+
+    return {
+        entropy: parseFloat(entropy.toFixed(2)),
+        normalizedBreadth,
+        label,
+        description,
+        genreDistribution: genreDistribution.slice(0, 6),
+    };
+}
+
+/**
+ * Predict current mental state & affective mood based on Russell's Circumplex Model
+ * with exponential recency decay weighting over the last 7 entries
+ */
+function computeAffectiveState(recentEntries: any[]) {
     if (!recentEntries || recentEntries.length === 0) {
         return {
             mood: 'Neutral Baseline',
             status: 'Calm & Steady',
-            description: 'Not enough recent logs to detect an active emotional shift.',
+            quadrant: 'Equilibrium',
+            valence: 0,
+            arousal: 0,
+            description: 'Not enough recent logs to detect an active affective shift.',
             icon: '🧘',
             confidence: 50,
             recentTitles: [],
         };
     }
 
-    const recentTags: string[] = [];
-    let ratingSum = 0;
-    let ratedCount = 0;
+    let weightedValence = 0;
+    let weightedArousal = 0;
+    let totalWeight = 0;
+    const recentTitles: string[] = [];
 
-    recentEntries.forEach(e => {
-        if (e.tags && Array.isArray(e.tags)) {
-            recentTags.push(...e.tags);
+    // Recency decay: lambda = 0.20 (index 0 is most recent)
+    recentEntries.slice(0, 7).forEach((entry, idx) => {
+        const weight = Math.exp(-0.20 * idx);
+        recentTitles.push(entry.title);
+
+        let entryValence = 0.1;
+        let entryArousal = 0.0;
+        let matchCount = 0;
+
+        if (entry.tags && Array.isArray(entry.tags)) {
+            entry.tags.forEach((t: string) => {
+                for (const [genre, coords] of Object.entries(GENRE_AFFECT_COORDINATES)) {
+                    if (t.toLowerCase().includes(genre.toLowerCase())) {
+                        entryValence += coords[0];
+                        entryArousal += coords[1];
+                        matchCount++;
+                        break;
+                    }
+                }
+            });
         }
-        if (e.rating) {
-            ratingSum += parseFloat(e.rating);
-            ratedCount++;
+
+        if (matchCount > 0) {
+            entryValence /= matchCount;
+            entryArousal /= matchCount;
         }
+
+        weightedValence += entryValence * weight;
+        weightedArousal += entryArousal * weight;
+        totalWeight += weight;
     });
 
-    const genreCounts: Record<string, number> = {};
-    recentTags.forEach(t => {
-        const norm = t.toLowerCase().trim();
-        for (const genre of Object.keys(GENRE_THEMES)) {
-            if (norm.includes(genre.toLowerCase())) {
-                genreCounts[genre] = (genreCounts[genre] || 0) + 1;
-            }
-        }
-    });
+    const valence = totalWeight > 0 ? parseFloat((weightedValence / totalWeight).toFixed(2)) : 0.1;
+    const arousal = totalWeight > 0 ? parseFloat((weightedArousal / totalWeight).toFixed(2)) : 0.0;
 
-    const topGenre = Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Drama';
-    const avgRecentRating = ratedCount > 0 ? ratingSum / ratedCount : 7.0;
-    const recentTitles = recentEntries.slice(0, 4).map(e => e.title);
+    let quadrant = 'Equilibrium';
+    let mood = 'Balanced Viewing';
+    let status = 'Observational Baseline';
+    let description = 'Recent viewing reflects a steady, balanced emotional tone.';
+    let icon = '⚖️';
 
-    // Mood heuristics based on recent genre & rating intensity
-    if (['Comedy', 'Animation', 'Family'].includes(topGenre)) {
-        return {
-            mood: 'Lighthearted & Recharging',
-            status: 'Seeking Positive Energy',
-            description: 'Your recent watches show a desire for comfort, laughter, and mental decompression.',
-            icon: '☀️',
-            confidence: 88,
-            recentTitles,
-        };
-    } else if (['Horror', 'Thriller', 'Mystery', 'Crime'].includes(topGenre)) {
-        return {
-            mood: 'High-Alert Thrill Seeking',
-            status: 'Adrenaline & Tension Processing',
-            description: 'You are gravitating towards suspenseful and high-stakes narratives to stimulate focus.',
-            icon: '⚡️',
-            confidence: 92,
-            recentTitles,
-        };
-    } else if (['Action', 'Adventure', 'Sci-Fi', 'Science Fiction'].includes(topGenre)) {
-        return {
-            mood: 'Excited & Action-Oriented',
-            status: 'High Energy & Escapism',
-            description: 'Driven by momentum, big ideas, and immersive cinematic worlds.',
-            icon: '🚀',
-            confidence: 85,
-            recentTitles,
-        };
-    } else if (['Documentary', 'History', 'War'].includes(topGenre)) {
-        return {
-            mood: 'Intellectual & Reflective',
-            status: 'Knowledge & Truth Seeking',
-            description: 'You are in an analytical state, seeking deeper context and real-world understanding.',
-            icon: '🧠',
-            confidence: 90,
-            recentTitles,
-        };
-    } else if (avgRecentRating >= 8.5) {
-        return {
-            mood: 'Deeply Inspired',
-            status: 'High Cinematic Resonance',
-            description: 'Your recent watches have struck a powerful emotional chord, leaving you captivated.',
-            icon: '✨',
-            confidence: 94,
-            recentTitles,
-        };
+    if (arousal >= 0.25 && valence >= 0.10) {
+        quadrant = 'Dopamine & Energy';
+        mood = 'Excited & Immersive';
+        status = 'High Energy & Momentum';
+        description = 'Recent watches prioritize momentum, bold world-building, and adrenaline activation.';
+        icon = '🚀';
+    } else if (arousal >= 0.25 && valence < 0.10) {
+        quadrant = 'Tension & Arousal';
+        mood = 'High-Alert Thrill Seeking';
+        status = 'Suspense & Focus Stimulation';
+        description = 'Gravitating toward high-stakes, suspenseful narratives to channel mental focus.';
+        icon = '⚡️';
+    } else if (arousal < 0.25 && valence >= 0.15) {
+        quadrant = 'Comfort & Recharge';
+        mood = 'Lighthearted & Recharging';
+        status = 'Emotional Safety & Warmth';
+        description = 'Recent choices emphasize laughter, reassurance, and psychological decompression.';
+        icon = '☀️';
     } else {
-        return {
-            mood: 'Emotional Exploration',
-            status: 'Contemplative & Empathetic',
-            description: 'Engaging with nuanced, character-driven stories to process subtle emotions.',
-            icon: '🌊',
-            confidence: 82,
-            recentTitles,
-        };
+        quadrant = 'Eudaimonic Reflection';
+        mood = 'Contemplative Reflection';
+        status = 'Deep Meaning & Empathy';
+        description = 'Leaning toward character-driven stories exploring existential nuance and emotional processing.';
+        icon = '🌊';
     }
+
+    return {
+        mood,
+        status,
+        quadrant,
+        valence,
+        arousal,
+        description,
+        icon,
+        confidence: Math.min(94, 60 + recentEntries.length * 5),
+        recentTitles: recentTitles.slice(0, 4),
+    };
 }
 
 /**
- * Compute behavioral traits across entire watch history
+ * Compute Critical Rigor & Standard Deviation
  */
-function computeBehavioralTrails(allEntries: any[]) {
-    const total = allEntries.length;
-    if (total === 0) return [];
-
-    const rewatchCount = allEntries.filter(e => e.isRewatch).length;
-    const rewatchRatio = Math.round((rewatchCount / total) * 100);
-
+function computeCriticalRigor(allEntries: any[]) {
     let ratedSum = 0;
-    let ratedCount = 0;
+    const ratings: number[] = [];
     let reviewCount = 0;
 
     allEntries.forEach(e => {
         if (e.rating) {
-            ratedSum += parseFloat(e.rating);
-            ratedCount++;
+            const r = parseFloat(e.rating);
+            if (r > 0) {
+                ratedSum += r;
+                ratings.push(r);
+            }
         }
         if (e.review && e.review.trim().length > 20) {
             reviewCount++;
         }
     });
 
-    const avgRating = ratedCount > 0 ? (ratedSum / ratedCount).toFixed(1) : '7.0';
-    const reviewRatio = Math.round((reviewCount / total) * 100);
+    const totalRated = ratings.length;
+    const averageRating = totalRated > 0 ? parseFloat((ratedSum / totalRated).toFixed(1)) : 7.0;
 
-    const traits = [
-        {
-            title: 'Rewatch Reliance',
-            value: `${rewatchRatio}%`,
-            subtitle: rewatchRatio > 25 ? 'High Comfort Seeker' : 'Fresh Explorer',
-            description: rewatchRatio > 25
-                ? 'You frequently revisit trusted favorites for emotional grounding and comfort.'
-                : 'You actively prioritize new stories and novel experiences over rewatching.',
-            icon: 'loop',
-            color: '#3b82f6',
-        },
-        {
-            title: 'Critical Rigor',
-            value: `${avgRating} ★`,
-            subtitle: parseFloat(avgRating) < 6.5 ? 'Strict Judge' : (parseFloat(avgRating) > 8.0 ? 'Generous Enthusiast' : 'Balanced Critic'),
-            description: parseFloat(avgRating) < 6.5
-                ? 'You hold cinema to high standards and reserve top marks for true masterpieces.'
-                : 'You find joy and appreciation in most movies you log.',
-            icon: 'star',
-            color: '#eab308',
-        },
-        {
-            title: 'Review Depth',
-            value: `${reviewRatio}%`,
-            subtitle: reviewRatio > 30 ? 'Active Analyst' : 'Casual Observer',
-            description: reviewRatio > 30
-                ? 'You regularly reflect on what you watch by writing reviews and notes.'
-                : 'You prefer quick logging without heavy written analysis.',
-            icon: 'edit_note',
-            color: '#10b981',
-        },
-        {
-            title: 'Catalog Scale',
-            value: `${total} Titles`,
-            subtitle: total > 50 ? 'Seasoned Cinephile' : 'Growing Vault',
-            description: `You have logged ${total} entries in your WatchHive history.`,
-            icon: 'video_library',
-            color: '#ec4899',
-        },
-    ];
+    // Variance & Standard Deviation
+    let variance = 0;
+    if (totalRated > 1) {
+        const sumSquareDiffs = ratings.reduce((acc, r) => acc + Math.pow(r - averageRating, 2), 0);
+        variance = parseFloat((sumSquareDiffs / (totalRated - 1)).toFixed(2));
+    }
+    const standardDeviation = parseFloat(Math.sqrt(variance).toFixed(2));
+    const reviewRatio = allEntries.length > 0 ? Math.round((reviewCount / allEntries.length) * 100) : 0;
 
-    return traits;
-}
-
-/**
- * Dynamic Achievement Badges Evaluator
- */
-function evaluateUserBadges(allEntries: any[]) {
-    const total = allEntries.length;
-    const nightOwlCount = allEntries.filter(e => {
-        const h = new Date(e.watchedAt).getHours();
-        return h >= 22 || h < 4;
-    }).length;
-
-    const rewatchCount = allEntries.filter(e => e.isRewatch).length;
-    const reviewCount = allEntries.filter(e => e.review && e.review.trim().length > 30).length;
-
-    // Dates map for binge / streak check
-    const dateCounts: Record<string, number> = {};
-    allEntries.forEach(e => {
-        const d = new Date(e.watchedAt).toISOString().split('T')[0];
-        dateCounts[d] = (dateCounts[d] || 0) + 1;
-    });
-
-    const maxInSingleDay = Math.max(...Object.values(dateCounts), 0);
-
-    // Genre count
-    const uniqueGenres = new Set<string>();
-    allEntries.forEach(e => {
-        if (e.tags && Array.isArray(e.tags)) {
-            e.tags.forEach((t: string) => uniqueGenres.add(t.toLowerCase().trim()));
-        }
-    });
-
-    // Rating average
-    let ratingSum = 0;
-    let ratedCount = 0;
-    allEntries.forEach(e => {
-        if (e.rating) {
-            ratingSum += parseFloat(e.rating);
-            ratedCount++;
-        }
-    });
-    const avgRating = ratedCount > 0 ? ratingSum / ratedCount : 7.0;
-
-    const badges = [
-        {
-            id: 'hive_legend',
-            title: 'Hive Titan',
-            description: 'Log 50+ total movies or TV shows',
-            icon: 'emoji_events',
-            color: 'from-amber-400 to-yellow-600',
-            isUnlocked: total >= 50,
-            progress: total,
-            target: 50,
-        },
-        {
-            id: 'night_owl',
-            title: 'Night Owl',
-            description: 'Log 5+ entries late at night (10 PM - 4 AM)',
-            icon: 'bedtime',
-            color: 'from-purple-500 to-indigo-700',
-            isUnlocked: nightOwlCount >= 5,
-            progress: nightOwlCount,
-            target: 5,
-        },
-        {
-            id: 'binge_marathoner',
-            title: 'Binge Marathoner',
-            description: 'Watch 3+ titles in a single day',
-            icon: 'bolt',
-            color: 'from-[#ffb700] to-orange-500',
-            isUnlocked: maxInSingleDay >= 3,
-            progress: maxInSingleDay,
-            target: 3,
-        },
-        {
-            id: 'cinephile_critic',
-            title: 'Cinephile Critic',
-            description: 'Write 5+ detailed reviews',
-            icon: 'rate_review',
-            color: 'from-emerald-400 to-teal-600',
-            isUnlocked: reviewCount >= 5,
-            progress: reviewCount,
-            target: 5,
-        },
-        {
-            id: 'genre_polymath',
-            title: 'Genre Polymath',
-            description: 'Explore 6+ distinct genres',
-            icon: 'category',
-            color: 'from-pink-500 to-rose-600',
-            isUnlocked: uniqueGenres.size >= 6,
-            progress: uniqueGenres.size,
-            target: 6,
-        },
-        {
-            id: 'comfort_rewatcher',
-            title: 'Comfort Rewatcher',
-            description: 'Log 3+ rewatched titles',
-            icon: 'autorenew',
-            color: 'from-blue-400 to-indigo-600',
-            isUnlocked: rewatchCount >= 3,
-            progress: rewatchCount,
-            target: 3,
-        },
-        {
-            id: 'discerning_critic',
-            title: 'Discerning Critic',
-            description: 'Average rating below 6.5 (High Standards)',
-            icon: 'gavel',
-            color: 'from-[#2D2926] to-[#ffb700]',
-            isUnlocked: ratedCount >= 5 && avgRating < 6.5,
-            progress: ratedCount >= 5 ? 1 : 0,
-            target: 1,
-        },
-        {
-            id: 'pure_optimist',
-            title: 'Pure Optimist',
-            description: 'Average rating above 8.0 across 5+ logs',
-            icon: 'sentiment_very_satisfied',
-            color: 'from-amber-300 to-yellow-500',
-            isUnlocked: ratedCount >= 5 && avgRating >= 8.0,
-            progress: ratedCount >= 5 ? 1 : 0,
-            target: 1,
-        },
-    ];
-
-    return badges;
-}
-
-/**
- * Generate daily time-series watch frequency for the last 30 days
- */
-function computeDailyTimeSeries(allEntries: any[]) {
-    const days: { date: string; count: number; items: any[] }[] = [];
-    const now = new Date();
-
-    for (let i = 29; i >= 0; i--) {
-        const d = new Date(now);
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-
-        const dayEntries = allEntries.filter(e => {
-            const entryDate = new Date(e.watchedAt).toISOString().split('T')[0];
-            return entryDate === dateStr;
-        });
-
-        days.push({
-            date: dateStr,
-            count: dayEntries.length,
-            items: dayEntries.map(e => ({
-                id: e.id,
-                title: e.title,
-                type: e.type,
-                rating: e.rating,
-                watchedAt: e.watchedAt,
-            })),
-        });
+    let label = 'Balanced Critic';
+    if (averageRating < 6.5) {
+        label = 'Discerning Judge';
+    } else if (averageRating >= 8.2) {
+        label = 'Generous Enthusiast';
+    } else if (standardDeviation >= 1.8) {
+        label = 'High Variance Critic';
     }
 
-    return days;
+    return {
+        averageRating,
+        variance,
+        standardDeviation,
+        label,
+        reviewRatio,
+        totalRated,
+    };
 }
 
 /**
- * Compute Suggestion Analytics & Recommender Influence Rankings
+ * Select the best Cognitive Archetype based on rigorous behavioral metrics
  */
-async function computeSuggestionAnalytics(userId: string) {
+function determineCognitiveArchetype(
+    allEntries: any[],
+    entropyData: ReturnType<typeof computeTasteEntropy>,
+    rigorData: ReturnType<typeof computeCriticalRigor>,
+    suggestionStats: any
+): CognitiveArchetype {
+    const total = allEntries.length;
+    if (total === 0) return COGNITIVE_ARCHETYPES[0];
+
+    const rewatchCount = allEntries.filter(e => e.isRewatch).length;
+    const rewatchRatio = total > 0 ? (rewatchCount / total) : 0;
+
+    const genreDist = entropyData.genreDistribution;
+    const dramaWeight = genreDist.find(g => ['Drama', 'History', 'Documentary'].includes(g.genre))?.percentage || 0;
+    const actionWeight = genreDist.find(g => ['Action', 'Thriller', 'Crime', 'Horror'].includes(g.genre))?.percentage || 0;
+    const comfortWeight = genreDist.find(g => ['Comedy', 'Animation', 'Family', 'Romance'].includes(g.genre))?.percentage || 0;
+
+    // 1. Social Connector: High suggestion reliance
+    if (suggestionStats.summary.totalSuggestionsWatched >= 3 && suggestionStats.summary.overallConversionRate >= 50) {
+        return COGNITIVE_ARCHETYPES.find(a => a.id === 'social_connector')!;
+    }
+
+    // 2. Analytic Purist: High variance, low mean rating, or high review ratio
+    if (total >= 10 && (rigorData.averageRating <= 6.6 || (rigorData.reviewRatio >= 35 && rigorData.standardDeviation >= 1.4))) {
+        return COGNITIVE_ARCHETYPES.find(a => a.id === 'analytic_purist')!;
+    }
+
+    // 3. Eclectic Polymath: High Shannon Entropy
+    if (entropyData.normalizedBreadth >= 0.75 && total >= 8) {
+        return COGNITIVE_ARCHETYPES.find(a => a.id === 'eclectic_polymath')!;
+    }
+
+    // 4. Comfort Restorer: High rewatch or high comedy/animation/family
+    if (rewatchRatio >= 0.20 || comfortWeight >= 40) {
+        return COGNITIVE_ARCHETYPES.find(a => a.id === 'comfort_restorer')!;
+    }
+
+    // 5. Adrenaline Synthesizer: High action/thriller/crime
+    if (actionWeight >= 45) {
+        return COGNITIVE_ARCHETYPES.find(a => a.id === 'adrenaline_synthesizer')!;
+    }
+
+    // 6. Contemplative Eudaimonist: High drama/history/doc or default
+    if (dramaWeight >= 35) {
+        return COGNITIVE_ARCHETYPES.find(a => a.id === 'contemplative_eudaimonist')!;
+    }
+
+    return COGNITIVE_ARCHETYPES.find(a => a.id === 'contemplative_eudaimonist')!;
+}
+
+/**
+ * Compute Suggestion Analytics & Bayesian-Smoothed Recommender Trust Scores
+ */
+async function computeSuggestionAnalytics(userId: string, globalUserRating: number) {
     try {
         // 1. Fetch suggestions sent to this user
         const receivedSuggestions = await db
@@ -588,7 +524,7 @@ async function computeSuggestionAnalytics(userId: string) {
             const stats = recommenderMap.get(e.suggestedByUserId)!;
             stats.watchedCount++;
             if (e.isWatching) stats.currentlyWatchingCount++;
-            
+
             if (e.rating) {
                 const r = parseFloat(e.rating);
                 if (r > 0) {
@@ -614,18 +550,31 @@ async function computeSuggestionAnalytics(userId: string) {
             stats.suggestedCount = Math.max(stats.suggestedCount, stats.watchedCount + 1);
         });
 
+        const C = 3; // Empirical Bayesian prior confidence weight
+        const M = globalUserRating > 0 ? globalUserRating : 7.2;
+
         const recommendersList = Array.from(recommenderMap.values()).map(r => {
             const totalSuggested = Math.max(r.suggestedCount, r.watchedCount);
             const conversionRate = totalSuggested > 0 ? Math.round((r.watchedCount / totalSuggested) * 100) : 0;
-            const avgRating = r.ratings.length > 0
+            const rawAvgRating = r.ratings.length > 0
                 ? parseFloat((r.ratings.reduce((a, b) => a + b, 0) / r.ratings.length).toFixed(1))
                 : null;
-            
-            const influenceScore = (r.watchedCount * 15) + ((avgRating || 6) * 10) + (r.highHitCount * 20);
+
+            // Bayesian smoothed rating to prevent 1-hit sample bias
+            const smoothedRating = r.ratings.length > 0
+                ? parseFloat(((r.watchedCount * (rawAvgRating || M) + C * M) / (r.watchedCount + C)).toFixed(1))
+                : parseFloat(M.toFixed(1));
+
+            // Trust Score (0 - 100) combining conversion velocity, smoothed rating, and sample damping
+            const sampleFactor = Math.min(1.0, r.watchedCount / 2);
+            const trustScore = Math.round(
+                ((0.40 * (conversionRate / 100)) + (0.60 * (smoothedRating / 10))) * sampleFactor * 100
+            );
 
             let badge = 'Film Friend';
-            if (conversionRate >= 75 && r.watchedCount >= 2) badge = '🏆 Top Taste Maker';
-            else if (r.highHitCount >= 2 || (avgRating && avgRating >= 8.0)) badge = '🎯 High Hit Rate';
+            if (trustScore >= 75 && r.watchedCount >= 2) badge = '🏆 Golden Compass';
+            else if (rawAvgRating && rawAvgRating >= M + 0.8 && r.watchedCount >= 2) badge = '🎯 Precision Tastemaker';
+            else if (conversionRate >= 60 && r.watchedCount >= 2) badge = '🤝 Faithful Pitcher';
             else if (r.watchedCount >= 3) badge = '🔥 Trend Setter';
 
             return {
@@ -637,16 +586,18 @@ async function computeSuggestionAnalytics(userId: string) {
                 watchedCount: r.watchedCount,
                 currentlyWatchingCount: r.currentlyWatchingCount,
                 conversionRate,
-                avgRating,
+                avgRating: rawAvgRating,
+                smoothedRating,
+                trustScore,
                 highHitCount: r.highHitCount,
-                influenceScore: Math.round(influenceScore),
+                influenceScore: trustScore, // Maintain backwards compatibility
                 badge,
             };
-        }).sort((a, b) => b.influenceScore - a.influenceScore);
+        }).sort((a, b) => b.trustScore - a.trustScore);
 
         const totalSuggestionsReceived = recommendersList.reduce((acc, r) => acc + r.totalSuggested, 0);
         const totalSuggestionsWatched = recommendersList.reduce((acc, r) => acc + r.watchedCount, 0);
-        const overallConversionRate = totalSuggestionsReceived > 0 
+        const overallConversionRate = totalSuggestionsReceived > 0
             ? Math.round((totalSuggestionsWatched / totalSuggestionsReceived) * 100)
             : 0;
 
@@ -669,7 +620,6 @@ async function computeSuggestionAnalytics(userId: string) {
                 topInfluencerUsername: topInfluencer ? topInfluencer.username : null,
                 bestTasteMatchUsername: bestTasteMatch ? bestTasteMatch.username : null,
             },
-            // Return only the top 5 influencers
             recommenders: recommendersList.slice(0, 5),
             outgoingImpact: {
                 totalSent: suggestionsSent?.count || 0,
@@ -693,13 +643,237 @@ async function computeSuggestionAnalytics(userId: string) {
 }
 
 /**
+ * Compute behavioral traits across entire watch history
+ */
+function computeBehavioralTrails(allEntries: any[]) {
+    const total = allEntries.length;
+    if (total === 0) return [];
+
+    const rewatchCount = allEntries.filter(e => e.isRewatch).length;
+    const rewatchRatio = Math.round((rewatchCount / total) * 100);
+
+    let ratedSum = 0;
+    let ratedCount = 0;
+    let reviewCount = 0;
+
+    allEntries.forEach(e => {
+        if (e.rating) {
+            ratedSum += parseFloat(e.rating);
+            ratedCount++;
+        }
+        if (e.review && e.review.trim().length > 20) {
+            reviewCount++;
+        }
+    });
+
+    const avgRating = ratedCount > 0 ? (ratedSum / ratedCount).toFixed(1) : '7.0';
+    const reviewRatio = Math.round((reviewCount / total) * 100);
+
+    return [
+        {
+            title: 'Rewatch Reliance',
+            value: `${rewatchRatio}%`,
+            subtitle: rewatchRatio > 25 ? 'High Comfort Seeker' : 'Fresh Explorer',
+            description: rewatchRatio > 25
+                ? 'You frequently revisit trusted favorites for emotional grounding and comfort.'
+                : 'You actively prioritize new stories and novel experiences over rewatching.',
+            icon: 'loop',
+            color: '#3b82f6',
+        },
+        {
+            title: 'Critical Rigor',
+            value: `${avgRating} ★`,
+            subtitle: parseFloat(avgRating) < 6.5 ? 'Strict Judge' : (parseFloat(avgRating) > 8.0 ? 'Generous Enthusiast' : 'Balanced Critic'),
+            description: parseFloat(avgRating) < 6.5
+                ? 'You hold cinema to high standards and reserve top marks for true masterpieces.'
+                : 'You find joy and appreciation in most movies you log.',
+            icon: 'star',
+            color: '#eab308',
+        },
+        {
+            title: 'Review Depth',
+            value: `${reviewRatio}%`,
+            subtitle: reviewRatio > 30 ? 'Active Analyst' : 'Casual Observer',
+            description: reviewRatio > 30
+                ? 'You regularly reflect on what you watch by writing reviews and notes.'
+                : 'You prefer quick logging without heavy written analysis.',
+            icon: 'edit_note',
+            color: '#10b981',
+        },
+        {
+            title: 'Catalog Scale',
+            value: `${total} Titles`,
+            subtitle: total > 50 ? 'Seasoned Cinephile' : 'Growing Vault',
+            description: `You have logged ${total} entries in your WatchHive history.`,
+            icon: 'video_library',
+            color: '#ec4899',
+        },
+    ];
+}
+
+/**
+ * Dynamic Achievement Badges Evaluator
+ */
+function evaluateUserBadges(allEntries: any[]) {
+    const total = allEntries.length;
+    const nightOwlCount = allEntries.filter(e => {
+        const h = new Date(e.watchedAt).getHours();
+        return h >= 22 || h < 4;
+    }).length;
+
+    const rewatchCount = allEntries.filter(e => e.isRewatch).length;
+    const reviewCount = allEntries.filter(e => e.review && e.review.trim().length > 30).length;
+
+    const dateCounts: Record<string, number> = {};
+    allEntries.forEach(e => {
+        const d = new Date(e.watchedAt).toISOString().split('T')[0];
+        dateCounts[d] = (dateCounts[d] || 0) + 1;
+    });
+
+    const maxInSingleDay = Math.max(...Object.values(dateCounts), 0);
+
+    const uniqueGenres = new Set<string>();
+    allEntries.forEach(e => {
+        if (e.tags && Array.isArray(e.tags)) {
+            e.tags.forEach((t: string) => uniqueGenres.add(t.toLowerCase().trim()));
+        }
+    });
+
+    let ratingSum = 0;
+    let ratedCount = 0;
+    allEntries.forEach(e => {
+        if (e.rating) {
+            ratingSum += parseFloat(e.rating);
+            ratedCount++;
+        }
+    });
+    const avgRating = ratedCount > 0 ? ratingSum / ratedCount : 7.0;
+
+    return [
+        {
+            id: 'hive_legend',
+            title: 'Hive Titan',
+            description: 'Log 50+ total movies or TV shows',
+            icon: 'emoji_events',
+            color: 'from-amber-400 to-yellow-600',
+            isUnlocked: total >= 50,
+            progress: total,
+            target: 50,
+        },
+        {
+            id: 'night_owl',
+            title: 'Night Owl',
+            description: 'Log 5+ entries late at night (10 PM - 4 AM)',
+            icon: 'bedtime',
+            color: 'from-purple-500 to-indigo-700',
+            isUnlocked: nightOwlCount >= 5,
+            progress: nightOwlCount,
+            target: 5,
+        },
+        {
+            id: 'binge_marathoner',
+            title: 'Binge Marathoner',
+            description: 'Watch 3+ titles in a single day',
+            icon: 'bolt',
+            color: 'from-[#ffb700] to-orange-500',
+            isUnlocked: maxInSingleDay >= 3,
+            progress: maxInSingleDay,
+            target: 3,
+        },
+        {
+            id: 'cinephile_critic',
+            title: 'Cinephile Critic',
+            description: 'Write 5+ detailed reviews',
+            icon: 'rate_review',
+            color: 'from-emerald-400 to-teal-600',
+            isUnlocked: reviewCount >= 5,
+            progress: reviewCount,
+            target: 5,
+        },
+        {
+            id: 'genre_polymath',
+            title: 'Genre Polymath',
+            description: 'Explore 6+ distinct genres',
+            icon: 'category',
+            color: 'from-pink-500 to-rose-600',
+            isUnlocked: uniqueGenres.size >= 6,
+            progress: uniqueGenres.size,
+            target: 6,
+        },
+        {
+            id: 'comfort_rewatcher',
+            title: 'Comfort Rewatcher',
+            description: 'Log 3+ rewatched titles',
+            icon: 'autorenew',
+            color: 'from-blue-400 to-indigo-600',
+            isUnlocked: rewatchCount >= 3,
+            progress: rewatchCount,
+            target: 3,
+        },
+        {
+            id: 'discerning_critic',
+            title: 'Discerning Critic',
+            description: 'Average rating below 6.5 (High Standards)',
+            icon: 'gavel',
+            color: 'from-[#2D2926] to-[#ffb700]',
+            isUnlocked: ratedCount >= 5 && avgRating < 6.5,
+            progress: ratedCount >= 5 ? 1 : 0,
+            target: 1,
+        },
+        {
+            id: 'pure_optimist',
+            title: 'Pure Optimist',
+            description: 'Average rating above 8.0 across 5+ logs',
+            icon: 'sentiment_very_satisfied',
+            color: 'from-amber-300 to-yellow-500',
+            isUnlocked: ratedCount >= 5 && avgRating >= 8.0,
+            progress: ratedCount >= 5 ? 1 : 0,
+            target: 1,
+        },
+    ];
+}
+
+/**
+ * Generate daily time-series watch frequency for the last 30 days
+ */
+function computeDailyTimeSeries(allEntries: any[]) {
+    const days: { date: string; count: number; items: any[] }[] = [];
+    const now = new Date();
+
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+
+        const dayEntries = allEntries.filter(e => {
+            const entryDate = new Date(e.watchedAt).toISOString().split('T')[0];
+            return entryDate === dateStr;
+        });
+
+        days.push({
+            date: dateStr,
+            count: dayEntries.length,
+            items: dayEntries.map(e => ({
+                id: e.id,
+                title: e.title,
+                type: e.type,
+                rating: e.rating,
+                watchedAt: e.watchedAt,
+            })),
+        });
+    }
+
+    return days;
+}
+
+/**
  * GET /api/v1/mindlens/insights
  */
 router.get('/insights', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.user!.userId;
 
-        // Fetch entire watch history (up to 1,000 entries for deep behavioral analysis)
+        // Fetch user watch history (up to 1,000 entries)
         const userEntries = await db
             .select({
                 id: entries.id,
@@ -717,37 +891,36 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             .orderBy(desc(entries.watchedAt))
             .limit(1000);
 
-        if (userEntries.length < 3) {
+        // Milestone Stage Determination
+        const totalEntries = userEntries.length;
+        if (totalEntries < 3) {
             res.json({
                 hasEnoughData: false,
+                milestoneStage: 'CALIBRATING',
+                calibrationProgress: { current: totalEntries, target: 5 },
                 message: "Need at least 3 watch entries to compute your MindLens profile."
             });
             return;
         }
 
-        // 1. Theme & Mood Counts across entire history
-        const themeCounts: Record<string, number> = {};
-        const moodCounts: Record<string, number> = {};
-        const normalize = (s: string) => s.toLowerCase().trim();
+        const milestoneStage = totalEntries < 5 ? 'CALIBRATING' : (totalEntries < 15 ? 'FOUNDATIONAL' : 'FULL');
 
-        userEntries.forEach(entry => {
-            if (entry.tags && Array.isArray(entry.tags)) {
-                entry.tags.forEach(tag => {
-                    for (const [genre, theme] of Object.entries(GENRE_THEMES)) {
-                        if (normalize(tag).includes(normalize(genre)) || normalize(genre).includes(normalize(tag))) {
-                            themeCounts[theme] = (themeCounts[theme] || 0) + 1;
-                        }
-                    }
-                    for (const [genre, mood] of Object.entries(MOOD_MAP)) {
-                        if (normalize(tag).includes(normalize(genre)) || normalize(genre).includes(normalize(tag))) {
-                            moodCounts[mood] = (moodCounts[mood] || 0) + 1;
-                        }
-                    }
-                });
-            }
-        });
+        // 1. Taste Entropy & Genre Dispersion
+        const tasteBreadth = computeTasteEntropy(userEntries);
 
-        // 2. Time of Day Distribution
+        // 2. Critical Rigor & Standard Deviation
+        const criticalRigor = computeCriticalRigor(userEntries);
+
+        // 3. Affective State (Russell's Circumplex Model) over last 7 watches
+        const affectiveState = computeAffectiveState(userEntries);
+
+        // 4. Recommender Network & Social Suggestion Concordance
+        const suggestionAnalytics = await computeSuggestionAnalytics(userId, criticalRigor.averageRating);
+
+        // 5. Cognitive Archetype Selection
+        const selectedArchetype = determineCognitiveArchetype(userEntries, tasteBreadth, criticalRigor, suggestionAnalytics);
+
+        // 6. Time of Day Distribution
         const timeOfDay = { morning: 0, afternoon: 0, evening: 0, night: 0 };
         userEntries.forEach(entry => {
             const hour = new Date(entry.watchedAt).getHours();
@@ -757,115 +930,69 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             else timeOfDay.night++;
         });
 
-        // 3. Top Themes & Moods
-        const topThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 4);
-        const topMoods = Object.entries(moodCounts).sort((a, b) => b[1] - a[1]).slice(0, 2);
-
-        // 4. Soul Persona Assignment
-        let selectedPersona = SOUL_PERSONAS[0];
-        let maxPersonaScore = -1;
-        const currentThemes = topThemes.map(t => t[0]);
-        const currentMoods = topMoods.map(m => m[0]);
-
-        SOUL_PERSONAS.forEach(persona => {
-            let score = 0;
-            persona.criteria.themes.forEach(t => {
-                if (currentThemes.includes(t)) score += 2;
-            });
-            persona.criteria.moods.forEach(m => {
-                if (currentMoods.includes(m)) score += 1;
-            });
-
-            if (score > maxPersonaScore) {
-                maxPersonaScore = score;
-                selectedPersona = persona;
-            }
-        });
-
-        // 5. Predict Current Mental State / Mood from Recent Watches (last 7 entries)
-        const recentEntries = userEntries.slice(0, 7);
-        const moodPrediction = computeCurrentMoodPrediction(recentEntries);
-
-        // 6. Behavioral Trails & Badges
+        // 7. Behavioral Trails, Badges, and Time Series
         const behavioralTrails = computeBehavioralTrails(userEntries);
         const badges = evaluateUserBadges(userEntries);
         const dailyTimeSeries = computeDailyTimeSeries(userEntries);
-        const suggestionAnalytics = await computeSuggestionAnalytics(userId);
 
-        // 7. Aesthetic Profile Palette
-        const AESTHETIC_GENRES: Record<string, string[]> = {
-            'Noir': ['Crime', 'Thriller', 'Mystery'],
-            'Amber': ['History', 'Romance', 'Drama'],
-            'Concrete': ['Documentary', 'War'],
-            'Forest': ['Adventure', 'Fantasy', 'Family'],
-            'Grit': ['Action', 'Horror'],
-            'Void': ['Science Fiction', 'Sci-Fi'],
-            'Neon': ['Animation', 'Music'],
-            'Pastel': ['Comedy', 'TV Movie']
-        };
-
-        const aestheticCounts: Record<string, number> = {};
-        Object.keys(AESTHETIC_GENRES).forEach(k => aestheticCounts[k] = 0);
-        userEntries.forEach(entry => {
-            if (entry.tags) {
-                entry.tags.forEach(tag => {
-                    for (const [aesthetic, genres] of Object.entries(AESTHETIC_GENRES)) {
-                        if (genres.some(g => normalize(tag).includes(normalize(g)))) {
-                            aestheticCounts[aesthetic]++;
-                        }
-                    }
-                });
-            }
-        });
-
-        let topAesthetics = Object.entries(aestheticCounts)
-            .filter(a => a[1] > 0)
-            .sort((a, b) => b[1] - a[1])
-            .map(a => a[0]);
-
-        const allAesthetics = Object.keys(AESTHETIC_GENRES);
-        while (topAesthetics.length < 6) {
-            const randomAes = allAesthetics[Math.floor(Math.random() * allAesthetics.length)];
-            if (!topAesthetics.includes(randomAes)) topAesthetics.push(randomAes);
-        }
-        topAesthetics = topAesthetics.slice(0, 6);
-
-        // 8. Generate Verbal Insights
+        // 8. Generate Observational Insights (Epistemic Humility)
         const insights: string[] = [];
-        if (topThemes.length > 0) {
-            insights.push(`Your overall viewing pattern leans strongly toward **${topThemes[0][0]}**.`);
-        }
-        if (timeOfDay.night > (userEntries.length * 0.35)) {
-            insights.push("High late-night viewing detected. You tend to reclaim personal reflection time during late hours.");
-        } else if (timeOfDay.morning > (userEntries.length * 0.25)) {
-            insights.push("You integrate movie/TV watching into your morning routine to kickstart creative energy.");
-        }
+
+        // Breadth insight
+        insights.push(`Your catalog reflects **${tasteBreadth.label}** (${Math.round(tasteBreadth.normalizedBreadth * 100)}% Taste Breadth) with ${tasteBreadth.description.toLowerCase()}`);
+
+        // Affective insight
+        insights.push(`Recent watches indicate an **${affectiveState.mood}** cycle (${affectiveState.status}) across titles like *${affectiveState.recentTitles.slice(0, 2).join('*, *')}*.`);
+
+        // Recommender insight
         if (suggestionAnalytics.summary.topInfluencerUsername) {
-            insights.push(`**@${suggestionAnalytics.summary.topInfluencerUsername}** is your #1 Cinematic Influencer on WatchHive!`);
+            const topTastemaker = suggestionAnalytics.recommenders[0];
+            const badgeStr = topTastemaker?.badge ? ` (${topTastemaker.badge})` : '';
+            insights.push(`**@${suggestionAnalytics.summary.topInfluencerUsername}**${badgeStr} is your leading taste influence with a **${topTastemaker?.conversionRate || 0}%** conversion velocity.`);
         }
+
+        // Circadian insight
+        if (timeOfDay.night > (totalEntries * 0.35)) {
+            insights.push("You consistently gravitate toward late-night viewing (10 PM - 4 AM) for focused personal decompression.");
+        } else if (timeOfDay.evening > (totalEntries * 0.45)) {
+            insights.push("Evening prime-time is your primary cinematic window to unwind and transition from the day.");
+        }
+
+        // Backwards compatibility persona structure
+        const persona = {
+            name: selectedArchetype.name,
+            tagline: selectedArchetype.tagline,
+            description: selectedArchetype.description,
+            icon: selectedArchetype.icon,
+            color: selectedArchetype.color,
+            scientificBasis: selectedArchetype.scientificBasis,
+            traits: selectedArchetype.coreTraits,
+            imageUrl: '',
+        };
 
         res.json({
             hasEnoughData: true,
+            milestoneStage,
+            calibrationProgress: { current: totalEntries, target: 15 },
             userProfile: {
-                totalEntries: userEntries.length,
-                primaryMood: topMoods[0] ? topMoods[0][0] : 'Balanced',
+                totalEntries,
+                primaryMood: affectiveState.mood,
+                tasteBreadth,
+                criticalRigor,
             },
-            persona: {
-                name: selectedPersona.name,
-                description: selectedPersona.description,
-                icon: selectedPersona.icon,
-                imageUrl: selectedPersona.imageUrl,
-                color: selectedPersona.color
-            },
-            moodPrediction,
+            persona,
+            archetype: selectedArchetype,
+            tasteBreadth,
+            affectiveState,
+            moodPrediction: affectiveState, // Maintain backwards compatibility
+            criticalRigor,
             behavioralTrails,
             badges,
             dailyTimeSeries,
             suggestionAnalytics,
-            themes: topThemes.map(([name, score]) => ({ name, score })),
+            themes: tasteBreadth.genreDistribution.map(g => ({ name: g.genre, score: g.weight })),
             timeDistribution: timeOfDay,
             insights,
-            aesthetics: topAesthetics,
             generatedAt: new Date(),
         });
 

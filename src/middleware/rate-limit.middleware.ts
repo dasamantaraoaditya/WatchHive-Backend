@@ -24,6 +24,7 @@ export const authLimiter = rateLimit({
     limit: 15,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    skip: () => process.env.NODE_ENV !== 'production',
     message: {
         error: 'Too many authentication attempts. Please try again after 15 minutes.',
     },
@@ -38,6 +39,7 @@ export const passwordResetLimiter = rateLimit({
     limit: 5,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    skip: () => process.env.NODE_ENV !== 'production',
     message: {
         error: 'Too many password reset requests. Please try again after 15 minutes.',
     },
