@@ -943,13 +943,30 @@ router.delete('/:id/block', authMiddleware, async (req: Request, res: Response, 
 router.get('/me/blocks', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const blockerId = req.user!.userId;
-        const blocks = await db
+        const rawBlocks = await db
             .select({
                 blockedId: blockedUsers.blockedId,
                 createdAt: blockedUsers.createdAt,
+                username: users.username,
+                displayName: users.displayName,
+                profilePictureUrl: users.profilePictureUrl,
             })
             .from(blockedUsers)
+            .leftJoin(users, eq(blockedUsers.blockedId, users.id))
             .where(eq(blockedUsers.blockerId, blockerId));
+
+        const blocks = await Promise.all(
+            rawBlocks.map(async b => ({
+                blockedId: b.blockedId,
+                createdAt: b.createdAt,
+                user: {
+                    id: b.blockedId,
+                    username: b.username || 'user',
+                    displayName: b.displayName || b.username || 'Watcher',
+                    profilePictureUrl: await getAvatarUrl(b.profilePictureUrl),
+                },
+            }))
+        );
 
         res.json({
             blockedUserIds: blocks.map(b => b.blockedId),
