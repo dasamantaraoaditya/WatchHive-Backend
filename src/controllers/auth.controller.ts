@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/auth.service.js';
 import { googleAuthService } from '../services/google-auth.service.js';
+import { appleAuthService } from '../services/apple-auth.service.js';
 
 export const authController = {
     async register(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -51,6 +52,29 @@ export const authController = {
             }
 
             const result = await googleAuthService.loginOrRegister(idToken);
+
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    async appleLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { identityToken, userIdentifier, email, givenName, familyName } = req.body;
+
+            if (!identityToken) {
+                res.status(400).json({ error: 'Apple identityToken is required' });
+                return;
+            }
+
+            const result = await appleAuthService.loginOrRegister({
+                identityToken,
+                userIdentifier,
+                email,
+                givenName,
+                familyName,
+            });
 
             res.status(200).json(result);
         } catch (error) {

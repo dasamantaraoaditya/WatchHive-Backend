@@ -24,6 +24,7 @@ import statsRoutes from './routes/stats.routes.js';
 import suggestionsRoutes from './routes/suggestions.routes.js';
 import dataRoutes from './routes/data.routes.js';
 import avatarRoutes from './routes/avatar.routes.js';
+import reportsRoutes from './routes/reports.routes.js';
 import { apiLimiter } from './middleware/rate-limit.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -155,6 +156,7 @@ app.use('/api/v1/push', pushRoutes);
 app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/suggestions', suggestionsRoutes);
 app.use('/api/v1/data', dataRoutes);
+app.use('/api/v1/reports', reportsRoutes);
 
 // 404 handler
 app.use(notFoundHandler);

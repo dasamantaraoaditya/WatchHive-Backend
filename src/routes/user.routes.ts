@@ -4,7 +4,7 @@ import path from 'path';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
-import { users, follows, entries, lists, listItems, followRequests } from '../db/schema.js';
+import { users, follows, entries, lists, listItems, followRequests, blockedUsers } from '../db/schema.js';
 import { eq, or, and, ilike, not, count, exists, desc } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 
@@ -367,6 +367,54 @@ router.delete('/me/avatar', authMiddleware, async (req: Request, res: Response, 
             });
 
         res.json(user);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/me:
+ *   delete:
+ *     tags: [User]
+ *     summary: Permanently delete current user account (Apple App Store Guideline 5.1.1(v))
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Account successfully deleted
+ *       401:
+ *         description: Unauthorized
+ */
+router.delete('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.user!.userId;
+
+        // 1. Fetch current user to clean up S3 avatar if present
+        const [currentUser] = await db
+            .select({ profilePictureUrl: users.profilePictureUrl })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+
+        if (currentUser?.profilePictureUrl && !currentUser.profilePictureUrl.startsWith('http')) {
+            try {
+                await s3.send(new DeleteObjectCommand({
+                    Bucket: process.env.AWS_S3_BUCKET_NAME || 'watchhive-avatars',
+                    Key: currentUser.profilePictureUrl,
+                }));
+            } catch (err: any) {
+                console.error('[User] Error deleting avatar during account deletion:', err);
+            }
+        }
+
+        // 2. Delete user row from database (cascades to entries, lists, follows, likes, comments, tokens)
+        await db.delete(users).where(eq(users.id, userId));
+
+        res.json({
+            success: true,
+            message: 'Your account and all associated data have been permanently deleted.',
+        });
     } catch (error) {
         next(error);
     }
@@ -802,6 +850,111 @@ router.get('/:id/watchlist', authMiddleware, async (req: Request, res: Response,
         });
 
         res.json(watchlist || { items: [] });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/{id}/block:
+ *   post:
+ *     tags: [User, Moderation]
+ *     summary: Block a user (Apple App Store Guideline 1.2)
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/:id/block', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const blockerId = req.user!.userId;
+        const targetUserId = req.params.id;
+
+        if (blockerId === targetUserId) {
+            throw new AppError('You cannot block yourself', 400);
+        }
+
+        // 1. Insert block record
+        await db
+            .insert(blockedUsers)
+            .values({
+                blockerId,
+                blockedId: targetUserId,
+            })
+            .onConflictDoNothing();
+
+        // 2. Automatically sever mutual follows
+        await db.delete(follows).where(
+            or(
+                and(eq(follows.followerId, blockerId), eq(follows.followingId, targetUserId)),
+                and(eq(follows.followerId, targetUserId), eq(follows.followingId, blockerId))
+            )
+        );
+
+        res.json({
+            success: true,
+            message: 'User blocked successfully. Their posts and comments will no longer appear.',
+            blockedUserId: targetUserId,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/{id}/block:
+ *   delete:
+ *     tags: [User, Moderation]
+ *     summary: Unblock a user
+ *     security:
+ *       - bearerAuth: []
+ */
+router.delete('/:id/block', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const blockerId = req.user!.userId;
+        const targetUserId = req.params.id;
+
+        await db.delete(blockedUsers).where(
+            and(
+                eq(blockedUsers.blockerId, blockerId),
+                eq(blockedUsers.blockedId, targetUserId)
+            )
+        );
+
+        res.json({
+            success: true,
+            message: 'User unblocked successfully.',
+            unblockedUserId: targetUserId,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/me/blocks:
+ *   get:
+ *     tags: [User, Moderation]
+ *     summary: Get list of blocked user IDs for current user
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/me/blocks', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const blockerId = req.user!.userId;
+        const blocks = await db
+            .select({
+                blockedId: blockedUsers.blockedId,
+                createdAt: blockedUsers.createdAt,
+            })
+            .from(blockedUsers)
+            .where(eq(blockedUsers.blockerId, blockerId));
+
+        res.json({
+            blockedUserIds: blocks.map(b => b.blockedId),
+            blocks,
+        });
     } catch (error) {
         next(error);
     }
