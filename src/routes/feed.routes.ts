@@ -225,54 +225,112 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             return timeB - timeA;
         });
 
-        // 3. Advanced Suggestions Generation
+        // 3. Advanced Suggestions Generation (WatchHive Movie Recommender)
         let suggestions: any[] = [];
 
         try {
-            // A. Fetch Most Recent User Entry for Contextual Suggestions
-            const [lastEntry] = await db
-                .select()
+            // A. Fetch the user's most recent entries for contextual suggestions
+            const userRecentEntries = await db
+                .select({
+                    id: entries.id,
+                    tmdbId: entries.tmdbId,
+                    title: entries.title,
+                    type: entries.type,
+                })
                 .from(entries)
                 .where(eq(entries.userId, userId))
-                .orderBy(desc(entries.watchedAt))
-                .limit(1);
+                .orderBy(desc(sql`COALESCE(${entries.updatedAt}, ${entries.completedAt}, ${entries.startedAt}, ${entries.createdAt}, ${entries.watchedAt})`))
+                .limit(3);
 
-            // C. Fetch TMDb Suggestions
             let tmdbRecs: any[] = [];
 
-            if (lastEntry) {
-                const recs = lastEntry.type === 'TV_SHOW'
-                    ? await tmdbService.getTVShowRecommendations(lastEntry.tmdbId)
-                    : await tmdbService.getMovieRecommendations(lastEntry.tmdbId);
+            // Fetch TMDb recommendations for the user's primary/latest watched title
+            if (userRecentEntries.length > 0) {
+                const primaryEntry = userRecentEntries[0];
+                try {
+                    const recs = primaryEntry.type === 'TV_SHOW'
+                        ? await tmdbService.getTVShowRecommendations(primaryEntry.tmdbId)
+                        : await tmdbService.getMovieRecommendations(primaryEntry.tmdbId);
 
-                tmdbRecs = recs.results.map((r: any) => ({ ...r, reason: `Because you watched ${lastEntry.title}` }));
+                    if (recs && recs.results && recs.results.length > 0) {
+                        tmdbRecs.push(...recs.results.map((r: any) => ({
+                            ...r,
+                            reason: `Because you watched ${primaryEntry.title}`
+                        })));
+                    }
+                } catch (recErr) {
+                    console.error(`Failed to fetch recommendations for ${primaryEntry.title}:`, recErr);
+                }
+
+                // If primary produced few recs and a 2nd recent entry exists, fetch for it too
+                if (tmdbRecs.length < 6 && userRecentEntries.length > 1) {
+                    const secondaryEntry = userRecentEntries[1];
+                    try {
+                        const recs = secondaryEntry.type === 'TV_SHOW'
+                            ? await tmdbService.getTVShowRecommendations(secondaryEntry.tmdbId)
+                            : await tmdbService.getMovieRecommendations(secondaryEntry.tmdbId);
+
+                        if (recs && recs.results && recs.results.length > 0) {
+                            tmdbRecs.push(...recs.results.map((r: any) => ({
+                                ...r,
+                                reason: `Because you watched ${secondaryEntry.title}`
+                            })));
+                        }
+                    } catch {
+                        // Ignore secondary errors
+                    }
+                }
             }
 
-            // Global trending
-            const globalTrending = await tmdbService.getTrending('all', 'week');
-            const trendingItems = globalTrending.results.map((r: any) => ({ ...r, reason: "Trending this week" }));
+            // Global trending items
+            let trendingItems: any[] = [];
+            try {
+                const globalTrending = await tmdbService.getTrending('all', 'week');
+                if (globalTrending && globalTrending.results) {
+                    trendingItems = globalTrending.results.map((r: any) => ({
+                        ...r,
+                        reason: "Trending this week"
+                    }));
+                }
+            } catch (trendErr) {
+                console.error("Failed to fetch trending for feed suggestions", trendErr);
+            }
 
-            suggestions = [...tmdbRecs.slice(0, 10), ...trendingItems.slice(0, 10)];
+            // Fetch all tmdbIds this user has logged so we never recommend titles they've already seen
+            const userLoggedEntries = await db
+                .select({ tmdbId: entries.tmdbId })
+                .from(entries)
+                .where(eq(entries.userId, userId));
+            const userWatchedTmdbSet = new Set(userLoggedEntries.map(e => e.tmdbId));
 
-            // Randomize slightly
-            suggestions.sort(() => Math.random() - 0.5);
+            // Combine: Contextual recommendations first, followed by trending highlights
+            const rawCandidates = [...tmdbRecs, ...trendingItems];
+            const seenIds = new Set<number>();
+            suggestions = [];
+
+            for (const item of rawCandidates) {
+                if (!item || !item.id) continue;
+                if (userWatchedTmdbSet.has(item.id)) continue;
+                if (seenIds.has(item.id)) continue;
+                seenIds.add(item.id);
+                suggestions.push(item);
+            }
 
         } catch (err) {
             console.error('Failed to fetch advanced suggestions', err);
             try {
                 const fallback = await tmdbService.getTrending('all', 'week');
-                suggestions = fallback.results.map((r: any) => ({ ...r, reason: "Trending Now" }));
+                suggestions = (fallback?.results || []).map((r: any) => ({ ...r, reason: "Trending Now" }));
             } catch (fallbackErr) {
                 console.error('Fallback also failed:', fallbackErr);
                 suggestions = [];
             }
         }
 
-        // Pre-fetch only candidate items on this page that the user has watched
-        const candidateTmdbIds = Array.from(new Set([
-            ...sortedEntries.map((e: any) => e.tmdbId),
-            ...suggestions.map((s: any) => s.id)
-        ])).filter((id): id is number => typeof id === 'number' && id > 0);
+        // Pre-fetch watched status for candidate entry items on this page
+        const candidateTmdbIds = Array.from(new Set(
+            sortedEntries.map((e: any) => e.tmdbId)
+        )).filter((id): id is number => typeof id === 'number' && id > 0);
 
         const watchedTmdbSet = new Set<string>();
         if (candidateTmdbIds.length > 0) {
@@ -289,8 +347,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         }
 
         // 4. Mix Content Strategy
+        const TARGET_PAGE_FEED_SIZE = 12;
         const feedItems: any[] = [];
-        let suggestionIndex = (page - 1) * 2;
+        let suggestionIndex = (page - 1) * 3;
 
         const mappedEntries = (sortedEntries as any[]).map(entry => ({
             type: 'ENTRY',
@@ -308,37 +367,69 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         }));
 
         if (mappedEntries.length === 0 && page === 1) {
-            suggestions.slice(0, 15).forEach(item => {
+            // New user with 0 entries & 0 follows: Show full discovery suggestions
+            suggestions.slice(0, TARGET_PAGE_FEED_SIZE).forEach((item, idx) => {
                 feedItems.push({
                     type: 'SUGGESTION',
-                    id: `suggestion-${item.id}`,
+                    id: `suggestion-${item.id}-${page}-${idx}`,
                     timestamp: new Date(),
                     data: {
                         ...item,
-                        isWatched: watchedTmdbSet.has(`${(item as any)?.media_type?.toUpperCase() === 'TV' ? 'TV_SHOW' : 'MOVIE'}-${item.id}`)
+                        isWatched: false
                     },
                     reason: item.reason || "Trending on WatchHive"
                 });
             });
         } else {
+            // User has entries (1 or more)
+            // When there are few entries (<= 3), interleave after every entry.
+            // When there are many entries (> 3), interleave every 3 entries.
+            const interleaveInterval = mappedEntries.length <= 3 ? 1 : 3;
+
             for (let i = 0; i < mappedEntries.length; i++) {
                 feedItems.push(mappedEntries[i]);
 
-                if ((i + 1) % 3 === 0) {
+                if ((i + 1) % interleaveInterval === 0 && suggestions.length > 0) {
                     const sugg = suggestions[suggestionIndex % suggestions.length];
                     if (sugg) {
                         feedItems.push({
                             type: 'SUGGESTION',
                             id: `suggestion-${sugg.id}-${page}-${i}`,
-                            timestamp: mappedEntries[i].timestamp,
+                            timestamp: mappedEntries[i].timestamp || new Date(),
                             data: {
                                 ...sugg,
-                                isWatched: watchedTmdbSet.has(`${(sugg as any)?.media_type?.toUpperCase() === 'TV' ? 'TV_SHOW' : 'MOVIE'}-${sugg.id}`)
+                                isWatched: false
                             },
                             reason: sugg.reason || "Trending Now"
                         });
                         suggestionIndex++;
                     }
+                }
+            }
+
+            // On page 1, if feed has fewer items than TARGET_PAGE_FEED_SIZE (e.g. user logged only 1 movie),
+            // fill remaining slots with recommender suggestions!
+            if (page === 1 && suggestions.length > 0) {
+                let padCount = 0;
+                while (feedItems.length < TARGET_PAGE_FEED_SIZE && padCount < suggestions.length) {
+                    const sugg = suggestions[suggestionIndex % suggestions.length];
+                    if (sugg) {
+                        const alreadyInFeed = feedItems.some(f => f.type === 'SUGGESTION' && f.data?.id === sugg.id);
+                        if (!alreadyInFeed) {
+                            feedItems.push({
+                                type: 'SUGGESTION',
+                                id: `suggestion-${sugg.id}-${page}-pad-${padCount}`,
+                                timestamp: new Date(),
+                                data: {
+                                    ...sugg,
+                                    isWatched: false
+                                },
+                                reason: sugg.reason || "Trending Now"
+                            });
+                        }
+                    }
+                    suggestionIndex++;
+                    padCount++;
                 }
             }
         }
