@@ -137,15 +137,19 @@ export const appleAuthService = {
 
             let uniqueUsername = candidateUsername;
             let counter = 1;
-            while (true) {
+            let isUnique = false;
+            while (!isUnique) {
                 const [existing] = await db
                     .select({ id: users.id })
                     .from(users)
                     .where(eq(users.username, uniqueUsername))
                     .limit(1);
 
-                if (!existing) break;
-                uniqueUsername = `${candidateUsername}${counter++}`;
+                if (!existing) {
+                    isUnique = true;
+                } else {
+                    uniqueUsername = `${candidateUsername}${counter++}`;
+                }
             }
 
             const registrationEmail = effectiveEmail || `${appleSub.substring(0, 12)}@privaterelay.appleid.com`;
