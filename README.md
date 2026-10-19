@@ -12,6 +12,7 @@ WatchHive Backend provides the core business logic, social graph, movie metadata
 - **Community Suggestions Engine**: Suggesting movies directly to friends, tracking recommendation impact, and logging suggester gratitude.
 - **Social Graph & Feed**: Follow/unfollow, friend activity feeds, likes, comments, and mentions.
 - **Cross-Platform Notifications**: Web Push notifications and Firebase Cloud Messaging (FCM) for mobile push.
+- **MindLens 2.0 Behavioral Intelligence Engine**: Empirical cinematic telemetry measuring Shannon Information Entropy ($H(G)$) for taste breadth, Russell's Circumplex Affective State, Empirical Bayesian Recommender Trust ($RTS$), and 6 cognitive viewing archetypes. Full specification documented in [MINDLENS_SPECIFICATION.md](docs/MINDLENS_SPECIFICATION.md).
 - **Multi-Environment Orchestration**: Isolated Staging and Production architectures running with automated CI/CD and protected branches.
 
 ---
