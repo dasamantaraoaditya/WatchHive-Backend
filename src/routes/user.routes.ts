@@ -882,12 +882,9 @@ router.post('/:id/block', authMiddleware, async (req: Request, res: Response, ne
             })
             .onConflictDoNothing();
 
-        // 2. Automatically sever mutual follows
+        // 2. Automatically sever the blocked user from following blocker
         await db.delete(follows).where(
-            or(
-                and(eq(follows.followerId, blockerId), eq(follows.followingId, targetUserId)),
-                and(eq(follows.followerId, targetUserId), eq(follows.followingId, blockerId))
-            )
+            and(eq(follows.followerId, targetUserId), eq(follows.followingId, blockerId))
         );
 
         res.json({
@@ -920,6 +917,14 @@ router.delete('/:id/block', authMiddleware, async (req: Request, res: Response, 
                 eq(blockedUsers.blockedId, targetUserId)
             )
         );
+
+        // If refollow requested, ensure blocker follows target
+        if (req.body?.refollow === true || req.query.refollow === 'true') {
+            await db.insert(follows).values({
+                followerId: blockerId,
+                followingId: targetUserId,
+            }).onConflictDoNothing();
+        }
 
         res.json({
             success: true,

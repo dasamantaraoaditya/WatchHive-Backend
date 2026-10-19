@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { users, entries, follows } from '../db/schema.js';
+import { users, entries, follows, blockedUsers } from '../db/schema.js';
 import { eq, desc, sql, inArray, and, or, not, aliasedTable } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
@@ -140,8 +140,29 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
 
         const followedIds = followList.map(f => f.followingId);
 
+        // 1.1 Exclude blocked users (either blocked by userId or blocking userId)
+        const blocks = await db
+            .select({
+                blockerId: blockedUsers.blockerId,
+                blockedId: blockedUsers.blockedId,
+            })
+            .from(blockedUsers)
+            .where(
+                or(
+                    eq(blockedUsers.blockerId, userId),
+                    eq(blockedUsers.blockedId, userId)
+                )
+            );
+
+        const blockedUserIds = new Set(
+            blocks.flatMap(b => [b.blockerId, b.blockedId]).filter(id => id !== userId)
+        );
+
+        // Filter followed IDs to exclude blocked users
+        const activeFollowedIds = followedIds.filter(id => !blockedUserIds.has(id));
+
         // Include self in the feed
-        const relevantUserIds = [...followedIds, userId];
+        const relevantUserIds = [...activeFollowedIds, userId];
 
         const suggestor = aliasedTable(users, 'suggestor');
 
