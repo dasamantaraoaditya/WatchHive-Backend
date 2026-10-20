@@ -361,12 +361,14 @@ router.post('/import/preview', authMiddleware, async (req: Request, res: Respons
         const matchedCount = previewEntries.filter(e => e.matchStatus === 'MATCHED').length;
         const unmatchedCount = previewEntries.filter(e => e.matchStatus === 'UNMATCHED').length;
         const duplicateCount = previewEntries.filter(e => e.isDuplicate).length;
+        const missingDateCount = previewEntries.filter(e => !e.watchedAt).length;
 
         return res.json({
             total: previewEntries.length,
             matchedCount,
             unmatchedCount,
             duplicateCount,
+            missingDateCount,
             entries: previewEntries,
             lists: rawLists,
         });
@@ -434,16 +436,40 @@ function parseCsvToEntries(csvText: string): any[] {
         const rawType = (row['type'] || 'MOVIE').toUpperCase();
         const type = rawType.includes('TV') ? 'TV_SHOW' : 'MOVIE';
         const rating = row['rating'] ? parseFloat(row['rating']) : null;
-        const watchedAt = row['watchedat'] || row['watched at'] || row['watched date'] || row['date'] || null;
         const review = row['review'] || null;
         const tags = row['tags'] ? row['tags'].split('|').map(t => t.trim()).filter(Boolean) : [];
         const isRewatch = row['isrewatch'] === 'true' || row['is_rewatch'] === 'true';
         const isWatching = row['iswatching'] === 'true' || row['is_watching'] === 'true';
         const watchLocation = row['watchlocation'] || row['watch_location'] || null;
+        const year = row['year'] || row['releaseyear'] || row['release year'] || null;
+
+        // Date & Time: Date is mandatory; time falls back to 12:00:00 (midday) if omitted.
+        const rawDate = row['watchedat'] || row['watched at'] || row['watched date'] || row['date'] || null;
+        const rawTime = row['watchedtime'] || row['watched time'] || row['time'] || row['time watched'] || null;
+
+        let watchedAt: string | null = null;
+        if (rawDate) {
+            let combined = rawDate;
+            if (rawTime && !/T\d{2}:\d{2}/i.test(rawDate) && !/\b\d{1,2}:\d{2}\b/.test(rawDate)) {
+                combined = `${rawDate} ${rawTime}`;
+            }
+            const d = new Date(combined);
+            if (!isNaN(d.getTime())) {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+                    watchedAt = new Date(`${rawDate}T12:00:00Z`).toISOString();
+                } else {
+                    if (d.getHours() === 0 && d.getMinutes() === 0 && !rawTime) {
+                        d.setHours(12, 0, 0, 0);
+                    }
+                    watchedAt = d.toISOString();
+                }
+            }
+        }
 
         entriesResult.push({
             tmdbId,
             title,
+            year,
             type,
             rating,
             watchedAt,
