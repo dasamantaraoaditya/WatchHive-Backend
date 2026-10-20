@@ -23,6 +23,8 @@ import pushRoutes from './routes/push.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import suggestionsRoutes from './routes/suggestions.routes.js';
 import dataRoutes from './routes/data.routes.js';
+import avatarRoutes from './routes/avatar.routes.js';
+import reportsRoutes from './routes/reports.routes.js';
 import { apiLimiter } from './middleware/rate-limit.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,12 +32,17 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Trust reverse proxy (Railway, load balancers) so client IPs are accurately resolved for rate limiting
+app.set('trust proxy', 1);
+
 // Swagger Documentation
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// Security middleware — allow images from same origin
+// Security middleware — allow images from same origin, enable HSTS, hide Express fingerprint
 app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: config.nodeEnv === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+    hidePoweredBy: true,
 }));
 
 // CORS — allow both production URL and localhost for development
@@ -51,21 +58,32 @@ if (config.nodeEnv === 'development') {
     // Also allow the backend's own production URL for Swagger UI and production domains
     allowedOrigins.push(
         'https://watchhive-api-production.up.railway.app',
+        'https://watchhive-api-staging.up.railway.app',
         'https://watchershive.com',
         'https://www.watchershive.com',
         'https://watchershive.vercel.app',
         'https://watcherhive.com',
         'https://www.watcherhive.com',
         'https://watchhive-web.vercel.app',
+        'https://watchhive-frontend.vercel.app',
+        'https://watchhive-staging.vercel.app',
     );
 }
+
+// Regex to safely allow only genuine WatchHive preview deployments on Vercel and Railway
+const allowedVercelPattern = /^https:\/\/([a-z0-9-]+-)?(watchhive|watchershive)[a-z0-9-]*\.vercel\.app$/i;
+const allowedRailwayPattern = /^https:\/\/watchhive-api-(production|staging)\.up\.railway\.app$/i;
 
 app.use(
     cors({
         origin: (origin, callback) => {
             // Allow requests with no origin (mobile apps, curl, etc.)
             if (!origin) return callback(null, true);
-            if (allowedOrigins.includes(origin)) {
+            if (
+                allowedOrigins.includes(origin) ||
+                allowedVercelPattern.test(origin) ||
+                allowedRailwayPattern.test(origin)
+            ) {
                 return callback(null, true);
             }
             return callback(new Error(`CORS: origin ${origin} not allowed`));
@@ -125,6 +143,11 @@ if (config.nodeEnv === 'development') {
     app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 }
 
+// Public avatar streaming endpoints
+app.use('/api/v1/avatars', avatarRoutes);
+app.use('/api/v1/users/avatar', avatarRoutes);
+app.use('/avatars', avatarRoutes);
+
 // General API rate limiting
 app.use('/api/v1', apiLimiter);
 
@@ -144,6 +167,7 @@ app.use('/api/v1/push', pushRoutes);
 app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/suggestions', suggestionsRoutes);
 app.use('/api/v1/data', dataRoutes);
+app.use('/api/v1/reports', reportsRoutes);
 
 // 404 handler
 app.use(notFoundHandler);

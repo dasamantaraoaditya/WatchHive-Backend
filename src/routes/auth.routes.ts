@@ -165,6 +165,18 @@ router.post('/google', authLimiter, authController.googleLogin);
 
 /**
  * @openapi
+ * /api/v1/auth/apple:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Login with Sign in with Apple (Apple App Store Guideline 4.8)
+ *     responses:
+ *       200:
+ *         description: Apple login successful
+ */
+router.post('/apple', authLimiter, authController.appleLogin);
+
+/**
+ * @openapi
  * /api/v1/auth/refresh:
  *   post:
  *     tags: [Authentication]

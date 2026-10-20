@@ -30,7 +30,7 @@ export const errorHandler = (
     // Unhandled errors
     console.error('Unhandled error:', err);
     res.status(500).json({
-        error: 'Internal server error',
+        error: 'Our hive is experiencing high traffic. Please try again in a few moments.',
         ...(process.env.NODE_ENV === 'development' && {
             message: err.message,
             stack: err.stack,
@@ -43,5 +43,5 @@ export const notFoundHandler = (
     res: Response,
     _next: NextFunction
 ): void => {
-    res.status(404).json({ error: 'Route not found' });
+    res.status(404).json({ error: 'The requested resource is no longer available or could not be found.' });
 };

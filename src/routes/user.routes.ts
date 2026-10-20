@@ -1,15 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
-import path from 'path';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
-import { users, follows, entries, lists, listItems, followRequests } from '../db/schema.js';
+import { users, follows, entries, lists, listItems, followRequests, blockedUsers } from '../db/schema.js';
 import { eq, or, and, ilike, not, count, exists, desc } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 
-import { S3Client, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import multerS3 from 'multer-s3';
 
 const router = Router();
@@ -25,22 +23,11 @@ const s3 = new S3Client({
     forcePathStyle: true, // Often required for S3-compatible providers
 });
 
-// Helper to generate a presigned URL for an avatar
-const getAvatarUrl = async (key: string | null): Promise<string | null> => {
-    if (!key) return null;
-    if (key.startsWith('http')) return key; // Already a full URL (legacy or external)
+import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
-    try {
-        const command = new GetObjectCommand({
-            Bucket: process.env.AWS_S3_BUCKET_NAME,
-            Key: key,
-        });
-        // URL valid for 1 hour
-        return await getSignedUrl(s3, command, { expiresIn: 3600 });
-    } catch (err) {
-        console.error('Error generating presigned URL:', err);
-        return null;
-    }
+// Helper to generate a permanent URL for an avatar
+const getAvatarUrl = async (key: string | null): Promise<string | null> => {
+    return resolveAvatarUrl(key);
 };
 
 // Configure multer for Railway Bucket uploads
@@ -52,7 +39,13 @@ const upload = multer({
         contentType: multerS3.AUTO_CONTENT_TYPE,
         key: (req, _file, cb) => {
             const userId = req.user?.userId || 'unknown';
-            const ext = path.extname(_file.originalname) || '.jpg';
+            const mimeExtensionMap: Record<string, string> = {
+                'image/jpeg': '.jpg',
+                'image/png': '.png',
+                'image/webp': '.webp',
+                'image/gif': '.gif',
+            };
+            const ext = mimeExtensionMap[_file.mimetype] || '.jpg';
             const filename = `avatars/${userId}-${Date.now()}${ext}`;
             cb(null, filename);
         },
@@ -109,6 +102,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
+                notifyFollowingActivity: users.notifyFollowingActivity,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
                 entriesCount: count(entries.id),
@@ -177,7 +171,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 router.put('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
-        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings } = req.body;
+        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings, notifyFollowingActivity } = req.body;
 
         if (displayName !== undefined && String(displayName).trim().length > 50) {
             res.status(400).json({ error: 'Display name cannot exceed 50 characters' });
@@ -206,6 +200,7 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 ...(showCurrentlyWatching !== undefined && { showCurrentlyWatching }),
                 ...(showWatchlist !== undefined && { showWatchlist }),
                 ...(showRankings !== undefined && { showRankings }),
+                ...(notifyFollowingActivity !== undefined && { notifyFollowingActivity }),
                 updatedAt: new Date(),
             })
             .where(eq(users.id, userId))
@@ -223,6 +218,7 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
+                notifyFollowingActivity: users.notifyFollowingActivity,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
             });
@@ -381,6 +377,54 @@ router.delete('/me/avatar', authMiddleware, async (req: Request, res: Response, 
     }
 });
 
+/**
+ * @openapi
+ * /api/v1/users/me:
+ *   delete:
+ *     tags: [User]
+ *     summary: Permanently delete current user account (Apple App Store Guideline 5.1.1(v))
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Account successfully deleted
+ *       401:
+ *         description: Unauthorized
+ */
+router.delete('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.user!.userId;
+
+        // 1. Fetch current user to clean up S3 avatar if present
+        const [currentUser] = await db
+            .select({ profilePictureUrl: users.profilePictureUrl })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+
+        if (currentUser?.profilePictureUrl && !currentUser.profilePictureUrl.startsWith('http')) {
+            try {
+                await s3.send(new DeleteObjectCommand({
+                    Bucket: process.env.AWS_S3_BUCKET_NAME || 'watchhive-avatars',
+                    Key: currentUser.profilePictureUrl,
+                }));
+            } catch (err: any) {
+                console.error('[User] Error deleting avatar during account deletion:', err);
+            }
+        }
+
+        // 2. Delete user row from database (cascades to entries, lists, follows, likes, comments, tokens)
+        await db.delete(users).where(eq(users.id, userId));
+
+        res.json({
+            success: true,
+            message: 'Your account and all associated data have been permanently deleted.',
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 
 /**
  * @openapi
@@ -494,10 +538,15 @@ router.get('/suggested', authMiddleware, async (req: Request, res: Response, nex
         const currentId = req.user!.userId;
         const limit = 5;
 
-        // Fetch users the current user is NOT following, excluding themselves
-        // In PostgreSQL logic, we filter where NOT EXISTS in follows
+        // Suggested users: strictly users who follow the current user,
+        // but whom the current user is not following yet (or requested)
         const whereClause = and(
             not(eq(users.id, currentId)),
+            exists(
+                db.select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, users.id), eq(follows.followingId, currentId)))
+            ),
             not(exists(
                 db.select()
                     .from(follows)
@@ -585,13 +634,19 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
         const isOwner = targetId === currentId;
         
         // Fetch follow status first to check permissions if needed
-        const [followStatus] = await db
-            .select()
-            .from(follows)
-            .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
-            .limit(1);
+        const [followStatus, followerStatus] = await Promise.all([
+            db.select()
+                .from(follows)
+                .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
+                .limit(1),
+            db.select()
+                .from(follows)
+                .where(and(eq(follows.followerId, targetId), eq(follows.followingId, currentId)))
+                .limit(1),
+        ]);
 
         const isFollowing = !!followStatus;
+        const isFollower = !!followerStatus;
 
         // Fetch follow request status
         const [followReq] = await db
@@ -660,6 +715,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                     watchlist: 0
                 },
                 isFollowing: isFollowing,
+                isFollower: isFollower,
                 isRequested: isRequested,
                 isIncomingRequest: isIncomingRequest,
                 incomingRequestId: incomingRequestId,
@@ -700,6 +756,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 watchlist: watchlistCount
             },
             isFollowing: isFollowing,
+            isFollower: isFollower,
             isRequested: isRequested,
             isIncomingRequest: isIncomingRequest,
             incomingRequestId: incomingRequestId,
@@ -798,6 +855,133 @@ router.get('/:id/watchlist', authMiddleware, async (req: Request, res: Response,
         });
 
         res.json(watchlist || { items: [] });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/{id}/block:
+ *   post:
+ *     tags: [User, Moderation]
+ *     summary: Block a user (Apple App Store Guideline 1.2)
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/:id/block', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const blockerId = req.user!.userId;
+        const targetUserId = req.params.id;
+
+        if (blockerId === targetUserId) {
+            throw new AppError('You cannot block yourself', 400);
+        }
+
+        // 1. Insert block record
+        await db
+            .insert(blockedUsers)
+            .values({
+                blockerId,
+                blockedId: targetUserId,
+            })
+            .onConflictDoNothing();
+
+        // 2. Automatically sever the blocked user from following blocker
+        await db.delete(follows).where(
+            and(eq(follows.followerId, targetUserId), eq(follows.followingId, blockerId))
+        );
+
+        res.json({
+            success: true,
+            message: 'User blocked successfully. Their posts and comments will no longer appear.',
+            blockedUserId: targetUserId,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/{id}/block:
+ *   delete:
+ *     tags: [User, Moderation]
+ *     summary: Unblock a user
+ *     security:
+ *       - bearerAuth: []
+ */
+router.delete('/:id/block', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const blockerId = req.user!.userId;
+        const targetUserId = req.params.id;
+
+        await db.delete(blockedUsers).where(
+            and(
+                eq(blockedUsers.blockerId, blockerId),
+                eq(blockedUsers.blockedId, targetUserId)
+            )
+        );
+
+        // If refollow requested, ensure blocker follows target
+        if (req.body?.refollow === true || req.query.refollow === 'true') {
+            await db.insert(follows).values({
+                followerId: blockerId,
+                followingId: targetUserId,
+            }).onConflictDoNothing();
+        }
+
+        res.json({
+            success: true,
+            message: 'User unblocked successfully.',
+            unblockedUserId: targetUserId,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/me/blocks:
+ *   get:
+ *     tags: [User, Moderation]
+ *     summary: Get list of blocked user IDs for current user
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/me/blocks', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const blockerId = req.user!.userId;
+        const rawBlocks = await db
+            .select({
+                blockedId: blockedUsers.blockedId,
+                createdAt: blockedUsers.createdAt,
+                username: users.username,
+                displayName: users.displayName,
+                profilePictureUrl: users.profilePictureUrl,
+            })
+            .from(blockedUsers)
+            .leftJoin(users, eq(blockedUsers.blockedId, users.id))
+            .where(eq(blockedUsers.blockerId, blockerId));
+
+        const blocks = await Promise.all(
+            rawBlocks.map(async b => ({
+                blockedId: b.blockedId,
+                createdAt: b.createdAt,
+                user: {
+                    id: b.blockedId,
+                    username: b.username || 'user',
+                    displayName: b.displayName || b.username || 'Watcher',
+                    profilePictureUrl: await getAvatarUrl(b.profilePictureUrl),
+                },
+            }))
+        );
+
+        res.json({
+            blockedUserIds: blocks.map(b => b.blockedId),
+            blocks,
+        });
     } catch (error) {
         next(error);
     }

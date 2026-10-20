@@ -10,6 +10,7 @@ import {
 import { AppError } from '../middleware/error.middleware.js';
 import crypto from 'crypto';
 import { config } from '../config.js';
+import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 export interface RegisterData {
     username: string;
@@ -96,7 +97,7 @@ export const authService = {
                 username: user.username,
                 email: user.email,
                 displayName: user.displayName,
-                profilePictureUrl: user.profilePictureUrl,
+                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: !!user.passwordHash,
             },
@@ -163,7 +164,7 @@ export const authService = {
                 username: user.username,
                 email: user.email,
                 displayName: user.displayName,
-                profilePictureUrl: user.profilePictureUrl,
+                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: true,
             },
@@ -296,11 +297,19 @@ export const authService = {
             .where(eq(users.email, email))
             .limit(1);
 
+        const isTokenValid = Boolean(
+            user?.passwordResetToken &&
+            user.passwordResetToken.length === hashedToken.length &&
+            crypto.timingSafeEqual(
+                Buffer.from(user.passwordResetToken),
+                Buffer.from(hashedToken)
+            )
+        );
+
         if (
             !user ||
-            !user.passwordResetToken ||
+            !isTokenValid ||
             !user.passwordResetExpiresAt ||
-            user.passwordResetToken !== hashedToken ||
             user.passwordResetExpiresAt < new Date()
         ) {
             throw new AppError('Invalid or expired reset link. Please request a new one.', 400);

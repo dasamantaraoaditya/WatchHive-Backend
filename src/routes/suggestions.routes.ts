@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { users, suggestions, follows } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
+import { formatUserWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -71,21 +72,15 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
 
         for (const recipientId of targetIds) {
             try {
-                // Validate connection (either following or followed by)
-                const [isFollowing] = await db
-                    .select()
-                    .from(follows)
-                    .where(and(eq(follows.followerId, fromUserId), eq(follows.followingId, recipientId)))
-                    .limit(1);
-
+                // Validate that the recipient is a follower of the current user
                 const [isFollowedBy] = await db
                     .select()
                     .from(follows)
                     .where(and(eq(follows.followerId, recipientId), eq(follows.followingId, fromUserId)))
                     .limit(1);
 
-                if (!isFollowing && !isFollowedBy) {
-                    errors.push(`Not connected with user ${recipientId}`);
+                if (!isFollowedBy) {
+                    errors.push(`User ${recipientId} is not following you`);
                     continue;
                 }
 
@@ -171,7 +166,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
                 };
             }
             acc[key].suggestions.push(item.suggestion);
-            acc[key].suggestors.push(item.fromUser);
+            acc[key].suggestors.push(formatUserWithAvatar(item.fromUser));
             return acc;
         }, {});
 
@@ -179,6 +174,62 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
     } catch (error) {
         console.error('Error fetching suggestions:', error);
         res.status(500).json({ error: 'Failed to fetch suggestions' });
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/suggestions/sent:
+ *   get:
+ *     tags: [Suggestions]
+ *     summary: Get suggestions sent by the current user (suggested items)
+ */
+router.get('/sent', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+
+        const results = await db
+            .select({
+                suggestion: suggestions,
+                toUser: {
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl
+                }
+            })
+            .from(suggestions)
+            .innerJoin(users, eq(suggestions.toUserId, users.id))
+            .where(eq(suggestions.fromUserId, userId))
+            .orderBy(desc(suggestions.createdAt));
+
+        // Group by tmdbId
+        const grouped = results.reduce((acc: any, item) => {
+            const key = `${item.suggestion.mediaType}-${item.suggestion.tmdbId}`;
+            if (!acc[key]) {
+                acc[key] = {
+                    tmdbId: item.suggestion.tmdbId,
+                    mediaType: item.suggestion.mediaType,
+                    suggestions: [],
+                    suggestors: [],
+                    recipients: []
+                };
+            }
+            const formattedRecipient = formatUserWithAvatar(item.toUser);
+            acc[key].suggestions.push({
+                ...item.suggestion,
+                recipient: formattedRecipient
+            });
+            if (formattedRecipient && !acc[key].recipients.some((r: any) => r.id === formattedRecipient.id)) {
+                acc[key].recipients.push(formattedRecipient);
+            }
+            return acc;
+        }, {});
+
+        res.json(Object.values(grouped));
+    } catch (error) {
+        console.error('Error fetching sent suggestions:', error);
+        res.status(500).json({ error: 'Failed to fetch sent suggestions' });
     }
 });
 

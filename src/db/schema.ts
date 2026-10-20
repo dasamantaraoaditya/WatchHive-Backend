@@ -17,7 +17,8 @@ import { relations } from 'drizzle-orm';
 // Enums
 export const entryTypeEnum = pgEnum('EntryType', ['MOVIE', 'TV_SHOW', 'EPISODE']);
 export const notificationTypeEnum = pgEnum('NotificationType', [
-    'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'FOLLOW_REJECT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION', 'SUGGESTION'
+    'FOLLOW', 'FOLLOW_REQUEST', 'FOLLOW_ACCEPT', 'FOLLOW_REJECT', 'LIKE', 'COMMENT', 'REPLY', 'MENTION', 'SUGGESTION',
+    'FRIEND_STARTED_WATCHING', 'FRIEND_LOGGED_WATCH'
 ]);
 export const listTypeEnum = pgEnum('ListType', ['WATCHLIST', 'RANKING_STACK', 'COLLECTION']);
 export const privacyLevelEnum = pgEnum('PrivacyLevel', ['PUBLIC', 'FOLLOWERS_ONLY', 'PRIVATE']);
@@ -29,6 +30,7 @@ export const users = pgTable('users', {
     email: varchar('email', { length: 255 }).unique().notNull(),
     passwordHash: text('password_hash'),
     googleId: varchar('google_id', { length: 255 }).unique(),
+    appleId: varchar('apple_id', { length: 255 }).unique(),
     displayName: varchar('display_name', { length: 255 }),
     bio: text('bio'),
     profilePictureUrl: text('profile_picture_url'),
@@ -39,6 +41,7 @@ export const users = pgTable('users', {
     showCurrentlyWatching: boolean('show_currently_watching').default(true).notNull(),
     showWatchlist: boolean('show_watchlist').default(true).notNull(),
     showRankings: boolean('show_rankings').default(true).notNull(),
+    notifyFollowingActivity: boolean('notify_following_activity').default(true).notNull(),
     xp: integer('xp').default(0).notNull(),
     level: integer('level').default(1).notNull(),
     badges: jsonb('badges').default([]).notNull(),
@@ -65,7 +68,10 @@ export const entries = pgTable('entries', {
     startedAt: timestamp('started_at'),
     completedAt: timestamp('completed_at'),
     watchLocation: text('watch_location'),
-    suggestedByUserId: text('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    suggestedByUserId: uuid('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    isImported: boolean('is_imported').default(false).notNull(),
+    posterPath: text('poster_path'),
+    backdropPath: text('backdrop_path'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
@@ -148,7 +154,7 @@ export const listItems = pgTable('list_items', {
     tmdbId: integer('tmdb_id').notNull(),
     mediaType: varchar('media_type', { length: 20 }).default('movie').notNull(),
     orderIndex: integer('order_index').notNull(),
-    suggestedByUserId: text('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    suggestedByUserId: uuid('suggested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     addedAt: timestamp('added_at').defaultNow().notNull(),
 }, (table) => ({
     listIndex: index('list_items_list_id_idx').on(table.listId),
@@ -185,7 +191,7 @@ export const suggestions = pgTable('suggestions', {
 // Push Subscriptions Table (Web Push)
 export const pushSubscriptions = pgTable('push_subscriptions', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     endpoint: text('endpoint').notNull().unique(),
     p256dh: text('p256dh').notNull(),
     auth: text('auth').notNull(),
@@ -198,7 +204,7 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
 // Device Tokens Table (Mobile Push via FCM)
 export const deviceTokens = pgTable('device_tokens', {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     token: text('token').notNull().unique(),
     platform: varchar('platform', { length: 20 }).default('android').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -206,6 +212,27 @@ export const deviceTokens = pgTable('device_tokens', {
 }, (table) => ({
     userIndex: index('device_tokens_user_id_idx').on(table.userId),
     tokenIndex: index('device_tokens_token_idx').on(table.token),
+}));
+
+// Reports Table (UGC Moderation - Apple Guideline 1.2)
+export const reports = pgTable('reports', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    reporterId: uuid('reporter_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    targetType: varchar('target_type', { length: 20 }).notNull(), // 'ENTRY', 'COMMENT', 'USER'
+    targetId: varchar('target_id', { length: 255 }).notNull(),
+    reason: varchar('reason', { length: 50 }).notNull(), // 'SPAM', 'HARASSMENT', 'INAPPROPRIATE', 'OFFENSIVE', 'OTHER'
+    details: text('details'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Blocked Users Table (UGC Moderation - Apple Guideline 1.2)
+export const blockedUsers = pgTable('blocked_users', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    blockerId: uuid('blocker_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    blockedId: uuid('blocked_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+    uniqueBlock: unique().on(table.blockerId, table.blockedId),
 }));
 
 // Relations Definitions

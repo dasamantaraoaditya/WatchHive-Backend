@@ -5,6 +5,7 @@ import { db } from '../db/index.js';
 import { entries, comments } from '../db/schema.js';
 import { eq, and, desc, count, isNull } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
+import { formatUserWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -150,7 +151,10 @@ router.post(
 
             res.status(201).json({
                 message: 'Comment added',
-                comment,
+                comment: {
+                    ...comment,
+                    user: formatUserWithAvatar(comment.user),
+                },
                 commentCount
             });
         } catch (error) {
@@ -226,8 +230,17 @@ router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Pro
             db.select({ total: count() }).from(comments).where(and(eq(comments.entryId, entryId), isNull(comments.parentCommentId))),
         ]);
 
+        const formattedComments = (commentsList as any[]).map((c: any) => ({
+            ...c,
+            user: formatUserWithAvatar(c.user),
+            replies: c.replies?.map((r: any) => ({
+                ...r,
+                user: formatUserWithAvatar(r.user),
+            })),
+        }));
+
         res.json({
-            comments: commentsList,
+            comments: formattedComments,
             pagination: {
                 page,
                 limit,

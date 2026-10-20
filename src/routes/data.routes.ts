@@ -11,7 +11,13 @@ const router = Router();
 
 function escapeCsvField(value: unknown): string {
     if (value === null || value === undefined) return '';
-    const str = Array.isArray(value) ? value.join('|') : String(value);
+    let str = Array.isArray(value) ? value.join('|') : String(value);
+
+    // Defend against CSV Formula Injection (CWE-1236): neutralize spreadsheet formula execution triggers
+    if (/^[=+\-@\t\r]/.test(str)) {
+        str = `'${str}`;
+    }
+
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
         return `"${str.replace(/"/g, '""')}"`;
     }
@@ -370,14 +376,101 @@ router.post('/import/preview', authMiddleware, async (req: Request, res: Respons
     }
 });
 
+function parseCsvToEntries(csvText: string): any[] {
+    const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) return [];
+
+    let headerIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+        const l = lines[i].toLowerCase();
+        if (l.includes('title') && (l.includes('tmdb') || l.includes('rating') || l.includes('type') || l.includes('watched') || l.includes('date'))) {
+            headerIndex = i;
+            break;
+        }
+    }
+    if (headerIndex === -1) return [];
+
+    const parseCsvRow = (row: string): string[] => {
+        const result: string[] = [];
+        let insideQuote = false;
+        let entry = '';
+        for (let i = 0; i < row.length; i++) {
+            const char = row[i];
+            if (char === '"') {
+                if (insideQuote && i + 1 < row.length && row[i + 1] === '"') {
+                    entry += '"';
+                    i++;
+                } else {
+                    insideQuote = !insideQuote;
+                }
+            } else if (char === ',' && !insideQuote) {
+                result.push(entry);
+                entry = '';
+            } else {
+                entry += char;
+            }
+        }
+        result.push(entry);
+        return result;
+    };
+
+    const headers = parseCsvRow(lines[headerIndex]).map(h => h.trim().toLowerCase());
+    const entriesResult: any[] = [];
+
+    for (let i = headerIndex + 1; i < lines.length; i++) {
+        if (lines[i].startsWith('#')) break;
+        const values = parseCsvRow(lines[i]);
+        if (values.length < 2) continue;
+
+        const row: Record<string, string> = {};
+        headers.forEach((h, idx) => {
+            row[h] = values[idx]?.trim() ?? '';
+        });
+
+        const title = row['title'] || row['name'] || '';
+        if (!title) continue;
+
+        const tmdbId = parseInt(row['tmdbid'] || row['tmdb_id'] || '0') || 0;
+        const rawType = (row['type'] || 'MOVIE').toUpperCase();
+        const type = rawType.includes('TV') ? 'TV_SHOW' : 'MOVIE';
+        const rating = row['rating'] ? parseFloat(row['rating']) : null;
+        const watchedAt = row['watchedat'] || row['watched at'] || row['watched date'] || row['date'] || null;
+        const review = row['review'] || null;
+        const tags = row['tags'] ? row['tags'].split('|').map(t => t.trim()).filter(Boolean) : [];
+        const isRewatch = row['isrewatch'] === 'true' || row['is_rewatch'] === 'true';
+        const isWatching = row['iswatching'] === 'true' || row['is_watching'] === 'true';
+        const watchLocation = row['watchlocation'] || row['watch_location'] || null;
+
+        entriesResult.push({
+            tmdbId,
+            title,
+            type,
+            rating,
+            watchedAt,
+            review,
+            tags,
+            isRewatch,
+            isWatching,
+            watchLocation,
+            isImported: true,
+        });
+    }
+
+    return entriesResult;
+}
+
 // ─── COMBINED IMPORT ─────────────────────────────────────────────────────────
 // POST /api/v1/data/import
-// Body: { entries?: [...], lists?: [...] }
+// Body: { entries?: [...], lists?: [...], csv?: string }
 
 router.post('/import', authMiddleware, async (req: Request, res: Response): Promise<any> => {
     try {
         const userId = (req as any).user.userId;
-        const body = req.body as { entries?: any[]; lists?: any[] };
+        const body = (typeof req.body === 'object' && req.body !== null ? req.body : {}) as { entries?: any[]; lists?: any[]; csv?: string };
+
+        if (body.csv && (!body.entries || body.entries.length === 0)) {
+            body.entries = parseCsvToEntries(body.csv);
+        }
 
         const summary: Record<string, unknown> = { message: 'Import complete' };
 
@@ -399,7 +492,6 @@ router.post('/import', authMiddleware, async (req: Request, res: Response): Prom
             let imported = 0, skipped = 0;
             const errors: string[] = [];
             const validTypes = ['MOVIE', 'TV_SHOW', 'EPISODE'];
-            const defaultPrevYearJan1 = new Date(new Date().getFullYear() - 1, 0, 1, 0, 0, 0);
 
             for (const item of body.entries) {
                 try {
@@ -475,16 +567,20 @@ router.post('/import', authMiddleware, async (req: Request, res: Response): Prom
                         item.type = 'MOVIE';
                     }
 
-                    let watchedDate: Date | null = null;
+                    let watchedDate: Date = new Date();
+                    let hasWatchedDate = false;
                     if (item.watchedAt) {
                         const parsed = new Date(item.watchedAt);
-                        if (!isNaN(parsed.getTime())) watchedDate = parsed;
+                        if (!isNaN(parsed.getTime())) {
+                            watchedDate = parsed;
+                            hasWatchedDate = true;
+                        }
                     }
 
                     // Duplicate detection:
                     // 1. If watch date is provided: skip if already logged on that exact day
                     // 2. If no watch date is provided: skip if user already has this movie in their library
-                    const day = watchedDate ? watchedDate.toISOString().split('T')[0] : null;
+                    const day = hasWatchedDate ? watchedDate.toISOString().split('T')[0] : null;
                     const key = day ? `${item.tmdbId}|${day}` : `${item.tmdbId}|nodate`;
 
                     if (day && existingKeys.has(key)) {
@@ -522,26 +618,25 @@ router.post('/import', authMiddleware, async (req: Request, res: Response): Prom
                     } else if (typeof item.tags === 'string' && item.tags.trim()) {
                         tagList = item.tags.split(/[,|]/).map((t: string) => t.trim()).filter(Boolean);
                     }
-
-                    // For imports without watch date: default to Jan 1 of previous year
-                    const finalWatchedDate = watchedDate || defaultPrevYearJan1;
+                    if (!tagList.includes('imported')) {
+                        tagList.push('imported');
+                    }
 
                     await db.insert(entries).values({
                         userId,
                         tmdbId: Number(item.tmdbId),
                         title: String(item.title),
                         type: item.type as any,
-                        watchedAt: finalWatchedDate,
+                        watchedAt: watchedDate,
                         rating: ratingVal,
                         review: item.review ? String(item.review) : null,
                         tags: tagList,
                         isRewatch: Boolean(item.isRewatch),
                         isWatching: Boolean(item.isWatching),
+                        isImported: true,
                         startedAt: parsedStartedAt,
                         completedAt: parsedCompletedAt,
                         watchLocation: item.watchLocation ? String(item.watchLocation) : null,
-                        createdAt: finalWatchedDate,
-                        updatedAt: finalWatchedDate,
                     });
                     if (day) existingKeys.add(key);
                     existingTmdbIds.add(Number(item.tmdbId));

@@ -4,6 +4,7 @@ import { lists, listItems, entries, users, follows, suggestions } from '../db/sc
 import { eq, and, desc, asc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
+import { formatUserWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -65,6 +66,13 @@ router.get('/watchlist', authMiddleware, async (req: Request, res: Response): Pr
 
             // Return with empty items for consistency
             watchlist = { ...newList, items: [] } as any;
+        }
+
+        if (watchlist?.items) {
+            watchlist.items = watchlist.items.map((item: any) => ({
+                ...item,
+                suggestedByUser: item.suggestedByUser ? formatUserWithAvatar(item.suggestedByUser) : null,
+            }));
         }
 
         res.json(watchlist);
@@ -374,7 +382,12 @@ router.post('/:listId/items', authMiddleware, async (req: Request, res: Response
             }
         });
 
-        res.json(itemWithSuggestor || newItem);
+        const resultItem = (itemWithSuggestor || newItem) as any;
+        if (resultItem?.suggestedByUser) {
+            resultItem.suggestedByUser = formatUserWithAvatar(resultItem.suggestedByUser);
+        }
+
+        res.json(resultItem);
     } catch (error) {
         console.error('Error adding to list:', error);
         res.status(500).json({ error: 'Failed to add item to list' });

@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { users, follows, followRequests, notifications } from '../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
+import { formatUserWithAvatar, formatUsersWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
 
@@ -307,7 +308,12 @@ router.get('/requests/pending', authMiddleware, async (req: Request, res: Respon
             .where(and(eq(followRequests.recipientId, userId), eq(followRequests.status, 'pending')))
             .orderBy(desc(followRequests.createdAt));
 
-        res.json(requests);
+        const formattedRequests = requests.map(r => ({
+            ...r,
+            sender: formatUserWithAvatar(r.sender),
+        }));
+
+        res.json(formattedRequests);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch' });
     }
@@ -470,7 +476,7 @@ router.get('/:userId/followers', authMiddleware, async (req: Request, res: Respo
         ]);
 
         res.json({
-            followers: followersList,
+            followers: formatUsersWithAvatar(followersList),
             pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
         });
     } catch (error) {
@@ -561,7 +567,7 @@ router.get('/:userId/following', authMiddleware, async (req: Request, res: Respo
         ]);
 
         res.json({
-            following: followingList,
+            following: formatUsersWithAvatar(followingList),
             pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
         });
     } catch (error) {

@@ -7,6 +7,7 @@ import {
     generateRefreshToken,
 } from '../utils/jwt.util.js';
 import { AppError } from '../middleware/error.middleware.js';
+import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
@@ -65,9 +66,10 @@ export const googleAuthService = {
                 name: payload.name || payload.email.split('@')[0],
                 picture: payload.picture,
             };
-        } catch (error) {
+        } catch (error: any) {
+            console.error('[GoogleAuth] Token verification failed:', error?.message || error);
             if (error instanceof AppError) throw error;
-            throw new AppError('Failed to verify Google token', 401);
+            throw new AppError(`Failed to verify Google token: ${error?.message || 'Invalid token'}`, 401);
         }
     },
 
@@ -196,7 +198,7 @@ export const googleAuthService = {
                 username: user.username,
                 email: user.email,
                 displayName: user.displayName,
-                profilePictureUrl: user.profilePictureUrl,
+                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: true,
                 hasPassword: false, // will be refreshed via getMe() in AuthContext
             },

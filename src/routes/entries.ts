@@ -6,23 +6,72 @@ import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg, aliasedT
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { xpService, XpAction } from '../services/xp.service.js';
+import { formatUserWithAvatar } from '../utils/avatar.util.js';
+import notificationService from '../services/notification.service.js';
 
 const router = Router();
+
+/**
+ * Helper to dispatch friend watching activity notifications to followers
+ */
+async function notifyFollowersOfActivity(params: {
+    actorId: string;
+    actorName: string;
+    actorAvatar?: string | null;
+    entryId: string;
+    entryTitle: string;
+    mediaType?: string;
+    rating?: number | null;
+    review?: string | null;
+    isWatching: boolean;
+    tmdbId?: number | null;
+}) {
+    try {
+        const userFollowers = await db
+            .select({ followerId: follows.followerId })
+            .from(follows)
+            .where(eq(follows.followingId, params.actorId));
+
+        if (!userFollowers || userFollowers.length === 0) return;
+
+        const notifType = params.isWatching ? 'FRIEND_STARTED_WATCHING' : 'FRIEND_LOGGED_WATCH';
+        const notifContent = {
+            actorId: params.actorId,
+            actorName: params.actorName,
+            actorAvatar: params.actorAvatar || null,
+            entryId: params.entryId,
+            entryTitle: params.entryTitle,
+            type: params.mediaType || 'MOVIE',
+            rating: params.rating ?? null,
+            review: params.review ? params.review.slice(0, 100) : null,
+            isWatching: params.isWatching,
+            tmdbId: params.tmdbId ?? null,
+        };
+
+        await Promise.allSettled(
+            userFollowers.map(f =>
+                notificationService.createNotification(f.followerId, notifType, notifContent)
+            )
+        );
+    } catch (err) {
+        console.error('[Notification] Error dispatching follower activity notifications:', err);
+    }
+}
 
 // Validation middleware
 const validateEntry = [
     body('tmdbId').isInt().withMessage('TMDb ID must be an integer'),
     body('title').trim().notEmpty().withMessage('Title is required').isLength({ max: 255 }).withMessage('Title cannot exceed 255 characters'),
     body('type').isIn(['MOVIE', 'TV_SHOW', 'EPISODE']).withMessage('Invalid entry type'),
-    body('watchedAt').optional().isISO8601().withMessage('Invalid date format'),
-    body('rating').optional().isFloat({ min: 0, max: 10 }).withMessage('Rating must be between 0 and 10'),
-    body('review').optional().trim().isLength({ max: 5000 }).withMessage('Review cannot exceed 5000 characters'),
-    body('tags').optional().isArray({ max: 20 }).withMessage('Tags must be an array with max 20 items'),
-    body('isRewatch').optional().isBoolean().withMessage('isRewatch must be boolean'),
-    body('isWatching').optional().isBoolean().withMessage('isWatching must be boolean'),
-    body('startedAt').optional().isISO8601().withMessage('Invalid date format'),
-    body('completedAt').optional().isISO8601().withMessage('Invalid date format'),
-    body('watchLocation').optional().trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
+    body('watchedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
+    body('rating').optional({ nullable: true }).isFloat({ min: 0, max: 10 }).withMessage('Rating must be between 0 and 10'),
+    body('review').optional({ nullable: true }).trim().isLength({ max: 5000 }).withMessage('Review cannot exceed 5000 characters'),
+    body('tags').optional({ nullable: true }).isArray({ max: 20 }).withMessage('Tags must be an array with max 20 items'),
+    body('isRewatch').optional({ nullable: true }).isBoolean().withMessage('isRewatch must be boolean'),
+    body('isWatching').optional({ nullable: true }).isBoolean().withMessage('isWatching must be boolean'),
+    body('startedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
+    body('completedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
+    body('watchLocation').optional({ nullable: true }).trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
 ];
 
 /**
@@ -107,6 +156,8 @@ router.post(
                 completedAt,
                 watchLocation,
                 suggestedByUserId,
+                posterPath,
+                backdropPath,
             } = req.body;
 
             let finalSuggestedByUserId = suggestedByUserId || null;
@@ -124,6 +175,8 @@ router.post(
 
             let entryTags: string[] = Array.isArray(tags) ? [...tags] : [];
             let resolvedTitle: string = title ? title.trim() : '';
+            let tmdbPoster: string | null = null;
+            let tmdbBackdrop: string | null = null;
 
             if (tmdbId) {
                 try {
@@ -133,10 +186,14 @@ router.post(
                         const details = await tmdbService.getMovieDetails(tmdbId);
                         genres = details.genres.map(g => g.name);
                         tmdbTitle = details.title || (details as any).original_title || null;
+                        tmdbPoster = details.poster_path;
+                        tmdbBackdrop = details.backdrop_path;
                     } else if (type === 'TV_SHOW') {
                         const details = await tmdbService.getTVShowDetails(tmdbId);
                         genres = details.genres.map(g => g.name);
                         tmdbTitle = (details as any).name || (details as any).original_name || null;
+                        tmdbPoster = details.poster_path;
+                        tmdbBackdrop = details.backdrop_path;
                     }
                     // Merge and deduplicate
                     entryTags = Array.from(new Set([...entryTags, ...genres]));
@@ -189,6 +246,8 @@ router.post(
                             completedAt: !finalIsWatching ? (completedAt ? new Date(completedAt) : new Date()) : null,
                             watchLocation: watchLocation !== undefined ? (watchLocation || null) : targetExisting.watchLocation,
                             suggestedByUserId: finalSuggestedByUserId || targetExisting.suggestedByUserId,
+                            posterPath: posterPath || tmdbPoster || targetExisting.posterPath,
+                            backdropPath: backdropPath || tmdbBackdrop || targetExisting.backdropPath,
                             updatedAt: new Date(),
                         })
                         .where(eq(entries.id, targetExisting.id));
@@ -221,6 +280,8 @@ router.post(
                     completedAt: completedAt ? new Date(completedAt) : (!isWatching ? new Date() : null),
                     watchLocation: watchLocation || null,
                     suggestedByUserId: finalSuggestedByUserId,
+                    posterPath: posterPath || tmdbPoster || null,
+                    backdropPath: backdropPath || tmdbBackdrop || null,
                 }).returning();
                 targetEntryId = newEntry.id;
             }
@@ -261,10 +322,28 @@ router.post(
                 await xpService.awardXp(userId, XpAction.WRITE_REVIEW);
             }
 
+            // Notify followers about watching activity (fire & forget)
+            const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
+            const actorAvatar = entry?.user?.profilePictureUrl || null;
+            notifyFollowersOfActivity({
+                actorId: userId,
+                actorName,
+                actorAvatar,
+                entryId: targetEntryId,
+                entryTitle: resolvedTitle,
+                mediaType: type,
+                rating: rating ? Number(rating) : null,
+                review: review || null,
+                isWatching: Boolean(isWatching),
+                tmdbId: tmdbId ? Number(tmdbId) : null,
+            }).catch(err => console.error('[FollowerActivity] Notification error on create:', err));
+
             res.status(201).json({
                 message: 'Entry created successfully',
                 entry: {
                     ...entry,
+                    user: entry?.user ? formatUserWithAvatar(entry.user) : entry?.user,
+                    suggestedByUser: entry?.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
                     _count: { likes: likesCount, comments: commentsCount }
                 },
             });
@@ -441,6 +520,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                 watchLocation: entries.watchLocation,
                 createdAt: entries.createdAt,
                 updatedAt: entries.updatedAt,
+                posterPath: entries.posterPath,
+                backdropPath: entries.backdropPath,
                 user: {
                     id: users.id,
                     username: users.username,
@@ -471,7 +552,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
         const formattedEntries = (entriesList as any[]).map(e => ({
             ...e,
             rating: e.rating ? parseFloat(e.rating) : null,
-            suggestedByUser: e.suggestedByUser && e.suggestedByUser.id ? e.suggestedByUser : null,
+            user: e.user ? formatUserWithAvatar(e.user) : e.user,
+            suggestedByUser: e.suggestedByUser && e.suggestedByUser.id ? formatUserWithAvatar(e.suggestedByUser) : null,
             _count: {
                 likes: e.likesCount,
                 comments: e.commentsCount
@@ -614,6 +696,12 @@ router.get(
             res.json({
                 entry: {
                     ...entry,
+                    user: entry.user ? formatUserWithAvatar(entry.user) : entry.user,
+                    suggestedByUser: entry.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
+                    comments: entry.comments?.map((c: any) => ({
+                        ...c,
+                        user: c.user ? formatUserWithAvatar(c.user) : c.user,
+                    })),
                     isLiked,
                     _count: { likes: likesCount, comments: commentsCount }
                 }
@@ -763,10 +851,45 @@ router.put(
                 db.select({ commentsCount: count() }).from(comments).where(eq(comments.entryId, id))
             ]);
 
+            // Notify followers if watching status changed (fire & forget)
+            if (existingEntry.isWatching && updateData.isWatching === false) {
+                const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
+                const actorAvatar = entry?.user?.profilePictureUrl || null;
+                notifyFollowersOfActivity({
+                    actorId: userId,
+                    actorName,
+                    actorAvatar,
+                    entryId: id,
+                    entryTitle: entry?.title || existingEntry.title,
+                    mediaType: entry?.type || existingEntry.type,
+                    rating: updateData.rating ? Number(updateData.rating) : (existingEntry.rating ? Number(existingEntry.rating) : null),
+                    review: updateData.review !== undefined ? updateData.review : existingEntry.review,
+                    isWatching: false,
+                    tmdbId: entry?.tmdbId || existingEntry.tmdbId,
+                }).catch(err => console.error('[FollowerActivity] Notification error on PUT:', err));
+            } else if (!existingEntry.isWatching && updateData.isWatching === true) {
+                const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
+                const actorAvatar = entry?.user?.profilePictureUrl || null;
+                notifyFollowersOfActivity({
+                    actorId: userId,
+                    actorName,
+                    actorAvatar,
+                    entryId: id,
+                    entryTitle: entry?.title || existingEntry.title,
+                    mediaType: entry?.type || existingEntry.type,
+                    rating: null,
+                    review: null,
+                    isWatching: true,
+                    tmdbId: entry?.tmdbId || existingEntry.tmdbId,
+                }).catch(err => console.error('[FollowerActivity] Notification error on PUT:', err));
+            }
+
             res.json({
                 message: 'Entry updated successfully',
                 entry: {
                     ...entry,
+                    user: entry?.user ? formatUserWithAvatar(entry.user) : entry?.user,
+                    suggestedByUser: entry?.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
                     _count: { likes: likesCount, comments: commentsCount }
                 },
             });
@@ -1008,18 +1131,18 @@ router.get('/compare/:targetUserId', authMiddleware, async (req: Request, res: R
             : 0;
 
         res.json({
-            userA: {
+            userA: formatUserWithAvatar({
                 id: currentUser.id,
                 username: currentUser.username,
                 displayName: currentUser.displayName,
                 profilePictureUrl: currentUser.profilePictureUrl,
-            },
-            userB: {
+            }),
+            userB: formatUserWithAvatar({
                 id: targetUser.id,
                 username: targetUser.username,
                 displayName: targetUser.displayName,
                 profilePictureUrl: targetUser.profilePictureUrl,
-            },
+            }),
             stats: {
                 matchPercentage,
                 totalCommon: commonItems.length,
