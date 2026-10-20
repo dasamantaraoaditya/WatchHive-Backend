@@ -72,6 +72,7 @@ const validateEntry = [
     body('startedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
     body('completedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
     body('watchLocation').optional({ nullable: true }).trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
+    body('postToFeed').optional({ nullable: true }).isBoolean().withMessage('postToFeed must be boolean'),
 ];
 
 /**
@@ -158,7 +159,10 @@ router.post(
                 suggestedByUserId,
                 posterPath,
                 backdropPath,
+                postToFeed,
             } = req.body;
+
+            const isEntryPostedToFeed = postToFeed !== undefined ? Boolean(postToFeed) : true;
 
             let finalSuggestedByUserId = suggestedByUserId || null;
             if (!finalSuggestedByUserId && tmdbId) {
@@ -248,6 +252,7 @@ router.post(
                             suggestedByUserId: finalSuggestedByUserId || targetExisting.suggestedByUserId,
                             posterPath: posterPath || tmdbPoster || targetExisting.posterPath,
                             backdropPath: backdropPath || tmdbBackdrop || targetExisting.backdropPath,
+                            postToFeed: postToFeed !== undefined ? Boolean(postToFeed) : targetExisting.postToFeed,
                             updatedAt: new Date(),
                         })
                         .where(eq(entries.id, targetExisting.id));
@@ -282,6 +287,7 @@ router.post(
                     suggestedByUserId: finalSuggestedByUserId,
                     posterPath: posterPath || tmdbPoster || null,
                     backdropPath: backdropPath || tmdbBackdrop || null,
+                    postToFeed: isEntryPostedToFeed,
                 }).returning();
                 targetEntryId = newEntry.id;
             }
@@ -322,21 +328,23 @@ router.post(
                 await xpService.awardXp(userId, XpAction.WRITE_REVIEW);
             }
 
-            // Notify followers about watching activity (fire & forget)
-            const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
-            const actorAvatar = entry?.user?.profilePictureUrl || null;
-            notifyFollowersOfActivity({
-                actorId: userId,
-                actorName,
-                actorAvatar,
-                entryId: targetEntryId,
-                entryTitle: resolvedTitle,
-                mediaType: type,
-                rating: rating ? Number(rating) : null,
-                review: review || null,
-                isWatching: Boolean(isWatching),
-                tmdbId: tmdbId ? Number(tmdbId) : null,
-            }).catch(err => console.error('[FollowerActivity] Notification error on create:', err));
+            // Notify followers about watching activity (fire & forget) if allowed to post to feed
+            if (isEntryPostedToFeed) {
+                const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
+                const actorAvatar = entry?.user?.profilePictureUrl || null;
+                notifyFollowersOfActivity({
+                    actorId: userId,
+                    actorName,
+                    actorAvatar,
+                    entryId: targetEntryId,
+                    entryTitle: resolvedTitle,
+                    mediaType: type,
+                    rating: rating ? Number(rating) : null,
+                    review: review || null,
+                    isWatching: Boolean(isWatching),
+                    tmdbId: tmdbId ? Number(tmdbId) : null,
+                }).catch(err => console.error('[FollowerActivity] Notification error on create:', err));
+            }
 
             res.status(201).json({
                 message: 'Entry created successfully',
@@ -776,6 +784,7 @@ router.put(
         body('startedAt').optional().isISO8601().withMessage('Invalid date format'),
         body('completedAt').optional().isISO8601().withMessage('Invalid date format'),
         body('watchLocation').optional().trim(),
+        body('postToFeed').optional().isBoolean().withMessage('postToFeed must be boolean'),
     ],
     async (req: Request, res: Response): Promise<any> => {
         try {
@@ -817,6 +826,7 @@ router.put(
             if (updateData.startedAt) updateData.startedAt = new Date(updateData.startedAt);
             if (updateData.completedAt) updateData.completedAt = new Date(updateData.completedAt);
             if (updateData.rating) updateData.rating = updateData.rating.toString();
+            if (updateData.postToFeed !== undefined) updateData.postToFeed = Boolean(updateData.postToFeed);
 
             await db
                 .update(entries)
@@ -851,8 +861,9 @@ router.put(
                 db.select({ commentsCount: count() }).from(comments).where(eq(comments.entryId, id))
             ]);
 
-            // Notify followers if watching status changed (fire & forget)
-            if (existingEntry.isWatching && updateData.isWatching === false) {
+            // Notify followers if watching status changed (fire & forget) if allowed to post to feed
+            const isEntryPostedToFeed = updateData.postToFeed !== undefined ? updateData.postToFeed : existingEntry.postToFeed;
+            if (existingEntry.isWatching && updateData.isWatching === false && isEntryPostedToFeed) {
                 const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
                 const actorAvatar = entry?.user?.profilePictureUrl || null;
                 notifyFollowersOfActivity({
