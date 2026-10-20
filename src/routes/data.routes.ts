@@ -10,7 +10,13 @@ const router = Router();
 
 function escapeCsvField(value: unknown): string {
     if (value === null || value === undefined) return '';
-    const str = Array.isArray(value) ? value.join('|') : String(value);
+    let str = Array.isArray(value) ? value.join('|') : String(value);
+
+    // Defend against CSV Formula Injection (CWE-1236): neutralize spreadsheet formula execution triggers
+    if (/^[=+\-@\t\r]/.test(str)) {
+        str = `'${str}`;
+    }
+
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
         return `"${str.replace(/"/g, '""')}"`;
     }

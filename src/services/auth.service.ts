@@ -297,11 +297,19 @@ export const authService = {
             .where(eq(users.email, email))
             .limit(1);
 
+        const isTokenValid = Boolean(
+            user?.passwordResetToken &&
+            user.passwordResetToken.length === hashedToken.length &&
+            crypto.timingSafeEqual(
+                Buffer.from(user.passwordResetToken),
+                Buffer.from(hashedToken)
+            )
+        );
+
         if (
             !user ||
-            !user.passwordResetToken ||
+            !isTokenValid ||
             !user.passwordResetExpiresAt ||
-            user.passwordResetToken !== hashedToken ||
             user.passwordResetExpiresAt < new Date()
         ) {
             throw new AppError('Invalid or expired reset link. Please request a new one.', 400);

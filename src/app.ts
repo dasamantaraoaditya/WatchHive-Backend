@@ -32,12 +32,17 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Trust reverse proxy (Railway, load balancers) so client IPs are accurately resolved for rate limiting
+app.set('trust proxy', 1);
+
 // Swagger Documentation
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// Security middleware — allow images from same origin
+// Security middleware — allow images from same origin, enable HSTS, hide Express fingerprint
 app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: config.nodeEnv === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+    hidePoweredBy: true,
 }));
 
 // CORS — allow both production URL and localhost for development
@@ -60,8 +65,14 @@ if (config.nodeEnv === 'development') {
         'https://watcherhive.com',
         'https://www.watcherhive.com',
         'https://watchhive-web.vercel.app',
+        'https://watchhive-frontend.vercel.app',
+        'https://watchhive-staging.vercel.app',
     );
 }
+
+// Regex to safely allow only genuine WatchHive preview deployments on Vercel and Railway
+const allowedVercelPattern = /^https:\/\/([a-z0-9-]+-)?(watchhive|watchershive)[a-z0-9-]*\.vercel\.app$/i;
+const allowedRailwayPattern = /^https:\/\/watchhive-api-(production|staging)\.up\.railway\.app$/i;
 
 app.use(
     cors({
@@ -70,8 +81,8 @@ app.use(
             if (!origin) return callback(null, true);
             if (
                 allowedOrigins.includes(origin) ||
-                origin.endsWith('.vercel.app') ||
-                origin.endsWith('.up.railway.app')
+                allowedVercelPattern.test(origin) ||
+                allowedRailwayPattern.test(origin)
             ) {
                 return callback(null, true);
             }

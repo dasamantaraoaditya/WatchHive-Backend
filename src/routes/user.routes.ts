@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
-import path from 'path';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
@@ -40,7 +39,13 @@ const upload = multer({
         contentType: multerS3.AUTO_CONTENT_TYPE,
         key: (req, _file, cb) => {
             const userId = req.user?.userId || 'unknown';
-            const ext = path.extname(_file.originalname) || '.jpg';
+            const mimeExtensionMap: Record<string, string> = {
+                'image/jpeg': '.jpg',
+                'image/png': '.png',
+                'image/webp': '.webp',
+                'image/gif': '.gif',
+            };
+            const ext = mimeExtensionMap[_file.mimetype] || '.jpg';
             const filename = `avatars/${userId}-${Date.now()}${ext}`;
             cb(null, filename);
         },
