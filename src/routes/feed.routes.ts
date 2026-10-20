@@ -39,7 +39,7 @@ router.get('/trending', authMiddleware, async (_req: Request, res: Response): Pr
             commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number),
         })
             .from(entries)
-            .where(sql`${entries.createdAt} > NOW() - INTERVAL '30 days'`);
+            .where(and(sql`${entries.createdAt} > NOW() - INTERVAL '30 days'`, sql`(${entries.postToFeed} IS NOT FALSE)`));
 
         // 2. Aggregate in memory
         const buzzMap = new Map<number, { title: string, context: string, buzzes: number, tags: string[] }>();
@@ -187,6 +187,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             updatedAt: entries.updatedAt,
             posterPath: entries.posterPath,
             backdropPath: entries.backdropPath,
+            postToFeed: entries.postToFeed,
             user: {
                 id: users.id,
                 username: users.username,
@@ -219,7 +220,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                     ),
                     // Exclude imported entries and watch history from the community feed
                     sql`(${entries.isImported} IS NOT TRUE)`,
-                    sql`(NOT ('imported' = ANY(COALESCE(${entries.tags}, ARRAY[]::text[]))))`
+                    sql`(NOT ('imported' = ANY(COALESCE(${entries.tags}, ARRAY[]::text[]))))`,
+                    sql`(${entries.postToFeed} IS NOT FALSE)`
                 )
             )
             .orderBy(desc(entries.updatedAt))

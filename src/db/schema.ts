@@ -72,6 +72,7 @@ export const entries = pgTable('entries', {
     isImported: boolean('is_imported').default(false).notNull(),
     posterPath: text('poster_path'),
     backdropPath: text('backdrop_path'),
+    postToFeed: boolean('post_to_feed').default(true).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
