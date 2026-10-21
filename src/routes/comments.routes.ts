@@ -125,16 +125,23 @@ router.post(
 
             // --- Send Notifications ---
             const actorName = comment.user.displayName || comment.user.username;
+            const actorAvatar = comment.user.profilePictureUrl || null;
+            const normMediaType = (entry.type || '').toUpperCase() === 'TV_SHOW' ? 'tv' : 'movie';
 
             // 1. Notify Parent Comment Owner (if it's a reply)
             if (comment.parentComment && comment.parentComment.userId !== userId) {
                 await notificationService.createNotification(comment.parentComment.userId, 'REPLY', {
                     actorId: userId,
                     actorName,
+                    actorAvatar,
                     entryId,
                     commentId: comment.id,
                     contentSnippet: content.substring(0, 50),
-                    entryTitle: entry.title
+                    entryTitle: entry.title,
+                    title: entry.title,
+                    type: entry.type,
+                    mediaType: normMediaType,
+                    tmdbId: entry.tmdbId,
                 });
             }
             // 2. Notify Entry Owner (if it's not a reply or if the entry owner is NOT the parent comment owner)
@@ -142,10 +149,15 @@ router.post(
                 await notificationService.createNotification(entry.userId, 'COMMENT', {
                     actorId: userId,
                     actorName,
+                    actorAvatar,
                     entryId,
                     commentId: comment.id,
                     contentSnippet: content.substring(0, 50),
-                    entryTitle: entry.title
+                    entryTitle: entry.title,
+                    title: entry.title,
+                    type: entry.type,
+                    mediaType: normMediaType,
+                    tmdbId: entry.tmdbId,
                 });
             }
 
