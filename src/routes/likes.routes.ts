@@ -80,13 +80,15 @@ router.post('/:entryId', authMiddleware, async (req: Request, res: Response): Pr
                 createdAt: likes.createdAt,
                 user: {
                     username: users.username,
-                    displayName: users.displayName
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl
                 },
                 entry: {
                     id: entries.id,
                     userId: entries.userId,
                     title: entries.title,
                     type: entries.type,
+                    tmdbId: entries.tmdbId
                 }
             })
             .from(likes)

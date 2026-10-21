@@ -70,7 +70,9 @@ router.post(
                 .select({
                     id: entries.id,
                     userId: entries.userId,
-                    title: entries.title
+                    title: entries.title,
+                    type: entries.type,
+                    tmdbId: entries.tmdbId,
                 })
                 .from(entries)
                 .where(eq(entries.id, entryId))

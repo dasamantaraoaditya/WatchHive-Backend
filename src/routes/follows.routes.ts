@@ -242,7 +242,7 @@ router.post('/requests/:requestId/reject', authMiddleware, async (req: Request, 
         }
 
         const [recipient] = await db
-            .select({ username: users.username, displayName: users.displayName })
+            .select({ username: users.username, displayName: users.displayName, profilePictureUrl: users.profilePictureUrl })
             .from(users)
             .where(eq(users.id, userId))
             .limit(1);
