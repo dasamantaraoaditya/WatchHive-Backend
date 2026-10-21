@@ -241,11 +241,16 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             return true;
         });
 
-        // Sort chronologically by latest activity date (started watching, completed, reviewed, or logged)
+        // Sort chronologically by latest activity date, guarding against client timezone skew / future timestamps
+        const nowMs = Date.now();
+        const getEffectiveActivityTime = (item: any): number => {
+            const raw = new Date(item.updatedAt || item.completedAt || item.startedAt || item.createdAt || item.watchedAt).getTime();
+            if (isNaN(raw)) return nowMs;
+            return raw > nowMs ? nowMs : raw;
+        };
+
         const sortedEntries = (deduplicatedRawEntries as any[]).sort((a, b) => {
-            const timeA = new Date(a.updatedAt || a.completedAt || a.startedAt || a.createdAt || a.watchedAt).getTime();
-            const timeB = new Date(b.updatedAt || b.completedAt || b.startedAt || b.createdAt || b.watchedAt).getTime();
-            return timeB - timeA;
+            return getEffectiveActivityTime(b) - getEffectiveActivityTime(a);
         });
 
         // 3. Advanced Suggestions Generation (WatchHive Movie Recommender)
@@ -374,20 +379,44 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         const feedItems: any[] = [];
         let suggestionIndex = (page - 1) * 3;
 
-        const mappedEntries = (sortedEntries as any[]).map(entry => ({
-            type: 'ENTRY',
-            id: entry.id,
-            timestamp: entry.updatedAt || entry.completedAt || entry.startedAt || entry.watchedAt,
-            data: {
-                ...entry,
-                user: entry.user ? formatUserWithAvatar(entry.user) : entry.user,
-                suggestedByUser: entry.suggestedByUser && entry.suggestedByUser.id ? formatUserWithAvatar(entry.suggestedByUser) : null,
-                _count: { likes: entry.likesCount, comments: entry.commentsCount },
-                isLiked: entry.isLiked,
-                isCommented: entry.isCommented,
-                isWatched: watchedTmdbSet.has(`${entry.type}-${entry.tmdbId}`)
+        const mappedEntries = (sortedEntries as any[]).map(entry => {
+            // Guard: sanitize any future timestamps that might have been saved in the past
+            const now = new Date();
+            const nowTime = now.getTime();
+            const sanitizedEntry = { ...entry };
+
+            if (sanitizedEntry.startedAt && new Date(sanitizedEntry.startedAt).getTime() > nowTime) {
+                sanitizedEntry.startedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
             }
-        }));
+            if (sanitizedEntry.completedAt && new Date(sanitizedEntry.completedAt).getTime() > nowTime) {
+                sanitizedEntry.completedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
+            }
+            if (sanitizedEntry.watchedAt && new Date(sanitizedEntry.watchedAt).getTime() > nowTime) {
+                sanitizedEntry.watchedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
+            }
+            if (sanitizedEntry.updatedAt && new Date(sanitizedEntry.updatedAt).getTime() > nowTime) {
+                sanitizedEntry.updatedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
+            }
+
+            const rawTimestamp = sanitizedEntry.updatedAt || sanitizedEntry.completedAt || sanitizedEntry.startedAt || sanitizedEntry.watchedAt;
+            const parsedTs = rawTimestamp ? new Date(rawTimestamp) : now;
+            const safeTimestamp = !isNaN(parsedTs.getTime()) && parsedTs.getTime() > nowTime ? now : parsedTs;
+
+            return {
+                type: 'ENTRY',
+                id: sanitizedEntry.id,
+                timestamp: safeTimestamp,
+                data: {
+                    ...sanitizedEntry,
+                    user: sanitizedEntry.user ? formatUserWithAvatar(sanitizedEntry.user) : sanitizedEntry.user,
+                    suggestedByUser: sanitizedEntry.suggestedByUser && sanitizedEntry.suggestedByUser.id ? formatUserWithAvatar(sanitizedEntry.suggestedByUser) : null,
+                    _count: { likes: sanitizedEntry.likesCount, comments: sanitizedEntry.commentsCount },
+                    isLiked: sanitizedEntry.isLiked,
+                    isCommented: sanitizedEntry.isCommented,
+                    isWatched: watchedTmdbSet.has(`${sanitizedEntry.type}-${sanitizedEntry.tmdbId}`)
+                }
+            };
+        });
 
         if (mappedEntries.length === 0 && page === 1) {
             // New user with 0 entries & 0 follows: Show full discovery suggestions
