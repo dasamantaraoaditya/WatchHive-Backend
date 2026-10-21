@@ -634,7 +634,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
         const isOwner = targetId === currentId;
         
         // Fetch follow status first to check permissions if needed
-        const [followStatus, followerStatus] = await Promise.all([
+        const [followRows, followerRows] = await Promise.all([
             db.select()
                 .from(follows)
                 .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
@@ -645,8 +645,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 .limit(1),
         ]);
 
-        const isFollowing = !!followStatus;
-        const isFollower = !!followerStatus;
+        const isFollowing = Array.isArray(followRows) && followRows.length > 0;
+        const isFollower = Array.isArray(followerRows) && followerRows.length > 0;
 
         // Fetch follow request status
         const [followReq] = await db
