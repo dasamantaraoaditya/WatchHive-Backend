@@ -159,21 +159,27 @@ function formatPushBody(type: string, content: any): string {
 /**
  * Get the URL to navigate to when the push notification is clicked
  */
-function getNotificationUrl(type: string, _content: any): string {
+function getNotificationUrl(type: string, content: any): string {
+    const entryId = content?.entryId;
+    const actorId = content?.actorId || content?.senderId;
+    const tmdbId = content?.tmdbId;
+    const rawMedia = (content?.mediaType || content?.type || 'movie').toString().toLowerCase();
+    const mediaType = rawMedia.includes('tv') ? 'tv' : 'movie';
+
     switch (type) {
         case 'LIKE':
         case 'COMMENT':
         case 'REPLY':
         case 'FRIEND_STARTED_WATCHING':
         case 'FRIEND_LOGGED_WATCH':
-            return '/watch-hive/feed';
+            return entryId ? `/watch-hive/entry/${entryId}` : '/watch-hive/feed';
         case 'FOLLOW':
         case 'FOLLOW_REQUEST':
         case 'FOLLOW_ACCEPT':
         case 'FOLLOW_REJECT':
-            return '/watch-hive/notifications';
+            return actorId ? `/watch-hive/profile/${actorId}` : '/watch-hive/notifications';
         case 'SUGGESTION':
-            return '/watch-hive/notifications';
+            return (tmdbId && Number(tmdbId) > 0) ? `/watch-hive/details/${mediaType}/${tmdbId}` : '/watch-hive/notifications';
         default:
             return '/watch-hive/notifications';
     }
