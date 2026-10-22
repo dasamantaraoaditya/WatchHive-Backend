@@ -65,7 +65,7 @@ router.post('/:userId', authMiddleware, async (req: Request, res: Response): Pro
             .limit(1);
 
         if (existingFollow) {
-            res.status(400).json({ error: 'You are already following this user' });
+            res.status(200).json({ message: 'Already following this user', status: 'following' });
             return;
         }
 
@@ -405,7 +405,7 @@ router.delete('/:userId', authMiddleware, async (req: Request, res: Response): P
                 res.json({ message: 'Successfully canceled follow request' });
                 return;
             }
-            res.status(404).json({ error: 'You are not following this user' });
+            res.json({ message: 'Successfully unfollowed user' });
             return;
         }
 
