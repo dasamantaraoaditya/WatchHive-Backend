@@ -12,6 +12,19 @@ import notificationService from '../services/notification.service.js';
 const router = Router();
 
 /**
+ * Safely parse date inputs and guard against client timezone confusion / future timestamps.
+ * Any entry timestamp cannot be in the future beyond server now (+ 1-minute grace for minor clock skew).
+ */
+function resolveValidDate(dateInput: any, defaultFallback: Date | null = new Date()): Date | null {
+    if (!dateInput) return defaultFallback;
+    const parsed = new Date(dateInput);
+    if (isNaN(parsed.getTime())) return defaultFallback;
+    const now = new Date();
+    // Clamp future dates to now
+    return parsed.getTime() > now.getTime() + 60000 ? now : parsed;
+}
+
+/**
  * Helper to dispatch friend watching activity notifications to followers
  */
 async function notifyFollowersOfActivity(params: {
@@ -41,7 +54,9 @@ async function notifyFollowersOfActivity(params: {
             actorAvatar: params.actorAvatar || null,
             entryId: params.entryId,
             entryTitle: params.entryTitle,
+            title: params.entryTitle,
             type: params.mediaType || 'MOVIE',
+            mediaType: (params.mediaType || '').toLowerCase().includes('tv') ? 'tv' : 'movie',
             rating: params.rating ?? null,
             review: params.review ? params.review.slice(0, 100) : null,
             isWatching: params.isWatching,
@@ -236,24 +251,25 @@ router.post(
 
                 if (targetExisting && (!isWatching || rating || review)) {
                     const finalIsWatching = isWatching !== undefined ? isWatching : false;
+                    const now = new Date();
                     await db
                         .update(entries)
                         .set({
                             title: resolvedTitle,
                             type: type as any,
-                            watchedAt: watchedAt ? new Date(watchedAt) : new Date(),
+                            watchedAt: resolveValidDate(watchedAt, now)!,
                             rating: rating ? rating.toString() : targetExisting.rating,
                             review: review !== undefined ? (review || null) : targetExisting.review,
                             tags: entryTags.length > 0 ? entryTags : targetExisting.tags,
                             isRewatch: isRewatch !== undefined ? isRewatch : targetExisting.isRewatch,
                             isWatching: finalIsWatching,
-                            completedAt: !finalIsWatching ? (completedAt ? new Date(completedAt) : new Date()) : null,
+                            completedAt: !finalIsWatching ? resolveValidDate(completedAt, now) : null,
                             watchLocation: watchLocation !== undefined ? (watchLocation || null) : targetExisting.watchLocation,
                             suggestedByUserId: finalSuggestedByUserId || targetExisting.suggestedByUserId,
                             posterPath: posterPath || tmdbPoster || targetExisting.posterPath,
                             backdropPath: backdropPath || tmdbBackdrop || targetExisting.backdropPath,
                             postToFeed: postToFeed !== undefined ? Boolean(postToFeed) : targetExisting.postToFeed,
-                            updatedAt: new Date(),
+                            updatedAt: now,
                         })
                         .where(eq(entries.id, targetExisting.id));
 
@@ -270,19 +286,20 @@ router.post(
 
             if (!targetEntryId) {
                 // Create entry
+                const now = new Date();
                 const [newEntry] = await db.insert(entries).values({
                     userId,
                     tmdbId,
                     title: resolvedTitle,
                     type: type as any,
-                    watchedAt: watchedAt ? new Date(watchedAt) : new Date(),
+                    watchedAt: resolveValidDate(watchedAt, now)!,
                     rating: rating ? rating.toString() : null,
                     review: review || null,
                     tags: entryTags,
                     isRewatch: isRewatch || false,
                     isWatching: isWatching || false,
-                    startedAt: startedAt ? new Date(startedAt) : (isWatching ? new Date() : null),
-                    completedAt: completedAt ? new Date(completedAt) : (!isWatching ? new Date() : null),
+                    startedAt: isWatching ? resolveValidDate(startedAt, now) : (startedAt ? resolveValidDate(startedAt, null) : null),
+                    completedAt: !isWatching ? resolveValidDate(completedAt, now) : (completedAt ? resolveValidDate(completedAt, null) : null),
                     watchLocation: watchLocation || null,
                     suggestedByUserId: finalSuggestedByUserId,
                     posterPath: posterPath || tmdbPoster || null,
@@ -810,27 +827,28 @@ router.put(
 
             // Update entry
             const updateData = { ...req.body };
+            const now = new Date();
             if (existingEntry.isWatching && (updateData.isWatching === false || updateData.rating || updateData.review)) {
                 updateData.isWatching = false;
-                updateData.completedAt = new Date();
-                if (!updateData.watchedAt) updateData.watchedAt = new Date();
+                updateData.completedAt = now;
+                if (!updateData.watchedAt) updateData.watchedAt = now;
             }
             if (existingEntry.tmdbId && updateData.isWatching === false) {
                 // Clear any other active currently-watching sessions for this title
                 await db
                     .update(entries)
-                    .set({ isWatching: false, completedAt: new Date(), updatedAt: new Date() })
+                    .set({ isWatching: false, completedAt: now, updatedAt: now })
                     .where(and(eq(entries.userId, userId), eq(entries.tmdbId, existingEntry.tmdbId), eq(entries.isWatching, true)));
             }
-            if (updateData.watchedAt) updateData.watchedAt = new Date(updateData.watchedAt);
-            if (updateData.startedAt) updateData.startedAt = new Date(updateData.startedAt);
-            if (updateData.completedAt) updateData.completedAt = new Date(updateData.completedAt);
+            if (updateData.watchedAt) updateData.watchedAt = resolveValidDate(updateData.watchedAt, now);
+            if (updateData.startedAt) updateData.startedAt = resolveValidDate(updateData.startedAt, null);
+            if (updateData.completedAt) updateData.completedAt = resolveValidDate(updateData.completedAt, null);
             if (updateData.rating) updateData.rating = updateData.rating.toString();
             if (updateData.postToFeed !== undefined) updateData.postToFeed = Boolean(updateData.postToFeed);
 
             await db
                 .update(entries)
-                .set({ ...updateData, updatedAt: new Date() })
+                .set({ ...updateData, updatedAt: now })
                 .where(eq(entries.id, id));
 
             // Fetch fully populated updated entry

@@ -85,11 +85,12 @@ router.post('/:userId', authMiddleware, async (req: Request, res: Response): Pro
         }
 
         const [actor] = await db
-            .select({ username: users.username, displayName: users.displayName })
+            .select({ username: users.username, displayName: users.displayName, profilePictureUrl: users.profilePictureUrl })
             .from(users)
             .where(eq(users.id, followerId))
             .limit(1);
         const actorName = actor?.displayName || actor?.username || 'Someone';
+        const actorAvatar = actor?.profilePictureUrl || null;
 
         // Check target user's privacy level
         const isPrivateAccount = userToFollow.privacyLevel === 'FOLLOWERS_ONLY' || 
@@ -106,6 +107,7 @@ router.post('/:userId', authMiddleware, async (req: Request, res: Response): Pro
             await notificationService.createNotification(followingId, 'FOLLOW_REQUEST', {
                 actorId: followerId,
                 actorName,
+                actorAvatar,
                 requestId: request.id
             });
 
@@ -114,9 +116,10 @@ router.post('/:userId', authMiddleware, async (req: Request, res: Response): Pro
             // Direct instant follow for public accounts
             await db.insert(follows).values({ followerId, followingId });
 
-            await notificationService.createNotification(followingId, 'FOLLOW_ACCEPT', {
+            await notificationService.createNotification(followingId, 'FOLLOW', {
                 actorId: followerId,
-                actorName
+                actorName,
+                actorAvatar
             });
 
             res.status(201).json({ message: 'Followed user successfully', status: 'following' });
@@ -185,14 +188,15 @@ router.post('/requests/:requestId/accept', authMiddleware, async (req: Request, 
         }
 
         const [recipient] = await db
-            .select({ username: users.username, displayName: users.displayName })
+            .select({ username: users.username, displayName: users.displayName, profilePictureUrl: users.profilePictureUrl })
             .from(users)
             .where(eq(users.id, userId))
             .limit(1);
 
         await notificationService.createNotification(request.senderId, 'FOLLOW_ACCEPT', {
             actorId: userId,
-            actorName: recipient?.displayName || recipient?.username || 'Someone'
+            actorName: recipient?.displayName || recipient?.username || 'Someone',
+            actorAvatar: recipient?.profilePictureUrl || null
         });
 
         res.json({ message: 'Follow request accepted' });
@@ -238,7 +242,7 @@ router.post('/requests/:requestId/reject', authMiddleware, async (req: Request, 
         }
 
         const [recipient] = await db
-            .select({ username: users.username, displayName: users.displayName })
+            .select({ username: users.username, displayName: users.displayName, profilePictureUrl: users.profilePictureUrl })
             .from(users)
             .where(eq(users.id, userId))
             .limit(1);
@@ -265,7 +269,8 @@ router.post('/requests/:requestId/reject', authMiddleware, async (req: Request, 
 
         await notificationService.createNotification(request.senderId, 'FOLLOW_REJECT', {
             actorId: userId,
-            actorName: recipient?.displayName || recipient?.username || 'Someone'
+            actorName: recipient?.displayName || recipient?.username || 'Someone',
+            actorAvatar: recipient?.profilePictureUrl || null
         });
 
         res.json({ message: 'Follow request rejected' });
