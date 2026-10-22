@@ -1,29 +1,37 @@
-# Use Node.js 20 LTS
-FROM node:20-slim
+# ─── Stage 1: Build & Prune ───
+FROM oven/bun:1-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package descriptors and lockfile
+COPY package.json bun.lock* ./
 
-# Install all dependencies (need devDependencies for build)
-RUN npm ci
+# Install dependencies (including devDependencies needed for build)
+RUN bun install --frozen-lockfile
 
-# Copy source code
+# Copy application source
 COPY . .
 
-# Build TypeScript
-RUN npm run build
+# Compile TypeScript
+RUN bun run build
 
-# Remove devDependencies for smaller image
-RUN npm prune --production
+# Install production-only dependencies
+RUN rm -rf node_modules && bun install --production --frozen-lockfile
 
-# Expose port (Railway provides PORT env var)
+# ─── Stage 2: Minimal Production Runner ───
+FROM oven/bun:1-slim AS runner
+
+WORKDIR /app
+
+# Copy compiled files and production modules from builder
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+
+# Expose port (Railway / Render provides PORT env var)
 EXPOSE 8080
 
-# Environment variables
 ENV NODE_ENV=production
 
-# Start the server
-CMD ["npm", "run", "start"]
+# Start directly with Bun
+CMD ["bun", "dist/index.js"]

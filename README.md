@@ -38,9 +38,8 @@ WatchHive Backend provides the core business logic, social graph, movie metadata
 ## 🚀 3. How to Setup
 
 ### Prerequisites
-- Node.js (v20.x or higher)
+- [Bun](https://bun.sh) (v1.1+ or higher)
 - PostgreSQL database (Local, Railway, or Supabase)
-- npm (v9+)
 
 ### Step-by-Step Installation
 
@@ -52,7 +51,7 @@ WatchHive Backend provides the core business logic, social graph, movie metadata
 
 2. **Install dependencies**:
    ```bash
-   npm install
+   bun install
    ```
 
 3. **Configure environment variables**:
@@ -86,18 +85,18 @@ WatchHive Backend provides the core business logic, social graph, movie metadata
 4. **Initialize Database Schema**:
    Push the Drizzle schema directly to your database:
    ```bash
-   npm run db:push
+   bun run db:push
    ```
 
 5. **Seed Realistic Staging / Dev Data**:
    Populate test users, ranking stacks, watch entries, suggestions, and social follows:
    ```bash
-   npx tsx scripts/seed-staging.ts
+   bun scripts/seed-staging.ts
    ```
 
 6. **Start Development Server**:
    ```bash
-   npm run dev
+   bun run dev
    ```
    The API will be available at `http://localhost:5001`.
    Swagger Interactive API Docs: `http://localhost:5001/api/docs`.
