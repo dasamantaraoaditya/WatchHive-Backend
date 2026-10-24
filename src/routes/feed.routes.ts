@@ -432,6 +432,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 timestamp: safeTimestamp,
                 data: {
                     ...sanitizedEntry,
+                    rating: sanitizedEntry.rating ? parseFloat(sanitizedEntry.rating) : null,
                     user: sanitizedEntry.user ? formatUserWithAvatar(sanitizedEntry.user) : sanitizedEntry.user,
                     suggestedByUser: sanitizedEntry.suggestedByUser && sanitizedEntry.suggestedByUser.id ? formatUserWithAvatar(sanitizedEntry.suggestedByUser) : null,
                     _count: { likes: sanitizedEntry.likesCount, comments: sanitizedEntry.commentsCount },
