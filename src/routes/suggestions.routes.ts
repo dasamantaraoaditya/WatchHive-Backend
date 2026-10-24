@@ -60,12 +60,13 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
         }
 
         const [actor] = await db
-            .select({ displayName: users.displayName, username: users.username })
+            .select({ displayName: users.displayName, username: users.username, profilePictureUrl: users.profilePictureUrl })
             .from(users)
             .where(eq(users.id, fromUserId))
             .limit(1);
 
         const actorName = actor?.displayName || actor?.username || 'Someone';
+        const actorAvatar = actor?.profilePictureUrl || null;
 
         const createdSuggestions: any[] = [];
         const errors: string[] = [];
@@ -96,12 +97,16 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
                     .returning();
 
                 // Trigger real-time SSE + Web Push Notification
+                const normalizedMediaType = String(mediaType || 'movie').toLowerCase().includes('tv') ? 'tv' : 'movie';
                 await notificationService.createNotification(recipientId, 'SUGGESTION', {
                     actorId: fromUserId,
                     actorName,
-                    tmdbId,
-                    mediaType,
+                    actorAvatar,
+                    tmdbId: Number(tmdbId),
+                    mediaType: normalizedMediaType,
+                    type: normalizedMediaType === 'tv' ? 'TV_SHOW' : 'MOVIE',
                     title,
+                    entryTitle: title,
                     message: message?.trim() || null
                 });
 
