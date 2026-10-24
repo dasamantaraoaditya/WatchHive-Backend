@@ -249,6 +249,25 @@ router.post(
                 const placeholderEntry = existingEntriesList.find(e => e.rating === null && !e.review);
                 const targetExisting = activeWatchingEntry || placeholderEntry;
 
+                // Check if user already has a completed watch entry for this title
+                const completedWatch = existingEntriesList.find(
+                    e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null)
+                );
+
+                // If user has already watched this title, and this submission is a completed entry without isRewatch,
+                // do not allow standard duplicate logging
+                if (completedWatch && !targetExisting && !isWatching && !isRewatch) {
+                    res.status(400).json({
+                        error: 'You have already watched this title. Rewatch must be enabled to log a duplicate entry.',
+                        code: 'ALREADY_WATCHED',
+                        existingEntry: {
+                            ...completedWatch,
+                            rating: completedWatch.rating ? parseFloat(completedWatch.rating) : null,
+                        }
+                    });
+                    return;
+                }
+
                 if (targetExisting && (!isWatching || rating || review)) {
                     const finalIsWatching = isWatching !== undefined ? isWatching : false;
                     const now = new Date();
@@ -633,6 +652,71 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
  *       404:
  *         description: Entry not found
  */
+/**
+ * @openapi
+ * /api/v1/entries/check/{tmdbId}:
+ *   get:
+ *     tags: [Entries]
+ *     summary: Check if user has already logged a completed watch for this title
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tmdbId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Check result with hasWatched and previous entry
+ */
+router.get(
+    '/check/:tmdbId',
+    authMiddleware,
+    async (req: Request, res: Response): Promise<any> => {
+        try {
+            const userId = (req as any).user.userId || (req as any).user.id;
+            const tmdbId = parseInt(req.params.tmdbId, 10);
+            if (isNaN(tmdbId)) {
+                res.status(400).json({ error: 'Invalid TMDb ID' });
+                return;
+            }
+
+            const existingEntries = await db
+                .select()
+                .from(entries)
+                .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)))
+                .orderBy(desc(entries.watchedAt), desc(entries.createdAt));
+
+            const completed = existingEntries.filter(
+                e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null)
+            );
+
+            if (completed.length > 0) {
+                const latest = completed[0];
+                res.json({
+                    hasWatched: true,
+                    watchCount: completed.length,
+                    existingEntry: {
+                        ...latest,
+                        rating: latest.rating ? parseFloat(latest.rating) : null,
+                    }
+                });
+                return;
+            }
+
+            res.json({
+                hasWatched: false,
+                watchCount: 0,
+                existingEntry: null
+            });
+        } catch (error) {
+            console.error('Failed to check existing entry:', error);
+            res.status(500).json({ error: 'Failed to check entry' });
+        }
+    }
+);
+
 router.get(
     '/:id',
     authMiddleware,
