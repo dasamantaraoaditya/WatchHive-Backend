@@ -224,7 +224,17 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                     sql`(${entries.postToFeed} IS NOT FALSE)`
                 )
             )
-            .orderBy(desc(entries.updatedAt))
+            .orderBy(
+                desc(
+                    sql`CASE 
+                        WHEN ${entries.isWatching} IS FALSE 
+                             AND ${entries.completedAt} IS NOT NULL 
+                             AND (${entries.startedAt} IS NOT NULL OR ${entries.completedAt} > ${entries.createdAt} + INTERVAL '2 seconds')
+                        THEN ${entries.completedAt} 
+                        ELSE ${entries.createdAt} 
+                    END`
+                )
+            )
             .limit(limit)
             .offset(offset);
 
@@ -241,10 +251,18 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             return true;
         });
 
-        // Sort chronologically by latest activity date, guarding against client timezone skew / future timestamps
+        // Sort chronologically by post creation date, or completion date for completed watching updates.
+        // Editing/updating an existing entry does NOT bump it to the top.
         const nowMs = Date.now();
         const getEffectiveActivityTime = (item: any): number => {
-            const raw = new Date(item.updatedAt || item.completedAt || item.startedAt || item.createdAt || item.watchedAt).getTime();
+            const createdMs = item.createdAt ? new Date(item.createdAt).getTime() : (item.watchedAt ? new Date(item.watchedAt).getTime() : nowMs);
+            const completedMs = item.completedAt ? new Date(item.completedAt).getTime() : 0;
+
+            const isCompletedWatchingUpdate = !item.isWatching &&
+                completedMs > 0 &&
+                (item.startedAt || (createdMs > 0 && completedMs - createdMs > 2000));
+
+            const raw = isCompletedWatchingUpdate ? completedMs : createdMs;
             if (isNaN(raw)) return nowMs;
             return raw > nowMs ? nowMs : raw;
         };
@@ -398,7 +416,13 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 sanitizedEntry.updatedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
             }
 
-            const rawTimestamp = sanitizedEntry.updatedAt || sanitizedEntry.completedAt || sanitizedEntry.startedAt || sanitizedEntry.watchedAt;
+            const isCompletedWatchingUpdate = !sanitizedEntry.isWatching &&
+                sanitizedEntry.completedAt &&
+                (sanitizedEntry.startedAt || (sanitizedEntry.createdAt && new Date(sanitizedEntry.completedAt).getTime() - new Date(sanitizedEntry.createdAt).getTime() > 2000));
+
+            const rawTimestamp = isCompletedWatchingUpdate
+                ? sanitizedEntry.completedAt
+                : (sanitizedEntry.createdAt || sanitizedEntry.watchedAt);
             const parsedTs = rawTimestamp ? new Date(rawTimestamp) : now;
             const safeTimestamp = !isNaN(parsedTs.getTime()) && parsedTs.getTime() > nowTime ? now : parsedTs;
 
