@@ -5,6 +5,7 @@ import { users, suggestions, follows } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
+import { smartSuggestService } from '../services/smart-suggest.service.js';
 
 const router = Router();
 
@@ -235,6 +236,39 @@ router.get('/sent', authMiddleware, async (req: Request, res: Response): Promise
     } catch (error) {
         console.error('Error fetching sent suggestions:', error);
         res.status(500).json({ error: 'Failed to fetch sent suggestions' });
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/suggestions/smart-suggest:
+ *   get:
+ *     tags: [Suggestions]
+ *     summary: Get personalized SmartSuggest recommendations balancing social influence, consensus, and personal taste
+ *     parameters:
+ *       - in: query
+ *         name: mode
+ *         schema:
+ *           type: string
+ *           enum: [social, critic, explore]
+ *           default: social
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ */
+router.get('/smart-suggest', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+        const mode = (req.query.mode === 'critic' || req.query.mode === 'explore') ? req.query.mode : 'social';
+        const limit = Math.min(20, Math.max(1, parseInt(req.query.limit as string) || 10));
+
+        const result = await smartSuggestService.getSmartSuggestions(userId, mode, limit);
+        res.json(result);
+    } catch (error) {
+        console.error('[Suggestions] Error getting smart suggestions:', error);
+        res.status(500).json({ error: 'Failed to generate smart suggestions' });
     }
 });
 
