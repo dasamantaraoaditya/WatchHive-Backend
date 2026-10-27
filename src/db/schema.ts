@@ -45,6 +45,10 @@ export const users = pgTable('users', {
     xp: integer('xp').default(0).notNull(),
     level: integer('level').default(1).notNull(),
     badges: jsonb('badges').default([]).notNull(),
+    watchStreak: integer('watch_streak').default(0).notNull(),
+    lastWatchDate: text('last_watch_date'),
+    preferences: jsonb('preferences').default({}).notNull(),
+    hasCompletedOnboarding: boolean('has_completed_onboarding').default(false).notNull(),
     // Password reset fields — populated only during active reset request
     passwordResetToken: text('password_reset_token'),
     passwordResetExpiresAt: timestamp('password_reset_expires_at'),
