@@ -91,6 +91,7 @@ export const googleAuthService = {
                 email: users.email,
                 displayName: users.displayName,
                 profilePictureUrl: users.profilePictureUrl,
+                tokenVersion: users.tokenVersion,
             })
             .from(users)
             .where(eq(users.googleId, googlePayload.googleId))
@@ -106,6 +107,7 @@ export const googleAuthService = {
                     displayName: users.displayName,
                     profilePictureUrl: users.profilePictureUrl,
                     googleId: users.googleId,
+                    tokenVersion: users.tokenVersion,
                 })
                 .from(users)
                 .where(eq(users.email, googlePayload.email))
@@ -129,6 +131,7 @@ export const googleAuthService = {
                         email: users.email,
                         displayName: users.displayName,
                         profilePictureUrl: users.profilePictureUrl,
+                        tokenVersion: users.tokenVersion,
                     });
                 user = updatedUser;
             } else {
@@ -177,6 +180,7 @@ export const googleAuthService = {
                         email: users.email,
                         displayName: users.displayName,
                         profilePictureUrl: users.profilePictureUrl,
+                        tokenVersion: users.tokenVersion,
                     });
                 user = newUser;
             }
@@ -186,10 +190,12 @@ export const googleAuthService = {
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
         });
 
         return {

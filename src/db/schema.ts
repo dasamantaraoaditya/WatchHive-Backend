@@ -49,6 +49,7 @@ export const users = pgTable('users', {
     lastWatchDate: text('last_watch_date'),
     preferences: jsonb('preferences').default({}).notNull(),
     hasCompletedOnboarding: boolean('has_completed_onboarding').default(false).notNull(),
+    tokenVersion: integer('token_version').default(1).notNull(),
     // Password reset fields — populated only during active reset request
     passwordResetToken: text('password_reset_token'),
     passwordResetExpiresAt: timestamp('password_reset_expires_at'),

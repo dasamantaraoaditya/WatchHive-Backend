@@ -289,7 +289,7 @@ router.post('/reset-password', passwordResetLimiter, resetPasswordValidation, va
  *       400:
  *         description: Account already has a password or is not Google-linked
  */
-router.post('/set-password', authMiddleware, setPasswordValidation, validate, authController.setPassword);
+router.post('/set-password', authMiddleware, passwordResetLimiter, setPasswordValidation, validate, authController.setPassword);
 
 
 export default router;

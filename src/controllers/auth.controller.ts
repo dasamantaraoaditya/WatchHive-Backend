@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/auth.service.js';
 import { googleAuthService } from '../services/google-auth.service.js';
 import { appleAuthService } from '../services/apple-auth.service.js';
+import { verifyRefreshToken } from '../utils/jwt.util.js';
 
 export const authController = {
     async register(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -99,9 +100,22 @@ export const authController = {
         }
     },
 
-    async logout(_req: Request, res: Response): Promise<void> {
-        // For JWT, logout is handled client-side by removing tokens
-        // In future, we could implement token blacklisting with Redis
+    async logout(req: Request, res: Response): Promise<void> {
+        try {
+            const { refreshToken } = req.body || {};
+            if (refreshToken) {
+                try {
+                    const payload = verifyRefreshToken(refreshToken);
+                    if (payload.userId) {
+                        await authService.revokeSessions(payload.userId);
+                    }
+                } catch {
+                    // Safe to ignore token verification errors on logout
+                }
+            }
+        } catch {
+            // Never block successful client logout
+        }
         res.status(200).json({ message: 'Logged out successfully' });
     },
 

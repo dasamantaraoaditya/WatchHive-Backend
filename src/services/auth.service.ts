@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
-import { eq, or } from 'drizzle-orm';
+import { eq, or, sql } from 'drizzle-orm';
 import { hashPassword, comparePassword } from '../utils/bcrypt.util.js';
 import {
     generateAccessToken,
@@ -79,16 +79,19 @@ export const authService = {
                 profilePictureUrl: users.profilePictureUrl,
                 googleId: users.googleId,
                 passwordHash: users.passwordHash,
+                tokenVersion: users.tokenVersion,
             });
 
         // Generate tokens
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
         });
 
         return {
@@ -117,6 +120,7 @@ export const authService = {
                 profilePictureUrl: users.profilePictureUrl,
                 passwordHash: users.passwordHash,
                 googleId: users.googleId,
+                tokenVersion: users.tokenVersion,
             })
             .from(users)
             .where(eq(users.email, data.email))
@@ -152,10 +156,12 @@ export const authService = {
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
         });
 
         return {
@@ -188,14 +194,21 @@ export const authService = {
                 throw new AppError('User not found', 404);
             }
 
+            // Invalidate if tokenVersion is present and does not match active DB version
+            if (payload.tokenVersion !== undefined && user.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+                throw new AppError('Session expired or revoked. Please log in again.', 401);
+            }
+
             // Generate new tokens
             const accessToken = generateAccessToken({
                 userId: user.id,
                 email: user.email,
+                tokenVersion: user.tokenVersion ?? 1,
             });
             const refreshToken = generateRefreshToken({
                 userId: user.id,
                 email: user.email,
+                tokenVersion: user.tokenVersion ?? 1,
             });
 
             return {
@@ -317,13 +330,14 @@ export const authService = {
 
         const passwordHash = await hashPassword(newPassword);
 
-        // Update password and clear the reset token
+        // Update password, clear the reset token, and increment tokenVersion to revoke old sessions
         await db
             .update(users)
             .set({
                 passwordHash,
                 passwordResetToken: null,
                 passwordResetExpiresAt: null,
+                tokenVersion: sql`${users.tokenVersion} + 1`,
                 updatedAt: new Date(),
             })
             .where(eq(users.id, user.id));
@@ -367,10 +381,24 @@ export const authService = {
             .update(users)
             .set({
                 passwordHash,
+                tokenVersion: sql`${users.tokenVersion} + 1`,
                 updatedAt: new Date(),
             })
             .where(eq(users.id, user.id));
 
         return { message: 'Password set successfully. You can now sign in with either Google or your email and password.' };
+    },
+
+    /**
+     * Revoke all active sessions for a user by incrementing their tokenVersion
+     */
+    async revokeSessions(userId: string): Promise<void> {
+        await db
+            .update(users)
+            .set({
+                tokenVersion: sql`${users.tokenVersion} + 1`,
+                updatedAt: new Date(),
+            })
+            .where(eq(users.id, userId));
     },
 };
