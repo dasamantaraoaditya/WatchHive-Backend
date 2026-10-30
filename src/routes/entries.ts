@@ -364,6 +364,22 @@ router.post(
                 await xpService.awardXp(userId, XpAction.WRITE_REVIEW);
             }
 
+            // Update watch streak and award streak badges
+            await xpService.updateStreakAndCheckBadges(userId);
+
+            // If entry was from a suggestion, mark suggestion as watched and award suggestion badges
+            if (finalSuggestedByUserId) {
+                try {
+                    await db.update(suggestions)
+                        .set({ status: 'watched' })
+                        .where(and(eq(suggestions.toUserId, userId), eq(suggestions.tmdbId, tmdbId)));
+                    await xpService.awardXp(userId, XpAction.COMPLETE_SUGGESTION);
+                    await xpService.checkSuggestionBadges(userId);
+                } catch (suggErr) {
+                    console.error('[Entries] Error resolving suggestion on watch log:', suggErr);
+                }
+            }
+
             // Notify followers about watching activity (fire & forget) if allowed to post to feed
             if (isEntryPostedToFeed) {
                 const actorName = entry?.user?.displayName || entry?.user?.username || 'Someone';
@@ -995,6 +1011,18 @@ router.put(
                     isWatching: true,
                     tmdbId: entry?.tmdbId || existingEntry.tmdbId,
                 }).catch(err => console.error('[FollowerActivity] Notification error on PUT:', err));
+            }
+
+            if (existingEntry.isWatching && updateData.isWatching === false) {
+                try {
+                    await xpService.updateStreakAndCheckBadges(userId);
+                    if (existingEntry.suggestedByUserId) {
+                        await xpService.awardXp(userId, XpAction.COMPLETE_SUGGESTION);
+                        await xpService.checkSuggestionBadges(userId);
+                    }
+                } catch (streakErr) {
+                    console.error('[Entries] Error updating streak/badges on completion:', streakErr);
+                }
             }
 
             res.json({

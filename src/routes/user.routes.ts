@@ -103,6 +103,13 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
                 notifyFollowingActivity: users.notifyFollowingActivity,
+                xp: users.xp,
+                level: users.level,
+                badges: users.badges,
+                watchStreak: users.watchStreak,
+                lastWatchDate: users.lastWatchDate,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
                 entriesCount: count(entries.id),
@@ -119,11 +126,18 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
             throw new AppError('User not found', 404);
         }
 
+        // Compute active streak (streak is active if last watch was today or yesterday)
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const isStreakAlive = userResult.lastWatchDate === todayStr || userResult.lastWatchDate === yesterdayStr;
+        const activeStreak = isStreakAlive ? (userResult.watchStreak || 0) : 0;
+
         // Strip sensitive fields; expose computed boolean flags instead
         const { googleId, passwordHash, ...safeUser } = userResult;
 
         const user = {
             ...safeUser,
+            watchStreak: activeStreak,
             hasGoogleLinked: !!googleId,
             hasPassword: !!passwordHash,
             _count: {
@@ -171,7 +185,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 router.put('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
-        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings, notifyFollowingActivity } = req.body;
+        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings, notifyFollowingActivity, preferences, hasCompletedOnboarding } = req.body;
 
         if (displayName !== undefined && String(displayName).trim().length > 50) {
             res.status(400).json({ error: 'Display name cannot exceed 50 characters' });
@@ -201,6 +215,8 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 ...(showWatchlist !== undefined && { showWatchlist }),
                 ...(showRankings !== undefined && { showRankings }),
                 ...(notifyFollowingActivity !== undefined && { notifyFollowingActivity }),
+                ...(preferences !== undefined && { preferences }),
+                ...(hasCompletedOnboarding !== undefined && { hasCompletedOnboarding: Boolean(hasCompletedOnboarding) }),
                 updatedAt: new Date(),
             })
             .where(eq(users.id, userId))
@@ -219,6 +235,8 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
                 notifyFollowingActivity: users.notifyFollowingActivity,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
             });
@@ -228,6 +246,59 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
         }
 
         res.json(user);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/me/preferences:
+ *   put:
+ *     tags: [User]
+ *     summary: Update onboarding watch preferences (languages, genres, streaming platforms)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               preferences:
+ *                 type: object
+ *               hasCompletedOnboarding:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Preferences updated
+ */
+router.put('/me/preferences', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.user!.userId;
+        const { preferences, hasCompletedOnboarding = true } = req.body;
+
+        const [user] = await db
+            .update(users)
+            .set({
+                ...(preferences !== undefined && { preferences }),
+                hasCompletedOnboarding: Boolean(hasCompletedOnboarding),
+                updatedAt: new Date(),
+            })
+            .where(eq(users.id, userId))
+            .returning({
+                id: users.id,
+                username: users.username,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
+                updatedAt: users.updatedAt,
+            });
+
+        res.json({
+            success: true,
+            user,
+        });
     } catch (error) {
         next(error);
     }
@@ -621,6 +692,13 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
+                xp: users.xp,
+                level: users.level,
+                badges: users.badges,
+                watchStreak: users.watchStreak,
+                lastWatchDate: users.lastWatchDate,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
                 createdAt: users.createdAt,
             })
             .from(users)
@@ -744,8 +822,14 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
 
         const watchlistCount = Array.isArray(watchlist?.items) ? watchlist.items.length : 0;
 
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const isStreakAlive = user.lastWatchDate === todayStr || user.lastWatchDate === yesterdayStr;
+        const activeStreak = isStreakAlive ? (user.watchStreak || 0) : 0;
+
         res.json({
             ...user,
+            watchStreak: activeStreak,
             profilePictureUrl: await getAvatarUrl(user.profilePictureUrl),
             _count: {
                 followers: Number(followersCount) || 0,

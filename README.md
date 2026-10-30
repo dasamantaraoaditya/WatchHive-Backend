@@ -12,7 +12,9 @@ WatchHive Backend provides the core business logic, social graph, movie metadata
 - **Community Suggestions Engine**: Suggesting movies directly to friends, tracking recommendation impact, and logging suggester gratitude.
 - **Social Graph & Feed**: Follow/unfollow, friend activity feeds, likes, comments, and mentions.
 - **Cross-Platform Notifications**: Web Push notifications and Firebase Cloud Messaging (FCM) for mobile push.
+- **SmartSuggest AI Recommendations**: Hybrid algorithmic recommendation engine balancing friend recommendations, public ratings, user preferences, and diversity nudges.
 - **MindLens 2.0 Behavioral Intelligence Engine**: Empirical cinematic telemetry measuring Shannon Information Entropy ($H(G)$) for taste breadth, Russell's Circumplex Affective State, Empirical Bayesian Recommender Trust ($RTS$), and 6 cognitive viewing archetypes. Full specification documented in [MINDLENS_SPECIFICATION.md](docs/MINDLENS_SPECIFICATION.md).
+- **Master Features & Logic Wiki**: Complete architectural documentation of all 14 core features, mathematical models, and edge cases in [FEATURES_AND_LOGIC_WIKI.md](docs/FEATURES_AND_LOGIC_WIKI.md).
 - **Multi-Environment Orchestration**: Isolated Staging and Production architectures running with automated CI/CD and protected branches.
 
 ---
@@ -188,3 +190,26 @@ npx tsx scripts/perf-benchmark.ts
 # Run against custom target
 TARGET_URL="https://your-api-domain.com" npx tsx scripts/perf-benchmark.ts
 ```
+
+---
+
+## 📖 6. Master Features & Business Logic Documentation
+
+For an exhaustive, chapter-by-chapter walkthrough of all product capabilities, scoring algorithms, and database logic, see the **[Master Features & Logic Wiki](docs/FEATURES_AND_LOGIC_WIKI.md)**:
+
+1. **Platform Philosophy & Core Pillars**: Frictionless logging, anti-algorithm social graph, cinematic aesthetic.
+2. **User Authentication & Profile Onboarding**: JWT auth, OAuth, onboarding watch preferences, force update dialogs.
+3. **Watch Tracking & Entry Logging**: Single-flight TMDB fetching, 1-10 rating parity, rewatch detection, spoiler masking.
+4. **Currently Watching Shelf**: Live sessions, progress markers, atomic transition to watched.
+5. **Curated Watchlists**: Recommender attribution (`suggestedByUserId`), filtering & search.
+6. **Stacks & Ranked Lists**: Custom reorderable lists, visibility controls, shareable cards.
+7. **The Hive Feed & Social Graph**: Real-time activity feed, cursor pagination, likes, nested comments, Who to Follow.
+8. **Direct Suggestions & Impact Loop**: Friend recommendations, acceptance tracking, Suggester Impact score.
+9. **SmartSuggest Recommendation Engine**: Multi-factor scoring formula ($S = w_f F + w_c C + w_t T + B_{\text{div}} - P_{\text{fatigue}}$), 3 modes (Social, Critic, Explore).
+10. **MindLens 2.0 Behavioral Telemetry**: Shannon Information Entropy ($H(G)$), Russell Circumplex affect plane, Bayesian recommender trust ($RTS$).
+11. **Deep Linking & Universal App Links**: Android App Links (`assetlinks.json`), Apple Universal Links (`apple-app-site-association`), QR scanning.
+12. **Honey Badges & Cinephile XP**: 5-tier level progression, watch streaks, 8 achievement badges.
+13. **Offline-First Architecture & Sync Protocol**: Conflict resolution, mutation queues, exponential backoff.
+14. **Mobile-Responsive UX & Touch Ergonomics**: API payloads, low-latency queries, safe payloads.
+
+> 💡 **Developer Note:** All documentation files reside within `docs/` and are strictly excluded from client JS/CSS bundles and native mobile binaries, adding **0 bytes** to production release artifacts.

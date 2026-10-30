@@ -1,0 +1,119 @@
+name: DevSecOps - Security & Static Code Analysis (Backend)
+
+on:
+  push:
+    branches: [ main, staging ]
+  pull_request:
+    branches: [ main, staging ]
+  schedule:
+    # Run weekly automated security sweep every Monday at 04:00 UTC
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # =========================================================================
+  # 1. SECRET SCANNING (Gitleaks)
+  # Detects leaked JWT secrets, AWS tokens, Firebase credentials, TMDb keys
+  # =========================================================================
+  secret-scan:
+    name: Secret Shield (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks Secret Scanner
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
+
+  # =========================================================================
+  # 2. STATIC APPLICATION SECURITY TESTING (Semgrep SAST)
+  # Analyzes AST for OWASP Top 10 API flaws, Injection, Deserialization, BOLA
+  # =========================================================================
+  sast-analysis:
+    name: SAST Code Analysis (Semgrep OWASP)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep SAST
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/owasp-top-10
+            p/nodejsscan
+            p/typescript
+            p/security-code-scan
+        env:
+          SEMGREP_RULES: >-
+            p/owasp-top-10
+            p/nodejsscan
+            p/typescript
+
+  # =========================================================================
+  # 3. SOFTWARE COMPOSITION ANALYSIS (SCA) & DEPENDENCY AUDIT
+  # Identifies vulnerable packages, DoS vectors (multer/body-parser), and CVEs
+  # =========================================================================
+  sca-dependency-audit:
+    name: Dependency Audit & CVE Shield
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies (Safe Mode)
+        # --ignore-scripts prevents malicious postinstall code execution in CI
+        run: npm ci --ignore-scripts
+
+      - name: Production Dependency Audit
+        # Enforce zero High or Critical vulnerabilities in production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Install Google OSV Vulnerability Scanner
+        run: |
+          curl -fsSL https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64 -o /usr/local/bin/osv-scanner
+          chmod +x /usr/local/bin/osv-scanner
+
+      - name: Google OSV Vulnerability Scanner
+        run: osv-scanner --lockfile=package-lock.json
+        continue-on-error: true
+
+  # =========================================================================
+  # 4. CODE INTEGRITY, TYPE-SAFETY & UNIT VERIFICATION
+  # =========================================================================
+  code-integrity:
+    name: TypeScript & Linter Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Static Typecheck
+        run: npx tsc --noEmit
+
+      - name: ESLint Code Quality Gate
+        run: npm run lint
