@@ -36,12 +36,20 @@ const registerValidation = [
 const loginValidation = [
     body('email')
         .trim()
-        .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .notEmpty()
+        .withMessage('Please enter your email or username')
+        .custom((val) => {
+            if (val.includes('@')) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(val)) {
+                    throw new Error('Please enter a valid email address');
+                }
+            }
+            return true;
+        }),
     body('password')
         .notEmpty()
-        .withMessage('Password is required'),
+        .withMessage('Please enter your password'),
 ];
 
 const refreshValidation = [

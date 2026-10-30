@@ -110,7 +110,9 @@ export const authService = {
     },
 
     async login(data: LoginData): Promise<AuthResponse> {
-        // Find user
+        const identifier = data.email.trim();
+
+        // Find user by email or username (case-insensitive)
         const [user] = await db
             .select({
                 id: users.id,
@@ -123,18 +125,23 @@ export const authService = {
                 tokenVersion: users.tokenVersion,
             })
             .from(users)
-            .where(eq(users.email, data.email))
+            .where(
+                or(
+                    eq(sql`lower(${users.email})`, identifier.toLowerCase()),
+                    eq(sql`lower(${users.username})`, identifier.toLowerCase())
+                )
+            )
             .limit(1);
 
         if (!user) {
-            throw new AppError('Invalid email or password', 401);
+            throw new AppError('Incorrect email, username, or password. Please verify your details or use "Forgot password?" to reset.', 401);
         }
 
         // If user has no password (Google-only account), return a structured error
         // so the frontend can show an actionable recovery UI instead of a dead-end.
         if (!user.passwordHash) {
             const err = new AppError(
-                'This account was created with Google Sign-In. Please use Google to sign in, or use "Forgot password?" to set a password.',
+                'This account was created with Google Sign-In. Please sign in with Google, or use "Forgot password?" to set a password.',
                 400
             ) as any;
             err.code = 'google_only_account';
@@ -149,7 +156,7 @@ export const authService = {
         );
 
         if (!isPasswordValid) {
-            throw new AppError('Invalid email or password', 401);
+            throw new AppError('Incorrect email, username, or password. Please verify your details or use "Forgot password?" to reset.', 401);
         }
 
         // Generate tokens
