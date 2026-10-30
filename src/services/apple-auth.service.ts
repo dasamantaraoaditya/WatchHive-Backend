@@ -76,6 +76,7 @@ export const appleAuthService = {
                 googleId: users.googleId,
                 appleId: users.appleId,
                 passwordHash: users.passwordHash,
+                tokenVersion: users.tokenVersion,
             })
             .from(users)
             .where(eq(users.appleId, appleSub))
@@ -93,6 +94,7 @@ export const appleAuthService = {
                     googleId: users.googleId,
                     appleId: users.appleId,
                     passwordHash: users.passwordHash,
+                    tokenVersion: users.tokenVersion,
                 })
                 .from(users)
                 .where(eq(users.email, effectiveEmail))
@@ -116,6 +118,7 @@ export const appleAuthService = {
                         googleId: users.googleId,
                         appleId: users.appleId,
                         passwordHash: users.passwordHash,
+                        tokenVersion: users.tokenVersion,
                     });
 
                 user = updatedUser;
@@ -174,6 +177,7 @@ export const appleAuthService = {
                     googleId: users.googleId,
                     appleId: users.appleId,
                     passwordHash: users.passwordHash,
+                    tokenVersion: users.tokenVersion,
                 });
 
             user = newUser;
@@ -183,11 +187,13 @@ export const appleAuthService = {
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
         });
 
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
         });
 
         return {

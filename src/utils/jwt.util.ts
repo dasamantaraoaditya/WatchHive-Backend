@@ -4,6 +4,7 @@ import { config } from '../config.js';
 export interface JWTPayload {
     userId: string;
     email: string;
+    tokenVersion?: number;
 }
 
 export const generateAccessToken = (payload: JWTPayload): string => {
