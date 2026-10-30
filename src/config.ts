@@ -39,7 +39,17 @@ export const config = {
 
     email: {
         from: process.env.EMAIL_FROM || 'noreply@watchhive.com',
+        fromName: process.env.EMAIL_FROM_NAME || 'WatchersHive',
         sendgridApiKey: process.env.SENDGRID_API_KEY,
+        resendApiKey: process.env.RESEND_API_KEY,
+        smtp: {
+            host: process.env.SMTP_HOST,
+            port: parseInt(process.env.SMTP_PORT || '587', 10),
+            secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+            service: process.env.SMTP_SERVICE,
+        },
     },
 
     cloudinary: {

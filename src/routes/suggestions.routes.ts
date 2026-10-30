@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { db } from '../db/index.js';
 import { users, suggestions, follows } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, or, desc } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
 import { smartSuggestService } from '../services/smart-suggest.service.js';
@@ -74,15 +74,20 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
 
         for (const recipientId of targetIds) {
             try {
-                // Validate that the recipient is a follower of the current user
-                const [isFollowedBy] = await db
+                // Validate that there is a follow connection (either current user follows recipient OR recipient follows current user)
+                const [followConnection] = await db
                     .select()
                     .from(follows)
-                    .where(and(eq(follows.followerId, recipientId), eq(follows.followingId, fromUserId)))
+                    .where(
+                        or(
+                            and(eq(follows.followerId, fromUserId), eq(follows.followingId, recipientId)),
+                            and(eq(follows.followerId, recipientId), eq(follows.followingId, fromUserId))
+                        )
+                    )
                     .limit(1);
 
-                if (!isFollowedBy) {
-                    errors.push(`User ${recipientId} is not following you`);
+                if (!followConnection) {
+                    errors.push(`You must be connected with user ${recipientId} to send suggestions`);
                     continue;
                 }
 

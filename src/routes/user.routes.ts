@@ -525,11 +525,12 @@ router.delete('/me', authMiddleware, async (req: Request, res: Response, next: N
  */
 router.get('/search', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const query = req.query.q as string;
+        const rawQuery = (req.query.q as string) || '';
+        const query = rawQuery.trim().replace(/^@/, '');
         const page = parseInt(req.query.page as string, 10) || 1;
         const limit = parseInt(req.query.limit as string, 10) || 20;
 
-        if (!query || query.trim().length === 0) {
+        if (!query || query.length === 0) {
             res.json({ users: [], pagination: { page, limit, total: 0, totalPages: 0 } });
             return;
         }

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { db } from '../db/index.js';
 import { users, follows, followRequests, notifications } from '../db/schema.js';
-import { eq, and, desc, count } from 'drizzle-orm';
+import { eq, and, or, desc, count, ilike } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
 import { formatUserWithAvatar, formatUsersWithAvatar } from '../utils/avatar.util.js';
 
@@ -485,6 +485,17 @@ router.get('/:userId/followers', authMiddleware, async (req: Request, res: Respo
             }
         }
 
+        const searchQ = typeof req.query.q === 'string' ? req.query.q.trim().replace(/^@/, '') : '';
+        const whereClause = searchQ
+            ? and(
+                eq(follows.followingId, userId),
+                or(
+                    ilike(users.username, `%${searchQ}%`),
+                    ilike(users.displayName, `%${searchQ}%`)
+                )
+            )
+            : eq(follows.followingId, userId);
+
         const [followersList, [{ total }]] = await Promise.all([
             db.select({
                 id: users.id,
@@ -495,11 +506,11 @@ router.get('/:userId/followers', authMiddleware, async (req: Request, res: Respo
             })
                 .from(follows)
                 .innerJoin(users, eq(follows.followerId, users.id))
-                .where(eq(follows.followingId, userId))
+                .where(whereClause)
                 .limit(limit)
                 .offset(offset)
                 .orderBy(desc(follows.createdAt)),
-            db.select({ total: count() }).from(follows).where(eq(follows.followingId, userId))
+            db.select({ total: count() }).from(follows).innerJoin(users, eq(follows.followerId, users.id)).where(whereClause)
         ]);
 
         res.json({
@@ -576,6 +587,17 @@ router.get('/:userId/following', authMiddleware, async (req: Request, res: Respo
             }
         }
 
+        const searchQ = typeof req.query.q === 'string' ? req.query.q.trim().replace(/^@/, '') : '';
+        const whereClause = searchQ
+            ? and(
+                eq(follows.followerId, userId),
+                or(
+                    ilike(users.username, `%${searchQ}%`),
+                    ilike(users.displayName, `%${searchQ}%`)
+                )
+            )
+            : eq(follows.followerId, userId);
+
         const [followingList, [{ total }]] = await Promise.all([
             db.select({
                 id: users.id,
@@ -586,11 +608,11 @@ router.get('/:userId/following', authMiddleware, async (req: Request, res: Respo
             })
                 .from(follows)
                 .innerJoin(users, eq(follows.followingId, users.id))
-                .where(eq(follows.followerId, userId))
+                .where(whereClause)
                 .limit(limit)
                 .offset(offset)
                 .orderBy(desc(follows.createdAt)),
-            db.select({ total: count() }).from(follows).where(eq(follows.followerId, userId))
+            db.select({ total: count() }).from(follows).innerJoin(users, eq(follows.followingId, users.id)).where(whereClause)
         ]);
 
         res.json({
