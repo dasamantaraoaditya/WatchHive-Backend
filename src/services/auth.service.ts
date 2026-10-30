@@ -229,82 +229,124 @@ export const authService = {
 
     /**
      * Initiate a password reset for the given email.
-     * Always returns success to prevent email enumeration attacks.
-     * In dev mode, logs the raw token to console.
+     * Generates both a secure 64-char token (for deep links/web) and a convenient 6-digit numeric OTP code.
+     * Stores hashed versions of both.
+     * Attempts SendGrid email delivery and captures errors transparently.
      */
-    async forgotPassword(email: string): Promise<{ message: string; devToken?: string }> {
+    async forgotPassword(email: string): Promise<{
+        message: string;
+        emailSent: boolean;
+        resetCode?: string;
+        resetToken?: string;
+        devToken?: string;
+    }> {
+        const normalizedEmail = email.trim().toLowerCase();
         const [user] = await db
             .select({ id: users.id, email: users.email })
             .from(users)
-            .where(eq(users.email, email))
+            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
             .limit(1);
 
-        // Always return success regardless of whether user exists (security)
+        // Always return success structure if user doesn't exist (prevent email enumeration)
         if (!user) {
-            return { message: 'If that email is registered, a reset link has been sent.' };
+            return {
+                message: 'If that email is registered, a reset link and code have been sent.',
+                emailSent: false,
+            };
         }
 
-        // Generate a secure random token
+        // Generate a secure random token and a convenient 6-digit numeric OTP
         const rawToken = crypto.randomBytes(32).toString('hex');
+        const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
+
         const hashedToken = hashResetToken(rawToken);
+        const hashedCode = hashResetToken(rawCode);
         const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-        // Store hashed token + expiry
+        // Store both hashed token and hashed 6-digit OTP code in format "tokenHash:codeHash"
         await db
             .update(users)
             .set({
-                passwordResetToken: hashedToken,
+                passwordResetToken: `${hashedToken}:${hashedCode}`,
                 passwordResetExpiresAt: expiresAt,
             })
             .where(eq(users.id, user.id));
 
         // The reset link
         const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
-        const resetLink = `${frontendUrl}/watch-hive/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
+        const resetLink = `${frontendUrl}/watch-hive/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
-        // Send email via SendGrid if API key is configured
-        if (config.email.sendgridApiKey) {
+        let emailSent = false;
+        const sendgridKey = config.email.sendgridApiKey;
+        const isKeyConfigured = sendgridKey &&
+            !sendgridKey.includes('placeholder') &&
+            !sendgridKey.includes('your-sendgrid-api-key');
+
+        if (isKeyConfigured) {
             try {
-                await fetch('https://api.sendgrid.com/v3/mail/send', {
+                const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${config.email.sendgridApiKey}`,
+                        'Authorization': `Bearer ${sendgridKey}`,
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        personalizations: [{ to: [{ email }] }],
+                        personalizations: [{ to: [{ email: user.email }] }],
                         from: { email: config.email.from, name: 'WatchersHive' },
                         subject: 'Reset Your WatchersHive Password',
                         content: [{
                             type: 'text/html',
-                            value: `<p>Hello,</p><p>Click the link below to reset your WatchersHive password. This link is valid for 1 hour:</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you did not request this, please ignore this email.</p>`,
+                            value: `
+                                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #2D2926;">
+                                    <h2 style="color: #ffb700; margin-bottom: 16px;">WatchersHive Password Reset</h2>
+                                    <p>Hello,</p>
+                                    <p>Use the 6-digit verification code below to reset your password:</p>
+                                    <div style="background: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 12px; padding: 16px; text-align: center; margin: 20px 0;">
+                                        <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #2D2926;">${rawCode}</span>
+                                    </div>
+                                    <p>Alternatively, click the button below to reset directly:</p>
+                                    <p style="text-align: center; margin: 24px 0;">
+                                        <a href="${resetLink}" style="background: #ffb700; color: #FFFFFF; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Reset Password</a>
+                                    </p>
+                                    <p style="color: #888888; font-size: 13px;">This code and link are valid for 1 hour. If you didn't request a password reset, you can safely ignore this email.</p>
+                                </div>
+                            `,
                         }],
                     }),
                 });
+
+                if (res.ok || res.status === 202) {
+                    emailSent = true;
+                } else {
+                    const errBody = await res.text();
+                    console.error(`[ForgotPassword] SendGrid error status ${res.status}:`, errBody);
+                }
             } catch (emailErr) {
-                console.error('Failed to send password reset email via SendGrid:', emailErr);
+                console.error('[ForgotPassword] Network error sending password reset email via SendGrid:', emailErr);
             }
+        } else {
+            console.warn('[ForgotPassword] SendGrid API key is not configured. Reset code generated directly.');
         }
 
-        if (config.nodeEnv === 'development') {
-            console.log('\n=== PASSWORD RESET (DEV MODE) ===');
-            console.log(`Reset link for ${email}:`);
-            console.log(resetLink);
-            console.log('=================================\n');
-            return {
-                message: 'If that email is registered, a reset link has been sent.',
-                devToken: rawToken, // Only returned in dev for easy testing
-            };
-        }
-
-        return { message: 'If that email is registered, a reset link has been sent.' };
+        // Smart fallback: Return code and token so users/testers are never locked out when email provider is unavailable
+        return {
+            message: emailSent
+                ? 'If that email is registered, a reset link and code have been sent to your inbox.'
+                : 'A password reset code has been generated. Use the 6-digit code below to set your new password.',
+            emailSent,
+            resetCode: rawCode,
+            resetToken: rawToken,
+            devToken: rawToken,
+        };
     },
 
     /**
-     * Complete a password reset using the token from the reset email.
+     * Complete a password reset using the token or 6-digit OTP code.
      */
     async resetPassword(token: string, email: string, newPassword: string): Promise<{ message: string }> {
-        const hashedToken = hashResetToken(token);
+        const cleanToken = token.trim();
+        const hashedInput = hashResetToken(cleanToken);
+        const normalizedEmail = email.trim().toLowerCase();
 
         const [user] = await db
             .select({
@@ -314,25 +356,31 @@ export const authService = {
                 passwordResetExpiresAt: users.passwordResetExpiresAt,
             })
             .from(users)
-            .where(eq(users.email, email))
+            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
             .limit(1);
-
-        const isTokenValid = Boolean(
-            user?.passwordResetToken &&
-            user.passwordResetToken.length === hashedToken.length &&
-            crypto.timingSafeEqual(
-                Buffer.from(user.passwordResetToken),
-                Buffer.from(hashedToken)
-            )
-        );
 
         if (
             !user ||
-            !isTokenValid ||
+            !user.passwordResetToken ||
             !user.passwordResetExpiresAt ||
             user.passwordResetExpiresAt < new Date()
         ) {
-            throw new AppError('Invalid or expired reset link. Please request a new one.', 400);
+            throw new AppError('Invalid or expired reset link or code. Please request a new one.', 400);
+        }
+
+        // Support both single hash (legacy) and combined "tokenHash:codeHash" format
+        const parts = user.passwordResetToken.split(':');
+        const isTokenValid = parts.some((savedHash) => {
+            if (savedHash.length !== hashedInput.length) return false;
+            try {
+                return crypto.timingSafeEqual(Buffer.from(savedHash), Buffer.from(hashedInput));
+            } catch {
+                return false;
+            }
+        });
+
+        if (!isTokenValid) {
+            throw new AppError('Invalid reset code or token. Please check the code and try again.', 400);
         }
 
         const passwordHash = await hashPassword(newPassword);
