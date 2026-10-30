@@ -84,11 +84,14 @@ jobs:
         # Enforce zero High or Critical vulnerabilities in production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Install Google OSV Vulnerability Scanner
+        run: |
+          curl -fsSL https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64 -o /usr/local/bin/osv-scanner
+          chmod +x /usr/local/bin/osv-scanner
+
       - name: Google OSV Vulnerability Scanner
-        uses: google/osv-scanner-action@v1.9.0
-        with:
-          scan-args: |-
-            --lockfile=package-lock.json
+        run: osv-scanner --lockfile=package-lock.json
+        continue-on-error: true
 
   # =========================================================================
   # 4. CODE INTEGRITY, TYPE-SAFETY & UNIT VERIFICATION

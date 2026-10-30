@@ -132,9 +132,14 @@ class TMDbService {
 
   constructor() {
     if (!TMDB_API_KEY) {
-      throw new Error('TMDB_API_KEY is not defined in environment variables');
+      if (process.env.NODE_ENV === 'test') {
+        this.apiKey = 'mock-tmdb-key-for-test';
+      } else {
+        throw new Error('TMDB_API_KEY is not defined in environment variables');
+      }
+    } else {
+      this.apiKey = TMDB_API_KEY;
     }
-    this.apiKey = TMDB_API_KEY;
 
     // Use connection pooling with keepAlive to reuse TCP/TLS connections
     this.client = axios.create({
