@@ -12,12 +12,20 @@ const mockRegister = jest.fn<() => Promise<AuthResponse>>();
 const mockLogin = jest.fn<() => Promise<AuthResponse>>();
 const mockRefresh = jest.fn<() => Promise<{ accessToken: string; refreshToken: string }>>();
 const mockGoogleLogin = jest.fn<() => Promise<AuthResponse>>();
+const mockForgotPassword = jest.fn<() => Promise<{ message: string; emailSent: boolean; resetCode?: string; resetToken?: string }>>();
+const mockResetPassword = jest.fn<() => Promise<{ message: string }>>();
 const mockCheckDb = jest.fn<() => Promise<boolean>>();
 
 // ─── ESM module mocks (must come before dynamic imports) ─────────────────────
 
 await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
-    authService: { register: mockRegister, login: mockLogin, refresh: mockRefresh },
+    authService: {
+        register: mockRegister,
+        login: mockLogin,
+        refresh: mockRefresh,
+        forgotPassword: mockForgotPassword,
+        resetPassword: mockResetPassword,
+    },
 }));
 
 await jest.unstable_mockModule('../src/services/google-auth.service.js', () => ({
@@ -276,6 +284,68 @@ describe('POST /api/v1/auth/google', () => {
 
         expect(res.status).toBe(400);
         expect(res.body.error).toMatch(/token/i);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/v1/auth/forgot-password', () => {
+    it('200 — returns resetCode and token when email is processed', async () => {
+        mockForgotPassword.mockResolvedValueOnce({
+            message: 'A password reset code has been generated.',
+            emailSent: false,
+            resetCode: '123456',
+            resetToken: 'token-abc-xyz',
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/forgot-password')
+            .send({ email: 'test@example.com' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.resetCode).toBe('123456');
+        expect(res.body.resetToken).toBe('token-abc-xyz');
+    });
+
+    it('400 — rejects invalid email', async () => {
+        const res = await request(app)
+            .post('/api/v1/auth/forgot-password')
+            .send({ email: 'not-an-email' });
+
+        expect(res.status).toBe(400);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/v1/auth/reset-password', () => {
+    it('200 — resets password successfully with code or token', async () => {
+        mockResetPassword.mockResolvedValueOnce({
+            message: 'Password has been reset successfully. You can now sign in.',
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/reset-password')
+            .send({
+                email: 'test@example.com',
+                token: '123456',
+                newPassword: 'Password123!',
+            });
+
+        expect(res.status).toBe(200);
+        expect(res.body.message).toMatch(/reset successfully/i);
+    });
+
+    it('400 — rejects short passwords', async () => {
+        const res = await request(app)
+            .post('/api/v1/auth/reset-password')
+            .send({
+                email: 'test@example.com',
+                token: '123456',
+                newPassword: 'short',
+            });
+
+        expect(res.status).toBe(400);
     });
 });
 
