@@ -12,7 +12,7 @@ const mockRegister = jest.fn<() => Promise<AuthResponse>>();
 const mockLogin = jest.fn<() => Promise<AuthResponse>>();
 const mockRefresh = jest.fn<() => Promise<{ accessToken: string; refreshToken: string }>>();
 const mockGoogleLogin = jest.fn<() => Promise<AuthResponse>>();
-const mockForgotPassword = jest.fn<() => Promise<{ message: string; emailSent: boolean; resetCode?: string; resetToken?: string }>>();
+const mockForgotPassword = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
 const mockResetPassword = jest.fn<() => Promise<{ message: string }>>();
 const mockCheckDb = jest.fn<() => Promise<boolean>>();
 
@@ -290,12 +290,10 @@ describe('POST /api/v1/auth/google', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('POST /api/v1/auth/forgot-password', () => {
-    it('200 — returns resetCode and token when email is processed', async () => {
+    it('200 — returns confirmation message and emailSent without exposing tokens', async () => {
         mockForgotPassword.mockResolvedValueOnce({
-            message: 'A password reset code has been generated.',
-            emailSent: false,
-            resetCode: '123456',
-            resetToken: 'token-abc-xyz',
+            message: 'If that email is registered, a password reset link and code have been sent to your inbox.',
+            emailSent: true,
         });
 
         const res = await request(app)
@@ -303,8 +301,11 @@ describe('POST /api/v1/auth/forgot-password', () => {
             .send({ email: 'test@example.com' });
 
         expect(res.status).toBe(200);
-        expect(res.body.resetCode).toBe('123456');
-        expect(res.body.resetToken).toBe('token-abc-xyz');
+        expect(res.body.message).toContain('reset link');
+        expect(res.body.emailSent).toBe(true);
+        expect(res.body.resetCode).toBeUndefined();
+        expect(res.body.resetToken).toBeUndefined();
+        expect(res.body.devToken).toBeUndefined();
     });
 
     it('400 — rejects invalid email', async () => {
