@@ -53,6 +53,13 @@ export const users = pgTable('users', {
     // Password reset fields — populated only during active reset request
     passwordResetToken: text('password_reset_token'),
     passwordResetExpiresAt: timestamp('password_reset_expires_at'),
+    // Email verification fields
+    isEmailVerified: boolean('is_email_verified').default(false).notNull(),
+    emailVerificationToken: text('email_verification_token'),
+    emailVerificationExpiresAt: timestamp('email_verification_expires_at'),
+    // Account lockout fields (brute force protection)
+    failedLoginAttempts: integer('failed_login_attempts').default(0).notNull(),
+    lockoutUntil: timestamp('lockout_until'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

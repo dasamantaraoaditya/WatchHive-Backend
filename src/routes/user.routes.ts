@@ -115,6 +115,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 entriesCount: count(entries.id),
                 googleId: users.googleId,
                 passwordHash: users.passwordHash,
+                isEmailVerified: users.isEmailVerified,
             })
             .from(users)
             .leftJoin(entries, eq(entries.userId, users.id))

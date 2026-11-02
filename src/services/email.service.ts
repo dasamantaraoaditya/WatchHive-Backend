@@ -249,6 +249,106 @@ This code and link expire in 1 hour. If you didn't request this, ignore this ema
             text,
         });
     }
+
+    /**
+     * Send formatted email verification with 6-digit code and direct confirmation link.
+     */
+    async sendVerificationEmail(params: {
+        to: string;
+        username: string;
+        code: string;
+        verificationLink: string;
+    }): Promise<EmailResult> {
+        const { to, username, code, verificationLink } = params;
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Verify Your Email Address</title>
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #FAF8F5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAF8F5; padding: 40px 20px;">
+                    <tr>
+                        <td align="center">
+                            <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 520px; background-color: #FFFFFF; border-radius: 16px; border: 1px solid #EBE5DF; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                                <tr>
+                                    <td style="padding: 32px 32px 20px 32px; text-align: center; border-bottom: 1px solid #F3EFEA;">
+                                        <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #2D2926; letter-spacing: -0.5px;">
+                                            🎬 Watchers<span style="color: #FFB700;">Hive</span>
+                                        </h1>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 32px;">
+                                        <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700; color: #2D2926;">
+                                            Welcome to WatchersHive, ${username}!
+                                        </h2>
+                                        <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #5C554E;">
+                                            Please verify your email address to secure your account and start logging your movie journey:
+                                        </p>
+
+                                        <!-- Verification Code Box -->
+                                        <div style="background-color: #FFF9E6; border: 2px dashed #FFB700; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;">
+                                            <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.5px; color: #B38000; text-transform: uppercase; margin-bottom: 8px;">
+                                                Verification Code
+                                            </div>
+                                            <span style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #2D2926; font-family: monospace;">
+                                                ${code}
+                                            </span>
+                                        </div>
+
+                                        <p style="margin: 20px 0 16px 0; font-size: 14px; line-height: 1.6; color: #5C554E;">
+                                            You can also verify directly by clicking the button below:
+                                        </p>
+
+                                        <div style="text-align: center; margin: 24px 0;">
+                                            <a href="${verificationLink}" style="background-color: #FFB700; color: #2D2926; font-size: 15px; font-weight: 800; padding: 14px 28px; border-radius: 10px; text-decoration: none; display: inline-block;">
+                                                Verify Email Address
+                                            </a>
+                                        </div>
+
+                                        <p style="margin: 24px 0 0 0; font-size: 12.5px; line-height: 1.5; color: #8C827A;">
+                                            ⏱️ This verification link expires in <strong>24 hours</strong>.<br>
+                                            🔒 If you did not create an account on WatchersHive, you can safely ignore this email.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 20px 32px; background-color: #FAF8F5; border-top: 1px solid #F3EFEA; text-align: center;">
+                                        <p style="margin: 0; font-size: 12px; color: #8C827A;">
+                                            © ${new Date().getFullYear()} WatchersHive. All rights reserved.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+        `;
+
+        const text = `
+Welcome to WatchersHive, ${username}!
+
+Your verification code is: ${code}
+
+Or verify directly with this link:
+${verificationLink}
+
+This code and link expire in 24 hours.
+        `.trim();
+
+        return this.sendEmail({
+            to,
+            subject: 'Verify Your WatchersHive Email Address',
+            html,
+            text,
+        });
+    }
 }
 
 export const emailService = new EmailService();

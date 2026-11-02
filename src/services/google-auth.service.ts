@@ -40,6 +40,7 @@ export interface GoogleAuthResponse {
         profilePictureUrl: string | null;
         hasGoogleLinked: boolean;
         hasPassword: boolean;
+        isEmailVerified: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -223,6 +224,7 @@ export const googleAuthService = {
                         displayName: googlePayload.name,
                         profilePictureUrl: googlePayload.picture || null,
                         tokenVersion: 1,
+                        isEmailVerified: true,
                     })
                     .returning({
                         id: users.id,
@@ -241,11 +243,13 @@ export const googleAuthService = {
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
 
         return {
@@ -257,6 +261,7 @@ export const googleAuthService = {
                 profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: true,
                 hasPassword: false, // will be refreshed via getMe() in AuthContext
+                isEmailVerified: true,
             },
             accessToken,
             refreshToken,

@@ -24,6 +24,7 @@ export interface AppleAuthResponse {
         hasGoogleLinked: boolean;
         hasAppleLinked: boolean;
         hasPassword: boolean;
+        isEmailVerified: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -167,6 +168,7 @@ export const appleAuthService = {
                     profilePictureUrl: null,
                     isPrivate: false,
                     privacyLevel: 'PUBLIC',
+                    isEmailVerified: true,
                 })
                 .returning({
                     id: users.id,
@@ -188,12 +190,14 @@ export const appleAuthService = {
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
 
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
 
         return {
@@ -206,6 +210,7 @@ export const appleAuthService = {
                 hasGoogleLinked: Boolean(user.googleId),
                 hasAppleLinked: Boolean(user.appleId),
                 hasPassword: Boolean(user.passwordHash),
+                isEmailVerified: true,
             },
             accessToken,
             refreshToken,
