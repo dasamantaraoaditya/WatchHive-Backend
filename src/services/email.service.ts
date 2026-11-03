@@ -45,9 +45,12 @@ class EmailService {
                         },
                     });
                 }
+                console.log(`[EmailService] SMTP transporter initialized (${smtp.service || smtp.host}) for ${smtp.user}`);
             } catch (err: any) {
                 console.error('[EmailService] Failed to initialize SMTP transporter:', err?.message || err);
             }
+        } else {
+            console.log('[EmailService] SMTP credentials not provided. Set SMTP_USER and SMTP_PASS (or RESEND_API_KEY) in .env to enable email sending.');
         }
     }
 
@@ -242,12 +245,26 @@ ${resetLink}
 This code and link expire in 1 hour. If you didn't request this, ignore this email.
         `.trim();
 
-        return this.sendEmail({
+        const result = await this.sendEmail({
             to,
             subject: 'Reset Your WatchersHive Password',
             html,
             text,
         });
+
+        if (!result.success) {
+            console.warn(
+                `\n╔══════════════════════════════════════════════════════════════════════════╗\n` +
+                `║ 🔑 [WatchersHive Password Reset OTP]                                      ║\n` +
+                `║ To:   ${to}\n` +
+                `║ Code: ${code}\n` +
+                `║ Link: ${resetLink}\n` +
+                `║ Note: Configure SMTP_USER / SMTP_PASS in .env to deliver real emails.     ║\n` +
+                `╚══════════════════════════════════════════════════════════════════════════╝\n`
+            );
+        }
+
+        return result;
     }
 
     /**
@@ -342,12 +359,26 @@ ${verificationLink}
 This code and link expire in 24 hours.
         `.trim();
 
-        return this.sendEmail({
+        const result = await this.sendEmail({
             to,
             subject: 'Verify Your WatchersHive Email Address',
             html,
             text,
         });
+
+        if (!result.success) {
+            console.warn(
+                `\n╔══════════════════════════════════════════════════════════════════════════╗\n` +
+                `║ 🔑 [WatchersHive Email Verification OTP]                                 ║\n` +
+                `║ To:   ${to}\n` +
+                `║ Code: ${code}\n` +
+                `║ Link: ${verificationLink}\n` +
+                `║ Note: Configure SMTP_USER / SMTP_PASS in .env to deliver real emails.     ║\n` +
+                `╚══════════════════════════════════════════════════════════════════════════╝\n`
+            );
+        }
+
+        return result;
     }
 }
 
