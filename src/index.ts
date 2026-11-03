@@ -1,5 +1,11 @@
 import app from './app.js';
 import { config } from './config.js';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { db } from './db/index.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {
@@ -23,6 +29,17 @@ process.on('SIGINT', () => {
     console.log('SIGINT signal received: closing HTTP server');
     gracefulShutdown('SIGINT');
 });
+
+// Run DB migrations before starting server
+const migrationsFolder = path.join(__dirname, '..', 'drizzle');
+try {
+    console.log('🗄️  Running database migrations...');
+    await migrate(db, { migrationsFolder });
+    console.log('✅ Database migrations complete');
+} catch (err) {
+    console.error('❌ Migration failed:', err);
+    // Do not block startup for migration errors — log and continue
+}
 
 // Start the server
 const serverPort = process.env.PORT || config.port || 8080;

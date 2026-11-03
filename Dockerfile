@@ -25,5 +25,5 @@ EXPOSE 8080
 # Environment variables
 ENV NODE_ENV=production
 
-# Start the server
+# Start the server (migrations run automatically at startup via src/index.ts)
 CMD ["npm", "run", "start"]
