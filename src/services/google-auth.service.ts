@@ -41,6 +41,8 @@ export interface GoogleAuthResponse {
         hasGoogleLinked: boolean;
         hasPassword: boolean;
         isEmailVerified: boolean;
+        preferences?: any;
+        hasCompletedOnboarding?: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -132,6 +134,8 @@ export const googleAuthService = {
                 profilePictureUrl: users.profilePictureUrl,
                 tokenVersion: users.tokenVersion,
                 isEmailVerified: users.isEmailVerified,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
             })
             .from(users)
             .where(eq(users.googleId, googlePayload.googleId))
@@ -166,6 +170,8 @@ export const googleAuthService = {
                     googleId: users.googleId,
                     tokenVersion: users.tokenVersion,
                     isEmailVerified: users.isEmailVerified,
+                    preferences: users.preferences,
+                    hasCompletedOnboarding: users.hasCompletedOnboarding,
                 })
                 .from(users)
                 .where(eq(users.email, googlePayload.email))
@@ -201,6 +207,8 @@ export const googleAuthService = {
                                 googleId: users.googleId,
                                 tokenVersion: users.tokenVersion,
                                 isEmailVerified: users.isEmailVerified,
+                                preferences: users.preferences,
+                                hasCompletedOnboarding: users.hasCompletedOnboarding,
                             });
                         if (res) updatedUser = res;
                     } catch (linkError) {
@@ -261,6 +269,8 @@ export const googleAuthService = {
                         profilePictureUrl: users.profilePictureUrl,
                         tokenVersion: users.tokenVersion,
                         isEmailVerified: users.isEmailVerified,
+                        preferences: users.preferences,
+                        hasCompletedOnboarding: users.hasCompletedOnboarding,
                     });
                 user = newUser;
             }
@@ -290,6 +300,8 @@ export const googleAuthService = {
                 hasGoogleLinked: true,
                 hasPassword: false, // will be refreshed via getMe() in AuthContext
                 isEmailVerified: true,
+                preferences: user.preferences,
+                hasCompletedOnboarding: user.hasCompletedOnboarding,
             },
             accessToken,
             refreshToken,

@@ -25,6 +25,13 @@ export interface LoginData {
     password: string;
 }
 
+export interface RegisterResult {
+    requiresVerification: true;
+    email: string;
+    username: string;
+    message: string;
+}
+
 export interface AuthResponse {
     user: {
         id: string;
@@ -35,6 +42,8 @@ export interface AuthResponse {
         hasGoogleLinked: boolean;
         hasPassword: boolean;
         isEmailVerified: boolean;
+        preferences?: any;
+        hasCompletedOnboarding?: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -46,17 +55,65 @@ function hashResetToken(token: string): string {
 }
 
 export const authService = {
-    async register(data: RegisterData): Promise<AuthResponse> {
+    async register(data: RegisterData): Promise<RegisterResult> {
+        const normalizedEmail = data.email.trim().toLowerCase();
+        const cleanUsername = data.username.trim();
+
         // Check if user already exists
         const [existingUser] = await db
             .select()
             .from(users)
-            .where(or(eq(users.email, data.email), eq(users.username, data.username)))
+            .where(
+                or(
+                    sql`LOWER(${users.email}) = ${normalizedEmail}`,
+                    sql`LOWER(${users.username}) = ${cleanUsername.toLowerCase()}`
+                )
+            )
             .limit(1);
 
         if (existingUser) {
-            if (existingUser.email === data.email) {
-                throw new AppError('Email already in use', 400);
+            if (existingUser.email.toLowerCase() === normalizedEmail) {
+                // If already registered AND verified -> prompt user to sign in directly
+                if (existingUser.isEmailVerified) {
+                    const err = new AppError('This email is already registered. Please sign in.', 409) as any;
+                    err.code = 'email_already_registered';
+                    throw err;
+                }
+
+                // If already registered BUT NOT verified -> resend 6-digit code and direct them to verification screen
+                const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
+                const rawToken = crypto.randomBytes(32).toString('hex');
+                const hashedToken = hashResetToken(rawToken);
+                const hashedCode = hashResetToken(rawCode);
+                const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+                await db
+                    .update(users)
+                    .set({
+                        emailVerificationToken: `${hashedToken}:${hashedCode}`,
+                        emailVerificationExpiresAt: expiresAt,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(users.id, existingUser.id));
+
+                const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
+                const verificationLink = `${frontendUrl}/watch-hive/verify-email?token=${rawToken}&email=${encodeURIComponent(existingUser.email)}`;
+
+                emailService.sendVerificationEmail({
+                    to: existingUser.email,
+                    username: existingUser.username,
+                    code: rawCode,
+                    verificationLink,
+                }).catch((emailErr) => {
+                    console.error('[Register] Failed to send verification email in background:', emailErr);
+                });
+
+                return {
+                    requiresVerification: true,
+                    email: existingUser.email,
+                    username: existingUser.username,
+                    message: 'Account pending verification. A fresh 6-digit verification code has been sent to your email.',
+                };
             }
             throw new AppError('Username already taken', 400);
         }
@@ -64,21 +121,21 @@ export const authService = {
         // Hash password
         const passwordHash = await hashPassword(data.password);
 
-        // Generate verification token and code
+        // Generate verification token and 6-digit OTP code
         const rawToken = crypto.randomBytes(32).toString('hex');
         const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
         const hashedToken = hashResetToken(rawToken);
         const hashedCode = hashResetToken(rawCode);
         const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-        // Create user
+        // Create unverified user (requires email verification before active session)
         const [user] = await db
             .insert(users)
             .values({
-                username: data.username,
-                email: data.email,
+                username: cleanUsername,
+                email: normalizedEmail,
                 passwordHash,
-                displayName: data.displayName || data.username,
+                displayName: data.displayName || cleanUsername,
                 isEmailVerified: false,
                 emailVerificationToken: `${hashedToken}:${hashedCode}`,
                 emailVerificationExpiresAt: verificationExpiresAt,
@@ -87,56 +144,26 @@ export const authService = {
                 id: users.id,
                 username: users.username,
                 email: users.email,
-                displayName: users.displayName,
-                profilePictureUrl: users.profilePictureUrl,
-                googleId: users.googleId,
-                passwordHash: users.passwordHash,
-                tokenVersion: users.tokenVersion,
-                isEmailVerified: users.isEmailVerified,
             });
-
-        // Generate tokens
-        const accessToken = generateAccessToken({
-            userId: user.id,
-            email: user.email,
-            tokenVersion: user.tokenVersion ?? 1,
-            isEmailVerified: false,
-        });
-        const refreshToken = generateRefreshToken({
-            userId: user.id,
-            email: user.email,
-            tokenVersion: user.tokenVersion ?? 1,
-            isEmailVerified: false,
-        });
 
         // Dispatch verification email safely in background
         const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
         const verificationLink = `${frontendUrl}/watch-hive/verify-email?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
-        try {
-            await emailService.sendVerificationEmail({
-                to: user.email,
-                username: user.username,
-                code: rawCode,
-                verificationLink,
-            });
-        } catch (emailErr) {
-            console.error('[Register] Failed to send verification email:', emailErr);
-        }
+        emailService.sendVerificationEmail({
+            to: user.email,
+            username: user.username,
+            code: rawCode,
+            verificationLink,
+        }).catch((emailErr) => {
+            console.error('[Register] Failed to dispatch verification email in background:', emailErr);
+        });
 
         return {
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                displayName: user.displayName,
-                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
-                hasGoogleLinked: !!user.googleId,
-                hasPassword: !!user.passwordHash,
-                isEmailVerified: false,
-            },
-            accessToken,
-            refreshToken,
+            requiresVerification: true,
+            email: user.email,
+            username: user.username,
+            message: 'Account created! Please enter the 6-digit verification code sent to your email to complete registration.',
         };
     },
 
@@ -157,6 +184,8 @@ export const authService = {
                 isEmailVerified: users.isEmailVerified,
                 failedLoginAttempts: users.failedLoginAttempts,
                 lockoutUntil: users.lockoutUntil,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
             })
             .from(users)
             .where(
@@ -253,12 +282,23 @@ export const authService = {
                 .where(eq(users.id, user.id));
         }
 
+        // Email Verification Enforcement: Deny login if email is not verified
+        if (user.isEmailVerified === false) {
+            const err = new AppError(
+                'Please verify your email address to log in. Check your inbox for the verification code.',
+                403
+            ) as any;
+            err.code = 'email_not_verified';
+            err.email = user.email;
+            throw err;
+        }
+
         // Generate tokens
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
-            isEmailVerified: user.isEmailVerified,
+            isEmailVerified: true,
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
@@ -277,6 +317,8 @@ export const authService = {
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: true,
                 isEmailVerified: user.isEmailVerified,
+                preferences: user.preferences,
+                hasCompletedOnboarding: user.hasCompletedOnboarding,
             },
             accessToken,
             refreshToken,
@@ -500,20 +542,15 @@ export const authService = {
 
     /**
      * Verify email with 64-char token or 6-digit OTP code.
+     * Activates user account and logs them in immediately with fresh JWT tokens.
      */
-    async verifyEmail(token: string, email: string): Promise<{ message: string; isEmailVerified: boolean }> {
+    async verifyEmail(token: string, email: string): Promise<AuthResponse> {
         const cleanToken = token.trim();
         const hashedInput = hashResetToken(cleanToken);
         const normalizedEmail = email.trim().toLowerCase();
 
         const [user] = await db
-            .select({
-                id: users.id,
-                email: users.email,
-                isEmailVerified: users.isEmailVerified,
-                emailVerificationToken: users.emailVerificationToken,
-                emailVerificationExpiresAt: users.emailVerificationExpiresAt,
-            })
+            .select()
             .from(users)
             .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
             .limit(1);
@@ -522,43 +559,72 @@ export const authService = {
             throw new AppError('User not found', 404);
         }
 
-        if (user.isEmailVerified) {
-            return { message: 'Email address is already verified.', isEmailVerified: true };
-        }
-
-        if (
-            !user.emailVerificationToken ||
-            !user.emailVerificationExpiresAt ||
-            user.emailVerificationExpiresAt < new Date()
-        ) {
-            throw new AppError('Verification link or code has expired. Please request a new one.', 400);
-        }
-
-        const parts = user.emailVerificationToken.split(':');
-        const isTokenValid = parts.some((savedHash) => {
-            if (savedHash.length !== hashedInput.length) return false;
-            try {
-                return crypto.timingSafeEqual(Buffer.from(savedHash), Buffer.from(hashedInput));
-            } catch {
-                return false;
+        // If not verified, validate token or 6-digit code
+        if (!user.isEmailVerified) {
+            if (
+                !user.emailVerificationToken ||
+                !user.emailVerificationExpiresAt ||
+                user.emailVerificationExpiresAt < new Date()
+            ) {
+                throw new AppError('Verification link or code has expired. Please request a new one.', 400);
             }
+
+            const parts = user.emailVerificationToken.split(':');
+            const isTokenValid = parts.some((savedHash) => {
+                if (savedHash.length !== hashedInput.length) return false;
+                try {
+                    return crypto.timingSafeEqual(Buffer.from(savedHash), Buffer.from(hashedInput));
+                } catch {
+                    return false;
+                }
+            });
+
+            if (!isTokenValid) {
+                throw new AppError('Invalid verification code or link. Please check and try again.', 400);
+            }
+
+            await db
+                .update(users)
+                .set({
+                    isEmailVerified: true,
+                    emailVerificationToken: null,
+                    emailVerificationExpiresAt: null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(users.id, user.id));
+        }
+
+        // Generate full active session tokens upon successful verification
+        const accessToken = generateAccessToken({
+            userId: user.id,
+            email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
 
-        if (!isTokenValid) {
-            throw new AppError('Invalid verification code or link. Please check and try again.', 400);
-        }
+        const refreshToken = generateRefreshToken({
+            userId: user.id,
+            email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
+        });
 
-        await db
-            .update(users)
-            .set({
+        return {
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                displayName: user.displayName,
+                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
+                hasGoogleLinked: !!user.googleId,
+                hasPassword: !!user.passwordHash,
                 isEmailVerified: true,
-                emailVerificationToken: null,
-                emailVerificationExpiresAt: null,
-                updatedAt: new Date(),
-            })
-            .where(eq(users.id, user.id));
-
-        return { message: 'Email address verified successfully!', isEmailVerified: true };
+                preferences: user.preferences,
+                hasCompletedOnboarding: user.hasCompletedOnboarding,
+            },
+            accessToken,
+            refreshToken,
+        };
     },
 
     /**

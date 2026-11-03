@@ -33,6 +33,9 @@ class EmailService {
                             user: smtp.user,
                             pass: smtp.pass,
                         },
+                        connectionTimeout: 5000,
+                        greetingTimeout: 5000,
+                        socketTimeout: 8000,
                     });
                 } else if (smtp.host) {
                     this.smtpTransporter = nodemailer.createTransport({
@@ -43,6 +46,9 @@ class EmailService {
                             user: smtp.user,
                             pass: smtp.pass,
                         },
+                        connectionTimeout: 5000,
+                        greetingTimeout: 5000,
+                        socketTimeout: 8000,
                     });
                 }
                 console.log(`[EmailService] SMTP transporter initialized (${smtp.service || smtp.host}) for ${smtp.user}`);
