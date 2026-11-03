@@ -35,6 +35,8 @@ export interface AuthResponse {
         hasGoogleLinked: boolean;
         hasPassword: boolean;
         isEmailVerified: boolean;
+        preferences?: any;
+        hasCompletedOnboarding?: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -93,6 +95,8 @@ export const authService = {
                 passwordHash: users.passwordHash,
                 tokenVersion: users.tokenVersion,
                 isEmailVerified: users.isEmailVerified,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
             });
 
         // Generate tokens
@@ -134,6 +138,8 @@ export const authService = {
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: !!user.passwordHash,
                 isEmailVerified: false,
+                preferences: user.preferences,
+                hasCompletedOnboarding: user.hasCompletedOnboarding,
             },
             accessToken,
             refreshToken,
@@ -157,6 +163,8 @@ export const authService = {
                 isEmailVerified: users.isEmailVerified,
                 failedLoginAttempts: users.failedLoginAttempts,
                 lockoutUntil: users.lockoutUntil,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
             })
             .from(users)
             .where(
@@ -277,6 +285,8 @@ export const authService = {
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: true,
                 isEmailVerified: user.isEmailVerified,
+                preferences: user.preferences,
+                hasCompletedOnboarding: user.hasCompletedOnboarding,
             },
             accessToken,
             refreshToken,

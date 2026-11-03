@@ -25,6 +25,8 @@ export interface AppleAuthResponse {
         hasAppleLinked: boolean;
         hasPassword: boolean;
         isEmailVerified: boolean;
+        preferences?: any;
+        hasCompletedOnboarding?: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -78,6 +80,8 @@ export const appleAuthService = {
                 appleId: users.appleId,
                 passwordHash: users.passwordHash,
                 tokenVersion: users.tokenVersion,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
             })
             .from(users)
             .where(eq(users.appleId, appleSub))
@@ -96,6 +100,8 @@ export const appleAuthService = {
                     appleId: users.appleId,
                     passwordHash: users.passwordHash,
                     tokenVersion: users.tokenVersion,
+                    preferences: users.preferences,
+                    hasCompletedOnboarding: users.hasCompletedOnboarding,
                 })
                 .from(users)
                 .where(eq(users.email, effectiveEmail))
@@ -120,6 +126,8 @@ export const appleAuthService = {
                         appleId: users.appleId,
                         passwordHash: users.passwordHash,
                         tokenVersion: users.tokenVersion,
+                        preferences: users.preferences,
+                        hasCompletedOnboarding: users.hasCompletedOnboarding,
                     });
 
                 user = updatedUser;
@@ -180,6 +188,8 @@ export const appleAuthService = {
                     appleId: users.appleId,
                     passwordHash: users.passwordHash,
                     tokenVersion: users.tokenVersion,
+                    preferences: users.preferences,
+                    hasCompletedOnboarding: users.hasCompletedOnboarding,
                 });
 
             user = newUser;
@@ -211,6 +221,8 @@ export const appleAuthService = {
                 hasAppleLinked: Boolean(user.appleId),
                 hasPassword: Boolean(user.passwordHash),
                 isEmailVerified: true,
+                preferences: user.preferences,
+                hasCompletedOnboarding: user.hasCompletedOnboarding,
             },
             accessToken,
             refreshToken,
