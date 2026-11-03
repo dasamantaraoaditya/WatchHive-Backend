@@ -4,8 +4,9 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
 import { users, follows, entries, lists, listItems, followRequests, blockedUsers } from '../db/schema.js';
-import { eq, or, and, ilike, not, count, exists, desc } from 'drizzle-orm';
+import { eq, or, and, ilike, not, count, exists, desc, sql } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
+import { friendRecommendationService } from '../services/friend-recommendation.service.js';
 
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import multerS3 from 'multer-s3';
@@ -553,12 +554,18 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
                 username: users.username,
                 displayName: users.displayName,
                 profilePictureUrl: users.profilePictureUrl,
+                bio: users.bio,
                 isPrivate: users.isPrivate,
                 privacyLevel: users.privacyLevel,
                 isFollowing: exists(
                     db.select()
                         .from(follows)
                         .where(and(eq(follows.followerId, currentId), eq(follows.followingId, users.id)))
+                ),
+                isFollower: exists(
+                    db.select()
+                        .from(follows)
+                        .where(and(eq(follows.followerId, users.id), eq(follows.followingId, currentId)))
                 ),
                 isRequested: exists(
                     db.select()
@@ -572,6 +579,18 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
             })
                 .from(users)
                 .where(whereClause)
+                .orderBy(
+                    sql`
+                        CASE
+                            WHEN lower(${users.username}) = lower(${query}) THEN 1
+                            WHEN lower(${users.displayName}) = lower(${query}) THEN 2
+                            WHEN lower(${users.username}) LIKE lower(${query}) || '%' THEN 3
+                            WHEN lower(${users.displayName}) LIKE lower(${query}) || '%' THEN 4
+                            ELSE 5
+                        END ASC,
+                        ${users.xp} DESC
+                    `
+                )
                 .limit(limit)
                 .offset(offset),
             db.select({ total: count() }).from(users).where(whereClause)
@@ -599,56 +618,27 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
  * /api/v1/users/suggested:
  *   get:
  *     tags: [User]
- *     summary: Get suggested users to follow
+ *     summary: Get smart, relevant suggested users to follow
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
  *     responses:
  *       200:
- *         description: List of suggested users
+ *         description: List of suggested users with relevance reasons
  */
 router.get('/suggested', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const currentId = req.user!.userId;
-        const limit = 5;
+        const limitParam = parseInt(req.query.limit as string, 10);
+        const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 50) : 20;
 
-        // Suggested users: strictly users who follow the current user,
-        // but whom the current user is not following yet (or requested)
-        const whereClause = and(
-            not(eq(users.id, currentId)),
-            exists(
-                db.select()
-                    .from(follows)
-                    .where(and(eq(follows.followerId, users.id), eq(follows.followingId, currentId)))
-            ),
-            not(exists(
-                db.select()
-                    .from(follows)
-                    .where(and(eq(follows.followerId, currentId), eq(follows.followingId, users.id)))
-            )),
-            not(exists(
-                db.select()
-                    .from(followRequests)
-                    .where(and(eq(followRequests.senderId, currentId), eq(followRequests.recipientId, users.id)))
-            ))
-        );
+        const suggestedUsers = await friendRecommendationService.getSuggestedUsers(currentId, limit);
 
-        const usersList = await db.select({
-            id: users.id,
-            username: users.username,
-            displayName: users.displayName,
-            profilePictureUrl: users.profilePictureUrl,
-            bio: users.bio
-        })
-            .from(users)
-            .where(whereClause)
-            .limit(limit);
-
-        res.json({
-            users: await Promise.all(usersList.map(async (u) => ({
-                ...u,
-                profilePictureUrl: await getAvatarUrl(u.profilePictureUrl)
-            })))
-        });
+        res.json({ users: suggestedUsers });
     } catch (error) {
         next(error);
     }
