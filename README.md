@@ -15,6 +15,7 @@ WatchHive Backend provides the core business logic, social graph, movie metadata
 - **SmartSuggest AI Recommendations**: Hybrid algorithmic recommendation engine balancing friend recommendations, public ratings, user preferences, and diversity nudges.
 - **MindLens 2.0 Behavioral Intelligence Engine**: Empirical cinematic telemetry measuring Shannon Information Entropy ($H(G)$) for taste breadth, Russell's Circumplex Affective State, Empirical Bayesian Recommender Trust ($RTS$), and 6 cognitive viewing archetypes. Full specification documented in [MINDLENS_SPECIFICATION.md](docs/MINDLENS_SPECIFICATION.md).
 - **Master Features & Logic Wiki**: Complete architectural documentation of all 14 core features, mathematical models, and edge cases in [FEATURES_AND_LOGIC_WIKI.md](docs/FEATURES_AND_LOGIC_WIKI.md).
+- **Backend Architecture & System Blueprint**: Comprehensive Express layer topology, Drizzle ORM schema models, Redis caching, and deployment pipelines in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Multi-Environment Orchestration**: Isolated Staging and Production architectures running with automated CI/CD and protected branches.
 
 ---
