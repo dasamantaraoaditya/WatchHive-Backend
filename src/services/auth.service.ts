@@ -113,20 +113,18 @@ export const authService = {
             isEmailVerified: false,
         });
 
-        // Dispatch verification email safely in background
+        // Dispatch verification email safely in background (non-blocking)
         const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
         const verificationLink = `${frontendUrl}/watch-hive/verify-email?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
-        try {
-            await emailService.sendVerificationEmail({
-                to: user.email,
-                username: user.username,
-                code: rawCode,
-                verificationLink,
-            });
-        } catch (emailErr) {
-            console.error('[Register] Failed to send verification email:', emailErr);
-        }
+        emailService.sendVerificationEmail({
+            to: user.email,
+            username: user.username,
+            code: rawCode,
+            verificationLink,
+        }).catch((emailErr) => {
+            console.error('[Register] Failed to dispatch verification email in background:', emailErr);
+        });
 
         return {
             user: {
