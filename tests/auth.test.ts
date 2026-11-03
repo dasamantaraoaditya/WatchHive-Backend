@@ -8,13 +8,13 @@ import type { AuthResponse } from '../src/services/auth.service.js';
 
 // ─── Mock functions ───────────────────────────────────────────────────────────
 
-const mockRegister = jest.fn<() => Promise<AuthResponse>>();
+const mockRegister = jest.fn<() => Promise<any>>();
 const mockLogin = jest.fn<() => Promise<AuthResponse>>();
 const mockRefresh = jest.fn<() => Promise<{ accessToken: string; refreshToken: string }>>();
 const mockGoogleLogin = jest.fn<() => Promise<AuthResponse>>();
 const mockForgotPassword = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
 const mockResetPassword = jest.fn<() => Promise<{ message: string }>>();
-const mockVerifyEmail = jest.fn<() => Promise<{ message: string; isEmailVerified: boolean }>>();
+const mockVerifyEmail = jest.fn<() => Promise<any>>();
 const mockResendVerification = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
 const mockCheckDb = jest.fn<() => Promise<boolean>>();
 
@@ -94,17 +94,21 @@ beforeEach(() => {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('POST /api/v1/auth/register', () => {
-    it('201 — returns user + tokens on valid registration', async () => {
-        mockRegister.mockResolvedValueOnce(mockAuthResponse);
+    it('201 — returns requiresVerification on valid registration', async () => {
+        mockRegister.mockResolvedValueOnce({
+            requiresVerification: true,
+            email: 'newuser@example.com',
+            username: 'newuser',
+            message: 'Account created! Please enter the 6-digit verification code sent to your email.',
+        });
 
         const res = await request(app)
             .post('/api/v1/auth/register')
             .send(validRegisterPayload);
 
         expect(res.status).toBe(201);
-        expect(res.body).toHaveProperty('accessToken');
-        expect(res.body).toHaveProperty('refreshToken');
-        expect(res.body.user.username).toBe(mockUser.username);
+        expect(res.body.requiresVerification).toBe(true);
+        expect(res.body.email).toBe('newuser@example.com');
     });
 
     it('400 — rejects username shorter than 3 chars', async () => {
@@ -409,18 +413,16 @@ describe('Security: HttpOnly Cookies & Account Lockout', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Email Verification', () => {
-    it('POST /verify-email — 200 on valid token and email', async () => {
-        mockVerifyEmail.mockResolvedValueOnce({
-            message: 'Email address verified successfully!',
-            isEmailVerified: true,
-        });
+    it('POST /verify-email — 200 on valid token and email, returns user and tokens', async () => {
+        mockVerifyEmail.mockResolvedValueOnce(mockAuthResponse);
 
         const res = await request(app)
             .post('/api/v1/auth/verify-email')
             .send({ email: 'test@example.com', token: '123456' });
 
         expect(res.status).toBe(200);
-        expect(res.body.isEmailVerified).toBe(true);
+        expect(res.body).toHaveProperty('accessToken');
+        expect(res.body).toHaveProperty('user');
     });
 
     it('POST /resend-verification — 200 on valid email', async () => {

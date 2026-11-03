@@ -17,11 +17,16 @@ export const authController = {
                 displayName,
             });
 
-            // Set HttpOnly / SameSite cookies for web clients
-            setAuthCookies(res, result.accessToken, result.refreshToken);
-
+            // Registration requires email verification before issuing active sessions
             res.status(201).json(result);
-        } catch (error) {
+        } catch (error: any) {
+            if (error?.code === 'email_already_registered') {
+                res.status(409).json({
+                    error: error.message,
+                    code: 'email_already_registered',
+                });
+                return;
+            }
             next(error);
         }
     },
@@ -38,6 +43,14 @@ export const authController = {
             res.status(200).json(result);
         } catch (error: any) {
             // Propagate structured error codes for smart frontend handling
+            if (error?.code === 'email_not_verified') {
+                res.status(403).json({
+                    error: error.message,
+                    code: 'email_not_verified',
+                    email: error.email,
+                });
+                return;
+            }
             if (error?.code === 'google_only_account') {
                 res.status(400).json({
                     error: error.message,
@@ -201,6 +214,11 @@ export const authController = {
             }
 
             const result = await authService.verifyEmail(token, email);
+
+            // Set HttpOnly / SameSite cookies upon email verification
+            if (result.accessToken && result.refreshToken) {
+                setAuthCookies(res, result.accessToken, result.refreshToken);
+            }
 
             res.status(200).json(result);
         } catch (error) {
