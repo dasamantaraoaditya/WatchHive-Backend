@@ -117,3 +117,32 @@ jobs:
 
       - name: ESLint Code Quality Gate
         run: npm run lint
+
+  # =========================================================================
+  # 5. ENVIRONMENT & REPOSITORY SECRET LEAK SHIELD
+  # Ensures no live .env is committed and example files only hold placeholders
+  # =========================================================================
+  repo-leak-audit:
+    name: Repo & Env Leak Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Check for Unencrypted Live Env Files
+        run: |
+          echo "Auditing repository for accidental .env commits..."
+          if git ls-files | grep -E "^\.env$|\.env\.local$|\.env\.production$"; then
+            echo "❌ CRITICAL SECURITY ERROR: Live .env file is tracked in git!"
+            exit 1
+          fi
+          echo "✅ No live .env files tracked in git."
+
+      - name: Verify .env.example Contains Only Placeholders
+        run: |
+          echo "Verifying .env.example has zero live secrets..."
+          if grep -E "(GOCSPX|postgres\.bhzkgsbpseujegmvkszz|ajtdpjbriopmmlep)" .env.example; then
+            echo "❌ CRITICAL SECURITY ERROR: Real secret found in .env.example!"
+            exit 1
+          fi
+          echo "✅ .env.example contains only safe placeholders."
