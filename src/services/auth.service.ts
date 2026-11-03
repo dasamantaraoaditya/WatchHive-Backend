@@ -34,6 +34,7 @@ export interface AuthResponse {
         profilePictureUrl: string | null;
         hasGoogleLinked: boolean;
         hasPassword: boolean;
+        isEmailVerified: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -63,6 +64,13 @@ export const authService = {
         // Hash password
         const passwordHash = await hashPassword(data.password);
 
+        // Generate verification token and code
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const hashedToken = hashResetToken(rawToken);
+        const hashedCode = hashResetToken(rawCode);
+        const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
         // Create user
         const [user] = await db
             .insert(users)
@@ -71,6 +79,9 @@ export const authService = {
                 email: data.email,
                 passwordHash,
                 displayName: data.displayName || data.username,
+                isEmailVerified: false,
+                emailVerificationToken: `${hashedToken}:${hashedCode}`,
+                emailVerificationExpiresAt: verificationExpiresAt,
             })
             .returning({
                 id: users.id,
@@ -81,6 +92,7 @@ export const authService = {
                 googleId: users.googleId,
                 passwordHash: users.passwordHash,
                 tokenVersion: users.tokenVersion,
+                isEmailVerified: users.isEmailVerified,
             });
 
         // Generate tokens
@@ -88,12 +100,29 @@ export const authService = {
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: false,
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: false,
         });
+
+        // Dispatch verification email safely in background
+        const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
+        const verificationLink = `${frontendUrl}/watch-hive/verify-email?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
+
+        try {
+            await emailService.sendVerificationEmail({
+                to: user.email,
+                username: user.username,
+                code: rawCode,
+                verificationLink,
+            });
+        } catch (emailErr) {
+            console.error('[Register] Failed to send verification email:', emailErr);
+        }
 
         return {
             user: {
@@ -104,6 +133,7 @@ export const authService = {
                 profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: !!user.passwordHash,
+                isEmailVerified: false,
             },
             accessToken,
             refreshToken,
@@ -124,6 +154,9 @@ export const authService = {
                 passwordHash: users.passwordHash,
                 googleId: users.googleId,
                 tokenVersion: users.tokenVersion,
+                isEmailVerified: users.isEmailVerified,
+                failedLoginAttempts: users.failedLoginAttempts,
+                lockoutUntil: users.lockoutUntil,
             })
             .from(users)
             .where(
@@ -136,6 +169,19 @@ export const authService = {
 
         if (!user) {
             throw new AppError('Incorrect email, username, or password. Please verify your details or use "Forgot password?" to reset.', 401);
+        }
+
+        // Check for active lockout
+        const now = new Date();
+        if (user.lockoutUntil && user.lockoutUntil > now) {
+            const minutesLeft = Math.ceil((user.lockoutUntil.getTime() - now.getTime()) / (60 * 1000));
+            const lockoutErr = new AppError(
+                `Account temporarily locked due to consecutive failed login attempts. Please try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} or reset your password.`,
+                423
+            ) as any;
+            lockoutErr.code = 'account_locked';
+            lockoutErr.lockoutUntil = user.lockoutUntil;
+            throw lockoutErr;
         }
 
         // If user has no password (Google-only account), return a structured error
@@ -157,7 +203,54 @@ export const authService = {
         );
 
         if (!isPasswordValid) {
-            throw new AppError('Incorrect email, username, or password. Please verify your details or use "Forgot password?" to reset.', 401);
+            const currentAttempts = (user.failedLoginAttempts || 0) + 1;
+            const MAX_ATTEMPTS = 5;
+
+            if (currentAttempts >= MAX_ATTEMPTS) {
+                const lockoutUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+                await db
+                    .update(users)
+                    .set({
+                        failedLoginAttempts: currentAttempts,
+                        lockoutUntil,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(users.id, user.id));
+
+                const err = new AppError(
+                    'Account locked due to 5 consecutive failed login attempts. Please try again in 15 minutes or reset your password.',
+                    423
+                ) as any;
+                err.code = 'account_locked';
+                err.lockoutUntil = lockoutUntil;
+                throw err;
+            } else {
+                await db
+                    .update(users)
+                    .set({
+                        failedLoginAttempts: currentAttempts,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(users.id, user.id));
+
+                const remaining = MAX_ATTEMPTS - currentAttempts;
+                throw new AppError(
+                    `Incorrect email, username, or password. ${remaining} attempt${remaining > 1 ? 's' : ''} remaining before temporary lockout.`,
+                    401
+                );
+            }
+        }
+
+        // Reset failed login attempts and lockout upon successful login
+        if (user.failedLoginAttempts > 0 || user.lockoutUntil) {
+            await db
+                .update(users)
+                .set({
+                    failedLoginAttempts: 0,
+                    lockoutUntil: null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(users.id, user.id));
         }
 
         // Generate tokens
@@ -165,11 +258,13 @@ export const authService = {
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: user.isEmailVerified,
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: user.isEmailVerified,
         });
 
         return {
@@ -181,6 +276,7 @@ export const authService = {
                 profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: !!user.googleId,
                 hasPassword: true,
+                isEmailVerified: user.isEmailVerified,
             },
             accessToken,
             refreshToken,
@@ -339,13 +435,15 @@ export const authService = {
 
         const passwordHash = await hashPassword(newPassword);
 
-        // Update password, clear the reset token, and increment tokenVersion to revoke old sessions
+        // Update password, clear the reset token, reset failed attempts & lockout, and increment tokenVersion to revoke old sessions
         await db
             .update(users)
             .set({
                 passwordHash,
                 passwordResetToken: null,
                 passwordResetExpiresAt: null,
+                failedLoginAttempts: 0,
+                lockoutUntil: null,
                 tokenVersion: sql`${users.tokenVersion} + 1`,
                 updatedAt: new Date(),
             })
@@ -390,12 +488,139 @@ export const authService = {
             .update(users)
             .set({
                 passwordHash,
+                failedLoginAttempts: 0,
+                lockoutUntil: null,
                 tokenVersion: sql`${users.tokenVersion} + 1`,
                 updatedAt: new Date(),
             })
             .where(eq(users.id, user.id));
 
         return { message: 'Password set successfully. You can now sign in with either Google or your email and password.' };
+    },
+
+    /**
+     * Verify email with 64-char token or 6-digit OTP code.
+     */
+    async verifyEmail(token: string, email: string): Promise<{ message: string; isEmailVerified: boolean }> {
+        const cleanToken = token.trim();
+        const hashedInput = hashResetToken(cleanToken);
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const [user] = await db
+            .select({
+                id: users.id,
+                email: users.email,
+                isEmailVerified: users.isEmailVerified,
+                emailVerificationToken: users.emailVerificationToken,
+                emailVerificationExpiresAt: users.emailVerificationExpiresAt,
+            })
+            .from(users)
+            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+            .limit(1);
+
+        if (!user) {
+            throw new AppError('User not found', 404);
+        }
+
+        if (user.isEmailVerified) {
+            return { message: 'Email address is already verified.', isEmailVerified: true };
+        }
+
+        if (
+            !user.emailVerificationToken ||
+            !user.emailVerificationExpiresAt ||
+            user.emailVerificationExpiresAt < new Date()
+        ) {
+            throw new AppError('Verification link or code has expired. Please request a new one.', 400);
+        }
+
+        const parts = user.emailVerificationToken.split(':');
+        const isTokenValid = parts.some((savedHash) => {
+            if (savedHash.length !== hashedInput.length) return false;
+            try {
+                return crypto.timingSafeEqual(Buffer.from(savedHash), Buffer.from(hashedInput));
+            } catch {
+                return false;
+            }
+        });
+
+        if (!isTokenValid) {
+            throw new AppError('Invalid verification code or link. Please check and try again.', 400);
+        }
+
+        await db
+            .update(users)
+            .set({
+                isEmailVerified: true,
+                emailVerificationToken: null,
+                emailVerificationExpiresAt: null,
+                updatedAt: new Date(),
+            })
+            .where(eq(users.id, user.id));
+
+        return { message: 'Email address verified successfully!', isEmailVerified: true };
+    },
+
+    /**
+     * Resend email verification link and code.
+     */
+    async resendVerification(email: string): Promise<{ message: string; emailSent: boolean }> {
+        const normalizedEmail = email.trim().toLowerCase();
+        const [user] = await db
+            .select({
+                id: users.id,
+                username: users.username,
+                email: users.email,
+                isEmailVerified: users.isEmailVerified,
+            })
+            .from(users)
+            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+            .limit(1);
+
+        // Always return success response to prevent email enumeration
+        if (!user) {
+            return {
+                message: 'If the email address is registered, a new verification link has been sent.',
+                emailSent: false,
+            };
+        }
+
+        if (user.isEmailVerified) {
+            return {
+                message: 'Email address is already verified.',
+                emailSent: false,
+            };
+        }
+
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const hashedToken = hashResetToken(rawToken);
+        const hashedCode = hashResetToken(rawCode);
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+        await db
+            .update(users)
+            .set({
+                emailVerificationToken: `${hashedToken}:${hashedCode}`,
+                emailVerificationExpiresAt: expiresAt,
+                updatedAt: new Date(),
+            })
+            .where(eq(users.id, user.id));
+
+        const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
+        const verificationLink = `${frontendUrl}/watch-hive/verify-email?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
+
+        const emailResult = await emailService.sendVerificationEmail({
+            to: user.email,
+            username: user.username,
+            code: rawCode,
+            verificationLink,
+        });
+
+        return {
+            message: 'If the email address is registered, a new verification link has been sent.',
+            emailSent: emailResult.success,
+        };
     },
 
     /**

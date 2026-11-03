@@ -3,6 +3,7 @@ import { authService } from '../services/auth.service.js';
 import { googleAuthService } from '../services/google-auth.service.js';
 import { appleAuthService } from '../services/apple-auth.service.js';
 import { verifyRefreshToken } from '../utils/jwt.util.js';
+import { setAuthCookies, clearAuthCookies } from '../utils/cookie.util.js';
 
 export const authController = {
     async register(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -16,6 +17,9 @@ export const authController = {
                 displayName,
             });
 
+            // Set HttpOnly / SameSite cookies for web clients
+            setAuthCookies(res, result.accessToken, result.refreshToken);
+
             res.status(201).json(result);
         } catch (error) {
             next(error);
@@ -28,6 +32,9 @@ export const authController = {
 
             const result = await authService.login({ email, password });
 
+            // Set HttpOnly / SameSite cookies for web clients
+            setAuthCookies(res, result.accessToken, result.refreshToken);
+
             res.status(200).json(result);
         } catch (error: any) {
             // Propagate structured error codes for smart frontend handling
@@ -36,6 +43,14 @@ export const authController = {
                     error: error.message,
                     code: 'google_only_account',
                     hasGoogleLinked: error.hasGoogleLinked ?? false,
+                });
+                return;
+            }
+            if (error?.code === 'account_locked') {
+                res.status(423).json({
+                    error: error.message,
+                    code: 'account_locked',
+                    lockoutUntil: error.lockoutUntil,
                 });
                 return;
             }
@@ -53,6 +68,9 @@ export const authController = {
             }
 
             const result = await googleAuthService.loginOrRegister(idToken);
+
+            // Set HttpOnly / SameSite cookies for web clients
+            setAuthCookies(res, result.accessToken, result.refreshToken);
 
             res.status(200).json(result);
         } catch (error) {
@@ -77,6 +95,9 @@ export const authController = {
                 familyName,
             });
 
+            // Set HttpOnly / SameSite cookies for web clients
+            setAuthCookies(res, result.accessToken, result.refreshToken);
+
             res.status(200).json(result);
         } catch (error) {
             next(error);
@@ -85,7 +106,8 @@ export const authController = {
 
     async refresh(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
-            const { refreshToken } = req.body;
+            // Support both body payload and HttpOnly cookie
+            const refreshToken = req.body?.refreshToken || req.cookies?.jwt_refresh;
 
             if (!refreshToken) {
                 res.status(400).json({ error: 'Refresh token is required' });
@@ -93,6 +115,9 @@ export const authController = {
             }
 
             const result = await authService.refresh(refreshToken);
+
+            // Update HttpOnly cookies
+            setAuthCookies(res, result.accessToken, result.refreshToken);
 
             res.status(200).json(result);
         } catch (error) {
@@ -102,7 +127,10 @@ export const authController = {
 
     async logout(req: Request, res: Response): Promise<void> {
         try {
-            const { refreshToken } = req.body || {};
+            // Always clear HttpOnly cookies on logout
+            clearAuthCookies(res);
+
+            const refreshToken = req.body?.refreshToken || req.cookies?.jwt_refresh;
             if (refreshToken) {
                 try {
                     const payload = verifyRefreshToken(refreshToken);
@@ -155,6 +183,41 @@ export const authController = {
             const { newPassword } = req.body;
 
             const result = await authService.setPassword(userId, newPassword);
+
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    async verifyEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const token = (req.body?.token || req.query?.token) as string;
+            const email = (req.body?.email || req.query?.email) as string;
+
+            if (!token || !email) {
+                res.status(400).json({ error: 'Token and email are required for verification' });
+                return;
+            }
+
+            const result = await authService.verifyEmail(token, email);
+
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    async resendVerification(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { email } = req.body;
+
+            if (!email) {
+                res.status(400).json({ error: 'Email is required' });
+                return;
+            }
+
+            const result = await authService.resendVerification(email);
 
             res.status(200).json(result);
         } catch (error) {

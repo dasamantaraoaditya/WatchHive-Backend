@@ -40,6 +40,7 @@ export interface GoogleAuthResponse {
         profilePictureUrl: string | null;
         hasGoogleLinked: boolean;
         hasPassword: boolean;
+        isEmailVerified: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -130,10 +131,28 @@ export const googleAuthService = {
                 displayName: users.displayName,
                 profilePictureUrl: users.profilePictureUrl,
                 tokenVersion: users.tokenVersion,
+                isEmailVerified: users.isEmailVerified,
             })
             .from(users)
             .where(eq(users.googleId, googlePayload.googleId))
             .limit(1);
+
+        if (user && !user.isEmailVerified) {
+            try {
+                await db
+                    .update(users)
+                    .set({
+                        isEmailVerified: true,
+                        emailVerificationToken: null,
+                        emailVerificationExpiresAt: null,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(users.id, user.id));
+                user.isEmailVerified = true;
+            } catch (err) {
+                console.error('[GoogleAuth] Could not update isEmailVerified for existing Google user:', err);
+            }
+        }
 
         if (!user) {
             // 2. Check if user exists with same email (registered via email/password)
@@ -146,23 +165,31 @@ export const googleAuthService = {
                     profilePictureUrl: users.profilePictureUrl,
                     googleId: users.googleId,
                     tokenVersion: users.tokenVersion,
+                    isEmailVerified: users.isEmailVerified,
                 })
                 .from(users)
                 .where(eq(users.email, googlePayload.email))
                 .limit(1);
 
             if (existingEmailUser) {
-                // Link Google account to existing user if not already linked
+                // Link Google account to existing user if not already linked, and automatically mark email as verified
                 let updatedUser = existingEmailUser;
-                if (!existingEmailUser.googleId || existingEmailUser.googleId !== googlePayload.googleId) {
+                const needsGoogleId = !existingEmailUser.googleId || existingEmailUser.googleId !== googlePayload.googleId;
+                const needsVerification = !existingEmailUser.isEmailVerified;
+
+                if (needsGoogleId || needsVerification) {
                     try {
                         const [res] = await db
                             .update(users)
                             .set({
-                                googleId: googlePayload.googleId,
+                                ...(needsGoogleId ? { googleId: googlePayload.googleId } : {}),
+                                isEmailVerified: true,
+                                emailVerificationToken: null,
+                                emailVerificationExpiresAt: null,
                                 ...(googlePayload.picture && !existingEmailUser.profilePictureUrl
                                     ? { profilePictureUrl: googlePayload.picture }
                                     : {}),
+                                updatedAt: new Date(),
                             })
                             .where(eq(users.id, existingEmailUser.id))
                             .returning({
@@ -173,10 +200,11 @@ export const googleAuthService = {
                                 profilePictureUrl: users.profilePictureUrl,
                                 googleId: users.googleId,
                                 tokenVersion: users.tokenVersion,
+                                isEmailVerified: users.isEmailVerified,
                             });
                         if (res) updatedUser = res;
                     } catch (linkError) {
-                        console.error('[GoogleAuth] Could not update googleId for existing user:', linkError);
+                        console.error('[GoogleAuth] Could not update googleId/verification for existing user:', linkError);
                     }
                 }
                 user = updatedUser;
@@ -223,6 +251,7 @@ export const googleAuthService = {
                         displayName: googlePayload.name,
                         profilePictureUrl: googlePayload.picture || null,
                         tokenVersion: 1,
+                        isEmailVerified: true,
                     })
                     .returning({
                         id: users.id,
@@ -231,6 +260,7 @@ export const googleAuthService = {
                         displayName: users.displayName,
                         profilePictureUrl: users.profilePictureUrl,
                         tokenVersion: users.tokenVersion,
+                        isEmailVerified: users.isEmailVerified,
                     });
                 user = newUser;
             }
@@ -241,11 +271,13 @@ export const googleAuthService = {
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
             tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
 
         return {
@@ -257,6 +289,7 @@ export const googleAuthService = {
                 profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
                 hasGoogleLinked: true,
                 hasPassword: false, // will be refreshed via getMe() in AuthContext
+                isEmailVerified: true,
             },
             accessToken,
             refreshToken,

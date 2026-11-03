@@ -157,6 +157,15 @@ router.post(
                 return;
             }
 
+            // Gating: Require email verification before logging movies
+            if ((req as any).user?.isEmailVerified === false) {
+                res.status(403).json({
+                    error: 'Please verify your email address before logging movies.',
+                    code: 'email_verification_required',
+                });
+                return;
+            }
+
             const userId = (req as any).user.userId;
             const {
                 tmdbId,

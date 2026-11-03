@@ -5,6 +5,7 @@ export interface JWTPayload {
     userId: string;
     email: string;
     tokenVersion?: number;
+    isEmailVerified?: boolean;
 }
 
 export const generateAccessToken = (payload: JWTPayload): string => {

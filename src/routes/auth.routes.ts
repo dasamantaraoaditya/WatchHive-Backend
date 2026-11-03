@@ -54,8 +54,35 @@ const loginValidation = [
 
 const refreshValidation = [
     body('refreshToken')
+        .optional()
+        .isString()
+        .withMessage('Refresh token must be a string'),
+    (req: any, res: any, next: any) => {
+        if (!req.body?.refreshToken && !req.cookies?.jwt_refresh) {
+            return res.status(400).json({ error: 'Refresh token is required' });
+        }
+        next();
+    },
+];
+
+const verifyEmailValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+    body('token')
+        .trim()
         .notEmpty()
-        .withMessage('Refresh token is required'),
+        .withMessage('Verification token or code is required'),
+];
+
+const resendVerificationValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
 ];
 
 const forgotPasswordValidation = [
@@ -299,5 +326,75 @@ router.post('/reset-password', passwordResetLimiter, resetPasswordValidation, va
  */
 router.post('/set-password', authMiddleware, passwordResetLimiter, setPasswordValidation, validate, authController.setPassword);
 
+/**
+ * @openapi
+ * /api/v1/auth/verify-email:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Verify email address using token or 6-digit OTP code
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - token
+ *             properties:
+ *               email:
+ *                 type: string
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Verify email address via query parameter link
+ *     parameters:
+ *       - in: query
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/verify-email', authLimiter, verifyEmailValidation, validate, authController.verifyEmail);
+router.get('/verify-email', authLimiter, authController.verifyEmail);
+
+/**
+ * @openapi
+ * /api/v1/auth/resend-verification:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Resend email verification link and code
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Verification email dispatched
+ */
+router.post('/resend-verification', authLimiter, resendVerificationValidation, validate, authController.resendVerification);
 
 export default router;

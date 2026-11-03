@@ -14,6 +14,8 @@ const mockRefresh = jest.fn<() => Promise<{ accessToken: string; refreshToken: s
 const mockGoogleLogin = jest.fn<() => Promise<AuthResponse>>();
 const mockForgotPassword = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
 const mockResetPassword = jest.fn<() => Promise<{ message: string }>>();
+const mockVerifyEmail = jest.fn<() => Promise<{ message: string; isEmailVerified: boolean }>>();
+const mockResendVerification = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
 const mockCheckDb = jest.fn<() => Promise<boolean>>();
 
 // ─── ESM module mocks (must come before dynamic imports) ─────────────────────
@@ -25,6 +27,8 @@ await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
         refresh: mockRefresh,
         forgotPassword: mockForgotPassword,
         resetPassword: mockResetPassword,
+        verifyEmail: mockVerifyEmail,
+        resendVerification: mockResendVerification,
     },
 }));
 
@@ -358,5 +362,78 @@ describe('GET /health', () => {
         expect(res.status).toBe(200);
         expect(res.body).toHaveProperty('status');
         expect(res.body).toHaveProperty('environment');
+    });
+
+    it('sets Content Security Policy (CSP) headers', async () => {
+        const res = await request(app).get('/health');
+        expect(res.headers).toHaveProperty('content-security-policy');
+        expect(res.headers['content-security-policy']).toContain("default-src 'self'");
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Security: HttpOnly Cookies & Account Lockout', () => {
+    it('sets HttpOnly cookies on successful registration and login', async () => {
+        mockLogin.mockResolvedValueOnce(mockAuthResponse);
+
+        const res = await request(app)
+            .post('/api/v1/auth/login')
+            .send({ email: 'test@example.com', password: 'MyPassword1' });
+
+        expect(res.status).toBe(200);
+        const cookies = res.headers['set-cookie'];
+        expect(cookies).toBeDefined();
+        const cookieStr = Array.isArray(cookies) ? cookies.join('; ') : cookies;
+        expect(cookieStr).toContain('jwt_access=');
+        expect(cookieStr).toContain('HttpOnly');
+    });
+
+    it('returns 423 when account is locked out', async () => {
+        const lockErr: any = new Error('Account temporarily locked');
+        lockErr.statusCode = 423;
+        lockErr.code = 'account_locked';
+        lockErr.lockoutUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+        mockLogin.mockRejectedValueOnce(lockErr);
+
+        const res = await request(app)
+            .post('/api/v1/auth/login')
+            .send({ email: 'test@example.com', password: 'WrongPassword1' });
+
+        expect(res.status).toBe(423);
+        expect(res.body.code).toBe('account_locked');
+        expect(res.body).toHaveProperty('lockoutUntil');
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Email Verification', () => {
+    it('POST /verify-email — 200 on valid token and email', async () => {
+        mockVerifyEmail.mockResolvedValueOnce({
+            message: 'Email address verified successfully!',
+            isEmailVerified: true,
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/verify-email')
+            .send({ email: 'test@example.com', token: '123456' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.isEmailVerified).toBe(true);
+    });
+
+    it('POST /resend-verification — 200 on valid email', async () => {
+        mockResendVerification.mockResolvedValueOnce({
+            message: 'If the email address is registered, a new verification link has been sent.',
+            emailSent: true,
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/resend-verification')
+            .send({ email: 'test@example.com' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.emailSent).toBe(true);
     });
 });
