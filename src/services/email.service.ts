@@ -71,24 +71,84 @@ class EmailService {
     }
 
     /**
-     * Sends an email trying available providers in order: SMTP -> Resend -> SendGrid.
+     * Sends an email trying available providers in order: Resend (HTTPS) -> SMTP -> SendGrid.
      */
     async sendEmail(options: SendEmailOptions): Promise<EmailResult> {
-        if (!this.smtpTransporter) {
-            this.initSmtp();
-        }
         const { to, subject, html, text } = options;
         const fromAddress = config.email.from;
         const fromName = config.email.fromName || 'WatchersHive';
         const formattedFrom = `${fromName} <${fromAddress}>`;
         let lastError = '';
 
+        // 1. Try Resend first if configured (Fast, HTTPS Port 443 — reliable on Railway)
+        const resendKey = config.email.resendApiKey;
+        if (resendKey && !resendKey.includes('placeholder') && !resendKey.includes('your-resend-api-key')) {
+            try {
+                // If using an unverified domain or @gmail.com on Resend, use onboarding@resend.dev
+                let resendSender = formattedFrom;
+                if (fromAddress.toLowerCase().endsWith('@gmail.com')) {
+                    resendSender = `${fromName} <onboarding@resend.dev>`;
+                }
+
+                let res = await fetch('https://api.resend.com/emails', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${resendKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        from: resendSender,
+                        to: [to],
+                        subject,
+                        html,
+                        text,
+                    }),
+                });
+
+                let data: any = await res.json().catch(() => ({}));
+
+                // If domain verification failed, auto-fallback to onboarding@resend.dev
+                if (!res.ok && data?.message?.includes('domain is not verified')) {
+                    console.log('[EmailService] Domain unverified on Resend. Falling back to onboarding@resend.dev...');
+                    res = await fetch('https://api.resend.com/emails', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${resendKey}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            from: `${fromName} <onboarding@resend.dev>`,
+                            to: [to],
+                            subject,
+                            html,
+                            text,
+                        }),
+                    });
+                    data = await res.json().catch(() => ({}));
+                }
+
+                if (res.ok) {
+                    console.log(`[EmailService] Email delivered to ${to} via Resend. ID: ${data?.id}`);
+                    return { success: true, provider: 'resend', messageId: data?.id };
+                } else {
+                    lastError = `Resend error (${res.status}): ${JSON.stringify(data)}`;
+                    console.error(`[EmailService] ${lastError}`);
+                }
+            } catch (resendErr: any) {
+                lastError = `Resend network exception: ${resendErr?.message || resendErr}`;
+                console.error('[EmailService]', lastError);
+            }
+        }
+
+        // 2. Try SMTP if configured (e.g. Gmail SMTP)
+        if (!this.smtpTransporter) {
+            this.initSmtp();
+        }
         const cleanStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
         const cleanPassStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '') : '');
         const user = cleanStr(config.email.smtp.user || process.env.SMTP_USER);
         const pass = cleanPassStr(config.email.smtp.pass || process.env.SMTP_PASS);
 
-        // 1. Try SMTP first if configured (e.g. Gmail SMTP)
         if (this.smtpTransporter) {
             try {
                 const info = await this.smtpTransporter.sendMail({
@@ -132,40 +192,6 @@ class EmailService {
                         console.error('[EmailService]', lastError);
                     }
                 }
-            }
-        }
-
-        // 2. Try Resend if configured
-        const resendKey = config.email.resendApiKey;
-        if (resendKey && !resendKey.includes('placeholder') && !resendKey.includes('your-resend-api-key')) {
-            try {
-                const res = await fetch('https://api.resend.com/emails', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${resendKey}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        from: formattedFrom,
-                        to: [to],
-                        subject,
-                        html,
-                        text,
-                    }),
-                });
-
-                if (res.ok) {
-                    const data: any = await res.json().catch(() => ({}));
-                    console.log(`[EmailService] Email delivered to ${to} via Resend. ID: ${data?.id}`);
-                    return { success: true, provider: 'resend', messageId: data?.id };
-                } else {
-                    const errText = await res.text().catch(() => '');
-                    lastError = `Resend error (${res.status}): ${errText}`;
-                    console.error(`[EmailService] ${lastError}`);
-                }
-            } catch (resendErr: any) {
-                lastError = `Resend network exception: ${resendErr?.message || resendErr}`;
-                console.error('[EmailService]', lastError);
             }
         }
 
