@@ -85,9 +85,15 @@ class EmailService {
         const resendKey = cleanStr(config.email.resendApiKey || process.env.RESEND_API_KEY || process.env.RESEND_KEY || process.env.RESEND_TOKEN);
         if (resendKey && !resendKey.includes('placeholder') && !resendKey.includes('your-resend-api-key')) {
             try {
-                // If using an unverified domain or @gmail.com on Resend, use onboarding@resend.dev
+                // If using an unverified domain or @gmail.com or unverified custom domain on Resend, use onboarding@resend.dev
                 let resendSender = formattedFrom;
-                if (fromAddress.toLowerCase().endsWith('@gmail.com') || fromAddress.includes('watchhive.com')) {
+                if (
+                    process.env.RESEND_FORCE_ONBOARDING === 'true' ||
+                    fromAddress.toLowerCase().endsWith('@gmail.com') ||
+                    fromAddress.includes('watchhive') ||
+                    fromAddress.includes('watchershive') ||
+                    !fromAddress.includes('@')
+                ) {
                     resendSender = `${fromName} <onboarding@resend.dev>`;
                 }
 
@@ -109,8 +115,9 @@ class EmailService {
                 let data: any = await res.json().catch(() => ({}));
 
                 // If domain verification failed, auto-fallback to onboarding@resend.dev
-                if (!res.ok && data?.message?.includes('domain is not verified')) {
+                if (!res.ok && (data?.message?.includes('domain is not verified') || data?.message?.includes('validation_error'))) {
                     console.log('[EmailService] Domain unverified on Resend. Falling back to onboarding@resend.dev...');
+                    resendSender = `${fromName} <onboarding@resend.dev>`;
                     res = await fetch('https://api.resend.com/emails', {
                         method: 'POST',
                         headers: {
@@ -118,7 +125,7 @@ class EmailService {
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                            from: `${fromName} <onboarding@resend.dev>`,
+                            from: resendSender,
                             to: [to],
                             subject,
                             html,
@@ -133,7 +140,7 @@ class EmailService {
                     return { success: true, provider: 'resend', messageId: data?.id };
                 } else {
                     const errDetail = data?.message || JSON.stringify(data);
-                    lastError = `Resend delivery rejected (${res.status}): ${errDetail}`;
+                    lastError = `Resend delivery rejected (${res.status}) [from=${resendSender}, to=${to}]: ${errDetail}`;
                     console.error(`[EmailService] ${lastError}`);
                     // Return immediately so the explicit Resend rejection is surfaced to the client
                     return {
