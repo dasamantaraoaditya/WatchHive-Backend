@@ -307,6 +307,9 @@ class EmailService {
                                             <a href="${resetLink}" style="background-color: #FFB700; color: #2D2926; font-size: 15px; font-weight: 800; padding: 14px 28px; border-radius: 10px; text-decoration: none; display: inline-block;">
                                                 Reset Password Directly
                                             </a>
+                                            <div style="margin-top: 12px; font-size: 12px; color: #8C827A;">
+                                                On mobile? <a href="watchershive://reset-password?${resetLink.split('?')[1] || ''}" style="color: #B38000; font-weight: 700; text-decoration: underline;">Open in WatchHive App</a>
+                                            </div>
                                         </div>
 
                                         <p style="margin: 24px 0 0 0; font-size: 12.5px; line-height: 1.5; color: #8C827A;">

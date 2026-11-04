@@ -9,8 +9,8 @@ import {
 } from '../utils/jwt.util.js';
 import { AppError } from '../middleware/error.middleware.js';
 import crypto from 'crypto';
-import { config } from '../config.js';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
+import { getCanonicalFrontendUrl } from '../utils/url.util.js';
 import { emailService } from './email.service.js';
 
 export interface RegisterData {
@@ -96,7 +96,7 @@ export const authService = {
                     })
                     .where(eq(users.id, existingUser.id));
 
-                const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
+                const frontendUrl = getCanonicalFrontendUrl();
                 const verificationLink = `${frontendUrl}/watch-hive/verify-email?token=${rawToken}&email=${encodeURIComponent(existingUser.email)}`;
 
                 emailService.sendVerificationEmail({
@@ -147,7 +147,7 @@ export const authService = {
             });
 
         // Dispatch verification email safely in background
-        const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
+        const frontendUrl = getCanonicalFrontendUrl();
         const verificationLink = `${frontendUrl}/watch-hive/verify-email?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
         emailService.sendVerificationEmail({
@@ -407,7 +407,7 @@ export const authService = {
             .where(eq(users.id, user.id));
 
         // The reset link
-        const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
+        const frontendUrl = getCanonicalFrontendUrl();
         const resetLink = `${frontendUrl}/watch-hive/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
         // Dispatch email via EmailService
@@ -674,7 +674,7 @@ export const authService = {
             })
             .where(eq(users.id, user.id));
 
-        const frontendUrl = config.cors.origin.split(',')[0].trim() || 'http://localhost:3000';
+        const frontendUrl = getCanonicalFrontendUrl();
         const verificationLink = `${frontendUrl}/watch-hive/verify-email?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
         const emailResult = await emailService.sendVerificationEmail({
