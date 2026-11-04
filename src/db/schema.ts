@@ -71,7 +71,7 @@ export const entries = pgTable('entries', {
     tmdbId: integer('tmdb_id').notNull(),
     title: text('title').notNull(),
     type: entryTypeEnum('type').notNull(),
-    watchedAt: timestamp('watched_at').notNull(),
+    watchedAt: timestamp('watched_at'),
     rating: decimal('rating', { precision: 3, scale: 1 }),
     review: text('review'),
     tags: text('tags').array(),

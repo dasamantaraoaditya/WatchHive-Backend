@@ -58,6 +58,7 @@ try {
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "poster_path" text;
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "backdrop_path" text;
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "post_to_feed" boolean DEFAULT true NOT NULL;
+        ALTER TABLE "entries" ALTER COLUMN "watched_at" DROP NOT NULL;
     `);
     console.log('✅ Schema columns verified');
 } catch (schemaErr) {
