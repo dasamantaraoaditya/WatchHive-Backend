@@ -277,15 +277,17 @@ router.post(
                     return;
                 }
 
+                const isDateOmitted = watchedAt === null || watchedAt === '' || req.body.unspecifiedDate === true;
                 if (targetExisting && (!isWatching || rating || review)) {
                     const finalIsWatching = isWatching !== undefined ? isWatching : false;
                     const now = new Date();
+                    const resolvedWatchedAt = isDateOmitted ? null : (watchedAt !== undefined ? resolveValidDate(watchedAt, now) : targetExisting.watchedAt);
                     await db
                         .update(entries)
                         .set({
                             title: resolvedTitle,
                             type: type as any,
-                            watchedAt: resolveValidDate(watchedAt, now)!,
+                            watchedAt: resolvedWatchedAt,
                             rating: rating ? rating.toString() : targetExisting.rating,
                             review: review !== undefined ? (review || null) : targetExisting.review,
                             tags: entryTags.length > 0 ? entryTags : targetExisting.tags,
@@ -315,12 +317,14 @@ router.post(
             if (!targetEntryId) {
                 // Create entry
                 const now = new Date();
+                const isDateOmitted = watchedAt === null || watchedAt === '' || req.body.unspecifiedDate === true;
+                const resolvedWatchedAt = isDateOmitted ? null : (watchedAt !== undefined ? resolveValidDate(watchedAt, now) : now);
                 const [newEntry] = await db.insert(entries).values({
                     userId,
                     tmdbId,
                     title: resolvedTitle,
                     type: type as any,
-                    watchedAt: resolveValidDate(watchedAt, now)!,
+                    watchedAt: resolvedWatchedAt,
                     rating: rating ? rating.toString() : null,
                     review: review || null,
                     tags: entryTags,
@@ -555,12 +559,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
 
         // Whitelist allowed sort fields and sort directions
         const ALLOWED_SORT_FIELDS: Record<string, any> = {
-            watchedAt: entries.watchedAt,
+            watchedAt: sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`,
             createdAt: entries.createdAt,
             rating: entries.rating,
             title: entries.title,
         };
-        const sortColumn = ALLOWED_SORT_FIELDS[sortBy as string] || entries.watchedAt;
+        const sortColumn = ALLOWED_SORT_FIELDS[sortBy as string] || sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`;
         const sortOrder = String(order).toLowerCase() === 'asc' ? asc(sortColumn) : desc(sortColumn);
 
         // Sanitize limit and offset
@@ -711,7 +715,7 @@ router.get(
                 .select()
                 .from(entries)
                 .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)))
-                .orderBy(desc(entries.watchedAt), desc(entries.createdAt));
+                .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`), desc(entries.createdAt));
 
             const completed = existingEntries.filter(
                 e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null)
@@ -949,7 +953,11 @@ router.put(
                     .set({ isWatching: false, completedAt: now, updatedAt: now })
                     .where(and(eq(entries.userId, userId), eq(entries.tmdbId, existingEntry.tmdbId), eq(entries.isWatching, true)));
             }
-            if (updateData.watchedAt) updateData.watchedAt = resolveValidDate(updateData.watchedAt, now);
+            if (req.body.watchedAt === null || req.body.watchedAt === '' || req.body.unspecifiedDate === true) {
+                updateData.watchedAt = null;
+            } else if (updateData.watchedAt) {
+                updateData.watchedAt = resolveValidDate(updateData.watchedAt, now);
+            }
             if (updateData.startedAt) updateData.startedAt = resolveValidDate(updateData.startedAt, null);
             if (updateData.completedAt) updateData.completedAt = resolveValidDate(updateData.completedAt, null);
             if (updateData.rating) updateData.rating = updateData.rating.toString();

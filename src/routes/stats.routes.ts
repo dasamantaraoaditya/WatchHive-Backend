@@ -60,12 +60,13 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
             title: entries.title,
             type: entries.type,
             watchedAt: entries.watchedAt,
+            createdAt: entries.createdAt,
             tags: entries.tags,
             rating: entries.rating,
         })
             .from(entries)
             .where(whereClause)
-            .orderBy(desc(entries.watchedAt));
+            .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`));
 
         // Also fetch all user tags for availableGenres filter dropdown
         const allUserEntries = await db.select({ tags: entries.tags }).from(entries).where(eq(entries.userId, userId));
@@ -94,7 +95,7 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
         }
 
         filteredEntries.forEach(e => {
-            const dateStr = new Date(e.watchedAt).toISOString().split('T')[0];
+            const dateStr = (e.watchedAt ? new Date(e.watchedAt) : new Date(e.createdAt)).toISOString().split('T')[0];
             if (!timeSeriesMap.has(dateStr)) {
                 timeSeriesMap.set(dateStr, { count: 0, items: [] });
             }
@@ -130,6 +131,7 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
         for (let i = 0; i < 24; i += 4) rhythmMap.set(i, 0); // Initializing blocks
 
         filteredEntries.forEach(e => {
+            if (!e.watchedAt) return;
             const hour = new Date(e.watchedAt).getHours();
             const block = Math.floor(hour / 4) * 4;
             rhythmMap.set(block, (rhythmMap.get(block) || 0) + 1);
