@@ -77,7 +77,7 @@ class EmailService {
         const { to, subject, html, text } = options;
         const fromAddress = config.email.from;
         const fromName = config.email.fromName || 'WatchersHive';
-        let formattedFrom = `${fromName} <${fromAddress}>`;
+        const formattedFrom = `${fromName} <${fromAddress}>`;
         let lastError = '';
 
         // 1. Try Resend first if configured (Fast, HTTPS Port 443 — reliable on Railway)
