@@ -42,31 +42,26 @@ class EmailService {
         const pass = cleanPassStr(smtp.pass || process.env.SMTP_PASS);
         const service = cleanStr(smtp.service || process.env.SMTP_SERVICE) || 'gmail';
         const host = cleanStr(smtp.host || process.env.SMTP_HOST) || 'smtp.gmail.com';
-        const port = smtp.port || parseInt(process.env.SMTP_PORT || '587', 10);
-        const secure = smtp.secure || process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465';
+        const configuredPort = smtp.port || parseInt(process.env.SMTP_PORT || '587', 10);
+        
+        // On cloud container platforms (Railway/Render/AWS), direct SSL on port 465 is vastly
+        // more reliable and bypasses STARTTLS port 587 handshake blocks/timeouts.
+        const isGmail = service.toLowerCase() === 'gmail' || host.includes('gmail');
+        const port = isGmail ? 465 : configuredPort;
+        const secure = isGmail ? true : (smtp.secure || process.env.SMTP_SECURE === 'true' || port === 465);
 
         if ((service || host) && user && pass) {
             try {
-                if (service) {
-                    this.smtpTransporter = nodemailer.createTransport({
-                        service,
-                        auth: { user, pass },
-                        connectionTimeout: 5000,
-                        greetingTimeout: 5000,
-                        socketTimeout: 8000,
-                    });
-                } else if (host) {
-                    this.smtpTransporter = nodemailer.createTransport({
-                        host,
-                        port,
-                        secure,
-                        auth: { user, pass },
-                        connectionTimeout: 5000,
-                        greetingTimeout: 5000,
-                        socketTimeout: 8000,
-                    });
-                }
-                console.log(`[EmailService] SMTP transporter initialized (${service || host}) for ${user}`);
+                this.smtpTransporter = nodemailer.createTransport({
+                    host: isGmail ? 'smtp.gmail.com' : host,
+                    port,
+                    secure,
+                    auth: { user, pass },
+                    connectionTimeout: 15000,
+                    greetingTimeout: 15000,
+                    socketTimeout: 20000,
+                });
+                console.log(`[EmailService] SMTP transporter initialized (${isGmail ? 'smtp.gmail.com:465 SSL' : `${host}:${port}`}) for ${user}`);
             } catch (err: any) {
                 console.error('[EmailService] Failed to initialize SMTP transporter:', err?.message || err);
             }
@@ -88,6 +83,11 @@ class EmailService {
         const formattedFrom = `${fromName} <${fromAddress}>`;
         let lastError = '';
 
+        const cleanStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
+        const cleanPassStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '') : '');
+        const user = cleanStr(config.email.smtp.user || process.env.SMTP_USER);
+        const pass = cleanPassStr(config.email.smtp.pass || process.env.SMTP_PASS);
+
         // 1. Try SMTP first if configured (e.g. Gmail SMTP)
         if (this.smtpTransporter) {
             try {
@@ -103,6 +103,35 @@ class EmailService {
             } catch (smtpErr: any) {
                 lastError = `SMTP error: ${smtpErr?.message || smtpErr}`;
                 console.error('[EmailService]', lastError);
+
+                // Auto-fallback: try alternate port if connection timed out or failed on primary port
+                if (user && pass && (smtpErr?.message?.includes('timeout') || smtpErr?.code === 'ETIMEDOUT' || smtpErr?.code === 'ECONNRESET' || smtpErr?.code === 'ESOCKET')) {
+                    console.log('[EmailService] Primary SMTP timed out, attempting port 587 STARTTLS fallback...');
+                    try {
+                        const fallbackTransporter = nodemailer.createTransport({
+                            host: 'smtp.gmail.com',
+                            port: 587,
+                            secure: false,
+                            auth: { user, pass },
+                            connectionTimeout: 15000,
+                            greetingTimeout: 15000,
+                            socketTimeout: 20000,
+                        });
+                        const fallbackInfo = await fallbackTransporter.sendMail({
+                            from: formattedFrom,
+                            to,
+                            subject,
+                            html,
+                            text,
+                        });
+                        console.log(`[EmailService] Email delivered to ${to} via fallback SMTP (port 587). MessageId: ${fallbackInfo.messageId}`);
+                        this.smtpTransporter = fallbackTransporter;
+                        return { success: true, provider: 'smtp', messageId: fallbackInfo.messageId };
+                    } catch (fallbackErr: any) {
+                        lastError = `Fallback SMTP error: ${fallbackErr?.message || fallbackErr}`;
+                        console.error('[EmailService]', lastError);
+                    }
+                }
             }
         }
 
