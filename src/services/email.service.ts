@@ -74,7 +74,8 @@ class EmailService {
      * Sends an email trying available providers in order: Resend (HTTPS) -> SMTP -> SendGrid.
      */
     async sendEmail(options: SendEmailOptions): Promise<EmailResult> {
-        const { to, subject, html, text } = options;
+        const to = (options.to || '').trim().toLowerCase();
+        const { subject, html, text } = options;
         const fromAddress = config.email.from;
         const fromName = config.email.fromName || 'WatchersHive';
         const formattedFrom = `${fromName} <${fromAddress}>`;
