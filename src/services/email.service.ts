@@ -15,6 +15,9 @@ export interface EmailResult {
     error?: string;
 }
 
+const cleanStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
+const cleanPassStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '') : '');
+
 class EmailService {
     private smtpTransporter: Transporter | null = null;
 
@@ -34,9 +37,6 @@ class EmailService {
     }
 
     private initSmtp() {
-        const cleanStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
-        const cleanPassStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '') : '');
-
         const { smtp } = config.email;
         const user = cleanStr(smtp.user || process.env.SMTP_USER);
         const pass = cleanPassStr(smtp.pass || process.env.SMTP_PASS);
@@ -81,7 +81,6 @@ class EmailService {
         let lastError = '';
 
         // 1. Try Resend first if configured (Fast, HTTPS Port 443 — reliable on Railway)
-        const cleanStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
         const resendKey = cleanStr(config.email.resendApiKey || process.env.RESEND_API_KEY || process.env.RESEND_KEY || process.env.RESEND_TOKEN);
         if (resendKey && !resendKey.includes('placeholder') && !resendKey.includes('your-resend-api-key')) {
             try {
