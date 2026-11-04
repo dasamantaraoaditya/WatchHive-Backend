@@ -28,6 +28,7 @@ import avatarRoutes from './routes/avatar.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import appVersionRoutes from './routes/app-version.routes.js';
 import { apiLimiter } from './middleware/rate-limit.middleware.js';
+import { emailService } from './services/email.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -193,9 +194,11 @@ import { checkDbHealth } from './db/index.js';
  */
 app.get('/health', async (_req, res) => {
     const isDbHealthy = await checkDbHealth();
+    const isEmailConfigured = emailService.isConfigured();
     res.json({
         status: isDbHealthy ? 'ok' : 'error',
         database: isDbHealthy ? 'connected' : 'disconnected',
+        email: isEmailConfigured ? 'configured' : 'unconfigured',
         environment: config.nodeEnv
     });
 });

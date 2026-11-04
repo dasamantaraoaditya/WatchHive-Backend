@@ -384,12 +384,9 @@ export const authService = {
             .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
             .limit(1);
 
-        // Always return success message if user doesn't exist (prevent email enumeration)
+        // Return explicit 404 if user doesn't exist so user is not misled by false success
         if (!user) {
-            return {
-                message: 'If that email is registered, a password reset link and code have been sent to your inbox.',
-                emailSent: false,
-            };
+            throw new AppError('No account found with this email address. Please check your spelling or sign up.', 404);
         }
 
         // Generate a secure random token and a convenient 6-digit numeric OTP
@@ -422,13 +419,17 @@ export const authService = {
 
         if (!emailResult.success) {
             console.error(`[ForgotPassword] Failed to deliver reset email to ${user.email}:`, emailResult.error);
-        } else {
-            console.log(`[ForgotPassword] Password reset email successfully dispatched to ${user.email} via ${emailResult.provider}.`);
+            throw new AppError(
+                `Failed to deliver password reset email: ${emailResult.error || 'Email service unavailable'}. Please verify SMTP credentials or try again later.`,
+                503
+            );
         }
 
+        console.log(`[ForgotPassword] Password reset email successfully dispatched to ${user.email} via ${emailResult.provider}.`);
+
         return {
-            message: 'If that email is registered, a password reset link and code have been sent to your inbox.',
-            emailSent: emailResult.success,
+            message: 'A password reset link and 6-digit code have been sent to your inbox.',
+            emailSent: true,
         };
     },
 
@@ -683,9 +684,17 @@ export const authService = {
             verificationLink,
         });
 
+        if (!emailResult.success) {
+            console.error(`[ResendVerification] Failed to deliver verification email to ${user.email}:`, emailResult.error);
+            throw new AppError(
+                `Failed to deliver verification email: ${emailResult.error || 'Email service unavailable'}. Please verify SMTP credentials or try again later.`,
+                503
+            );
+        }
+
         return {
-            message: 'If the email address is registered, a new verification link has been sent.',
-            emailSent: emailResult.success,
+            message: 'A new 6-digit verification code has been sent to your email.',
+            emailSent: true,
         };
     },
 
