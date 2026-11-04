@@ -51,7 +51,12 @@ export const config = {
         from: cleanEnv(process.env.EMAIL_FROM) || 'watchershive@gmail.com',
         fromName: cleanEnv(process.env.EMAIL_FROM_NAME) || 'WatchersHive',
         sendgridApiKey: cleanEnv(process.env.SENDGRID_API_KEY),
-        resendApiKey: cleanEnv(process.env.RESEND_API_KEY),
+        resendApiKey: cleanEnv(
+            process.env.RESEND_API_KEY ||
+            process.env.RESEND_KEY ||
+            process.env.RESEND_TOKEN ||
+            process.env.RESEND_APIKEY
+        ),
         smtp: {
             host: cleanEnv(process.env.SMTP_HOST) || 'smtp.gmail.com',
             port: parseInt(cleanEnv(process.env.SMTP_PORT) || '587', 10),

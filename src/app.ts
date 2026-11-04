@@ -195,10 +195,14 @@ import { checkDbHealth } from './db/index.js';
 app.get('/health', async (_req, res) => {
     const isDbHealthy = await checkDbHealth();
     const isEmailConfigured = emailService.isConfigured();
+    const cleanStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
+    const rKey = cleanStr(config.email.resendApiKey || process.env.RESEND_API_KEY || process.env.RESEND_KEY);
     res.json({
         status: isDbHealthy ? 'ok' : 'error',
         database: isDbHealthy ? 'connected' : 'disconnected',
         email: isEmailConfigured ? 'configured' : 'unconfigured',
+        emailProvider: rKey ? 'resend' : config.email.smtp.user ? 'smtp' : 'none',
+        resendPrefix: rKey ? `${rKey.substring(0, 7)}...` : 'missing',
         environment: config.nodeEnv
     });
 });
