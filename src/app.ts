@@ -199,10 +199,12 @@ app.get('/health', async (_req, res) => {
     const rKey = cleanStr(config.email.resendApiKey || process.env.RESEND_API_KEY || process.env.RESEND_KEY);
     res.json({
         status: isDbHealthy ? 'ok' : 'error',
+        version: '1.0.3-resend-v2',
         database: isDbHealthy ? 'connected' : 'disconnected',
         email: isEmailConfigured ? 'configured' : 'unconfigured',
         emailProvider: rKey ? 'resend' : config.email.smtp.user ? 'smtp' : 'none',
         resendPrefix: rKey ? `${rKey.substring(0, 7)}...` : 'missing',
+        emailFrom: config.email.from,
         environment: config.nodeEnv
     });
 });
