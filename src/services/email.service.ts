@@ -22,41 +22,53 @@ class EmailService {
         this.initSmtp();
     }
 
+    public isConfigured(): boolean {
+        if (!this.smtpTransporter) {
+            this.initSmtp();
+        }
+        return !!(
+            this.smtpTransporter ||
+            (config.email.resendApiKey && !config.email.resendApiKey.includes('placeholder')) ||
+            (config.email.sendgridApiKey && !config.email.sendgridApiKey.includes('placeholder'))
+        );
+    }
+
     private initSmtp() {
         const { smtp } = config.email;
-        if (smtp && (smtp.service || smtp.host) && smtp.user && smtp.pass) {
+        const user = smtp.user || process.env.SMTP_USER;
+        const pass = smtp.pass || process.env.SMTP_PASS;
+        const service = smtp.service || process.env.SMTP_SERVICE;
+        const host = smtp.host || process.env.SMTP_HOST;
+        const port = smtp.port || parseInt(process.env.SMTP_PORT || '587', 10);
+        const secure = smtp.secure || process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465';
+
+        if ((service || host) && user && pass) {
             try {
-                if (smtp.service) {
+                if (service) {
                     this.smtpTransporter = nodemailer.createTransport({
-                        service: smtp.service,
-                        auth: {
-                            user: smtp.user,
-                            pass: smtp.pass,
-                        },
+                        service,
+                        auth: { user, pass },
                         connectionTimeout: 5000,
                         greetingTimeout: 5000,
                         socketTimeout: 8000,
                     });
-                } else if (smtp.host) {
+                } else if (host) {
                     this.smtpTransporter = nodemailer.createTransport({
-                        host: smtp.host,
-                        port: smtp.port,
-                        secure: smtp.secure,
-                        auth: {
-                            user: smtp.user,
-                            pass: smtp.pass,
-                        },
+                        host,
+                        port,
+                        secure,
+                        auth: { user, pass },
                         connectionTimeout: 5000,
                         greetingTimeout: 5000,
                         socketTimeout: 8000,
                     });
                 }
-                console.log(`[EmailService] SMTP transporter initialized (${smtp.service || smtp.host}) for ${smtp.user}`);
+                console.log(`[EmailService] SMTP transporter initialized (${service || host}) for ${user}`);
             } catch (err: any) {
                 console.error('[EmailService] Failed to initialize SMTP transporter:', err?.message || err);
             }
         } else {
-            console.log('[EmailService] SMTP credentials not provided. Set SMTP_USER and SMTP_PASS (or RESEND_API_KEY) in .env to enable email sending.');
+            console.log('[EmailService] SMTP credentials not provided. Set SMTP_USER and SMTP_PASS (or RESEND_API_KEY) in environment variables to enable email sending.');
         }
     }
 
@@ -64,6 +76,9 @@ class EmailService {
      * Sends an email trying available providers in order: Resend -> SendGrid -> SMTP.
      */
     async sendEmail(options: SendEmailOptions): Promise<EmailResult> {
+        if (!this.smtpTransporter) {
+            this.initSmtp();
+        }
         const { to, subject, html, text } = options;
         const fromAddress = config.email.from;
         const fromName = config.email.fromName || 'WatchersHive';
