@@ -57,9 +57,9 @@ class EmailService {
                     port,
                     secure,
                     auth: { user, pass },
-                    connectionTimeout: 15000,
-                    greetingTimeout: 15000,
-                    socketTimeout: 20000,
+                    connectionTimeout: 4000,
+                    greetingTimeout: 4000,
+                    socketTimeout: 5000,
                 });
                 console.log(`[EmailService] SMTP transporter initialized (${isGmail ? 'smtp.gmail.com:465 SSL' : `${host}:${port}`}) for ${user}`);
             } catch (err: any) {
@@ -113,9 +113,9 @@ class EmailService {
                             port: 587,
                             secure: false,
                             auth: { user, pass },
-                            connectionTimeout: 15000,
-                            greetingTimeout: 15000,
-                            socketTimeout: 20000,
+                            connectionTimeout: 4000,
+                            greetingTimeout: 4000,
+                            socketTimeout: 5000,
                         });
                         const fallbackInfo = await fallbackTransporter.sendMail({
                             from: formattedFrom,
