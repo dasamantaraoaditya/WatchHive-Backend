@@ -34,11 +34,14 @@ class EmailService {
     }
 
     private initSmtp() {
+        const cleanStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
+        const cleanPassStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '') : '');
+
         const { smtp } = config.email;
-        const user = smtp.user || process.env.SMTP_USER;
-        const pass = smtp.pass || process.env.SMTP_PASS;
-        const service = smtp.service || process.env.SMTP_SERVICE;
-        const host = smtp.host || process.env.SMTP_HOST;
+        const user = cleanStr(smtp.user || process.env.SMTP_USER);
+        const pass = cleanPassStr(smtp.pass || process.env.SMTP_PASS);
+        const service = cleanStr(smtp.service || process.env.SMTP_SERVICE) || 'gmail';
+        const host = cleanStr(smtp.host || process.env.SMTP_HOST) || 'smtp.gmail.com';
         const port = smtp.port || parseInt(process.env.SMTP_PORT || '587', 10);
         const secure = smtp.secure || process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465';
 
@@ -73,7 +76,7 @@ class EmailService {
     }
 
     /**
-     * Sends an email trying available providers in order: Resend -> SendGrid -> SMTP.
+     * Sends an email trying available providers in order: SMTP -> Resend -> SendGrid.
      */
     async sendEmail(options: SendEmailOptions): Promise<EmailResult> {
         if (!this.smtpTransporter) {
@@ -83,8 +86,27 @@ class EmailService {
         const fromAddress = config.email.from;
         const fromName = config.email.fromName || 'WatchersHive';
         const formattedFrom = `${fromName} <${fromAddress}>`;
+        let lastError = '';
 
-        // 1. Try Resend if configured
+        // 1. Try SMTP first if configured (e.g. Gmail SMTP)
+        if (this.smtpTransporter) {
+            try {
+                const info = await this.smtpTransporter.sendMail({
+                    from: formattedFrom,
+                    to,
+                    subject,
+                    html,
+                    text,
+                });
+                console.log(`[EmailService] Email delivered to ${to} via SMTP. MessageId: ${info.messageId}`);
+                return { success: true, provider: 'smtp', messageId: info.messageId };
+            } catch (smtpErr: any) {
+                lastError = `SMTP error: ${smtpErr?.message || smtpErr}`;
+                console.error('[EmailService]', lastError);
+            }
+        }
+
+        // 2. Try Resend if configured
         const resendKey = config.email.resendApiKey;
         if (resendKey && !resendKey.includes('placeholder') && !resendKey.includes('your-resend-api-key')) {
             try {
@@ -109,14 +131,16 @@ class EmailService {
                     return { success: true, provider: 'resend', messageId: data?.id };
                 } else {
                     const errText = await res.text().catch(() => '');
-                    console.error(`[EmailService] Resend API error (${res.status}): ${errText}`);
+                    lastError = `Resend error (${res.status}): ${errText}`;
+                    console.error(`[EmailService] ${lastError}`);
                 }
             } catch (resendErr: any) {
-                console.error('[EmailService] Network exception sending email via Resend:', resendErr?.message || resendErr);
+                lastError = `Resend network exception: ${resendErr?.message || resendErr}`;
+                console.error('[EmailService]', lastError);
             }
         }
 
-        // 2. Try SendGrid if configured
+        // 3. Try SendGrid if configured
         const sendgridKey = config.email.sendgridApiKey;
         if (sendgridKey && !sendgridKey.includes('placeholder') && !sendgridKey.includes('your-sendgrid-api-key')) {
             try {
@@ -142,34 +166,19 @@ class EmailService {
                     return { success: true, provider: 'sendgrid' };
                 } else {
                     const errBody = await res.text().catch(() => '');
-                    console.error(`[EmailService] SendGrid error status ${res.status}: ${errBody}`);
+                    lastError = `SendGrid error status ${res.status}: ${errBody}`;
+                    console.error(`[EmailService] ${lastError}`);
                 }
             } catch (sendgridErr: any) {
-                console.error('[EmailService] Network exception sending email via SendGrid:', sendgridErr?.message || sendgridErr);
+                lastError = `SendGrid network exception: ${sendgridErr?.message || sendgridErr}`;
+                console.error('[EmailService]', lastError);
             }
         }
 
-        // 3. Try SMTP if configured
-        if (this.smtpTransporter) {
-            try {
-                const info = await this.smtpTransporter.sendMail({
-                    from: formattedFrom,
-                    to,
-                    subject,
-                    html,
-                    text,
-                });
-                console.log(`[EmailService] Email delivered to ${to} via SMTP. MessageId: ${info.messageId}`);
-                return { success: true, provider: 'smtp', messageId: info.messageId };
-            } catch (smtpErr: any) {
-                console.error('[EmailService] SMTP send error:', smtpErr?.message || smtpErr);
-            }
-        }
-
-        console.warn(`[EmailService] No configured email providers could deliver email to ${to}. Please configure RESEND_API_KEY, SENDGRID_API_KEY, or SMTP credentials.`);
+        console.warn(`[EmailService] No configured email providers could deliver email to ${to}. ${lastError}`);
         return {
             success: false,
-            error: 'Email delivery provider is unconfigured or failed to transmit message.',
+            error: lastError || 'Email delivery provider is unconfigured or failed to transmit message.',
         };
     }
 
