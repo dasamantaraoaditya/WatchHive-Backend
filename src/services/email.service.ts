@@ -85,16 +85,16 @@ class EmailService {
         const resendKey = cleanStr(config.email.resendApiKey || process.env.RESEND_API_KEY || process.env.RESEND_KEY || process.env.RESEND_TOKEN);
         if (resendKey && !resendKey.includes('placeholder') && !resendKey.includes('your-resend-api-key')) {
             try {
-                // If using an unverified domain or @gmail.com or unverified custom domain on Resend, use onboarding@resend.dev
+                // watchershive.com is verified on Resend!
+                // If EMAIL_FROM is support@watchershive.com or any watchershive.com address, use it directly.
+                // If EMAIL_FROM is still set to @gmail.com, route via support@watchershive.com.
                 let resendSender = formattedFrom;
-                if (
-                    process.env.RESEND_FORCE_ONBOARDING === 'true' ||
-                    fromAddress.toLowerCase().endsWith('@gmail.com') ||
-                    fromAddress.includes('watchhive') ||
-                    fromAddress.includes('watchershive') ||
-                    !fromAddress.includes('@')
-                ) {
+                if (process.env.RESEND_FORCE_ONBOARDING === 'true') {
                     resendSender = `${fromName} <onboarding@resend.dev>`;
+                } else if (fromAddress.includes('watchershive.com')) {
+                    resendSender = formattedFrom;
+                } else if (fromAddress.toLowerCase().endsWith('@gmail.com') || !fromAddress.includes('@')) {
+                    resendSender = `${fromName} <support@watchershive.com>`;
                 }
 
                 let res = await fetch('https://api.resend.com/emails', {
