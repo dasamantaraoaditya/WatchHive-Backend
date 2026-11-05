@@ -717,6 +717,7 @@ function computeBehavioralTrails(allEntries: any[]) {
 function evaluateUserBadges(allEntries: any[]) {
     const total = allEntries.length;
     const nightOwlCount = allEntries.filter(e => {
+        if (!e.watchedAt) return false;
         const h = new Date(e.watchedAt).getHours();
         return h >= 22 || h < 4;
     }).length;
@@ -726,7 +727,7 @@ function evaluateUserBadges(allEntries: any[]) {
 
     const dateCounts: Record<string, number> = {};
     allEntries.forEach(e => {
-        const d = new Date(e.watchedAt).toISOString().split('T')[0];
+        const d = (e.watchedAt ? new Date(e.watchedAt) : new Date(e.createdAt)).toISOString().split('T')[0];
         dateCounts[d] = (dateCounts[d] || 0) + 1;
     });
 
@@ -846,7 +847,7 @@ function computeDailyTimeSeries(allEntries: any[]) {
         const dateStr = d.toISOString().split('T')[0];
 
         const dayEntries = allEntries.filter(e => {
-            const entryDate = new Date(e.watchedAt).toISOString().split('T')[0];
+            const entryDate = (e.watchedAt ? new Date(e.watchedAt) : new Date(e.createdAt)).toISOString().split('T')[0];
             return entryDate === dateStr;
         });
 

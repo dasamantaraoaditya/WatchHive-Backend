@@ -5,6 +5,20 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 const router = Router();
 
 /**
+ * Cache-Control middleware for downstream proxies, CDNs, and client apps
+ */
+const cacheHeader = (maxAgeSeconds: number, swrSeconds?: number) => {
+    return (_req: Request, res: Response, next: () => void) => {
+        if (swrSeconds) {
+            res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}, stale-while-revalidate=${swrSeconds}`);
+        } else {
+            res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}`);
+        }
+        next();
+    };
+};
+
+/**
  * @openapi
  * tags:
  *   name: TMDb
@@ -35,7 +49,7 @@ const router = Router();
  *       401:
  *         description: Unauthorized
  */
-router.get('/search/movie', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/search/movie', authMiddleware, cacheHeader(900, 300), async (req: Request, res: Response): Promise<void> => {
     try {
         const { query, page } = req.query;
 
@@ -76,7 +90,7 @@ router.get('/search/movie', authMiddleware, async (req: Request, res: Response):
  *       200:
  *         description: Search results
  */
-router.get('/search/tv', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/search/tv', authMiddleware, cacheHeader(900, 300), async (req: Request, res: Response): Promise<void> => {
     try {
         const { query, page } = req.query;
 
@@ -117,7 +131,7 @@ router.get('/search/tv', authMiddleware, async (req: Request, res: Response): Pr
  *       200:
  *         description: Search results
  */
-router.get('/search/multi', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/search/multi', authMiddleware, cacheHeader(900, 300), async (req: Request, res: Response): Promise<void> => {
     try {
         const { query, page } = req.query;
 
@@ -173,7 +187,7 @@ router.get('/search/multi', authMiddleware, async (req: Request, res: Response):
  *       200:
  *         description: Discovered media results
  */
-router.get('/discover', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/discover', authMiddleware, cacheHeader(1800, 600), async (req: Request, res: Response): Promise<void> => {
     try {
         const { mediaType, year, genreId, sortBy, page, query } = req.query;
         const pageNum = page ? parseInt(page as string, 10) : 1;
@@ -216,7 +230,7 @@ router.get('/discover', authMiddleware, async (req: Request, res: Response): Pro
  *       404:
  *         description: Movie not found
  */
-router.get('/movie/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/movie/:id', authMiddleware, cacheHeader(86400, 43200), async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const movieId = parseInt(id, 10);
@@ -256,7 +270,7 @@ router.get('/movie/:id', authMiddleware, async (req: Request, res: Response): Pr
  *       200:
  *         description: TV show details
  */
-router.get('/tv/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/tv/:id', authMiddleware, cacheHeader(86400, 43200), async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const tvId = parseInt(id, 10);
@@ -278,7 +292,7 @@ router.get('/tv/:id', authMiddleware, async (req: Request, res: Response): Promi
     }
 });
 
-router.get('/tv/:id/season/:seasonNumber', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/tv/:id/season/:seasonNumber', authMiddleware, cacheHeader(604800, 86400), async (req: Request, res: Response): Promise<void> => {
     try {
         const { id, seasonNumber } = req.params;
         const tvId = parseInt(id, 10);
@@ -318,7 +332,7 @@ router.get('/tv/:id/season/:seasonNumber', authMiddleware, async (req: Request, 
  *       200:
  *         description: Popular movies list
  */
-router.get('/popular/movies', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/popular/movies', authMiddleware, cacheHeader(7200, 3600), async (req: Request, res: Response): Promise<void> => {
     try {
         const { page } = req.query;
         const pageNum = page ? parseInt(page as string, 10) : 1;
@@ -348,7 +362,7 @@ router.get('/popular/movies', authMiddleware, async (req: Request, res: Response
  *       200:
  *         description: Popular TV shows list
  */
-router.get('/popular/tv', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/popular/tv', authMiddleware, cacheHeader(7200, 3600), async (req: Request, res: Response): Promise<void> => {
     try {
         const { page } = req.query;
         const pageNum = page ? parseInt(page as string, 10) : 1;
@@ -386,7 +400,7 @@ router.get('/popular/tv', authMiddleware, async (req: Request, res: Response): P
  *       200:
  *         description: Trending items list
  */
-router.get('/trending', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/trending', authMiddleware, cacheHeader(3600, 1800), async (req: Request, res: Response): Promise<void> => {
     try {
         const mediaType = (req.query.mediaType as 'movie' | 'tv' | 'all') || 'all';
         const timeWindow = (req.query.timeWindow as 'day' | 'week') || 'week';
@@ -424,7 +438,7 @@ router.get('/trending', authMiddleware, async (req: Request, res: Response): Pro
  *         description: Trending items list
  */
 
-router.get('/trending/:mediaType/:timeWindow', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/trending/:mediaType/:timeWindow', authMiddleware, cacheHeader(3600, 1800), async (req: Request, res: Response): Promise<void> => {
     try {
         const { mediaType, timeWindow } = req.params;
 

@@ -4,8 +4,9 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
 import { users, follows, entries, lists, listItems, followRequests, blockedUsers } from '../db/schema.js';
-import { eq, or, and, ilike, not, count, exists, desc } from 'drizzle-orm';
+import { eq, or, and, ilike, not, count, exists, desc, sql } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
+import { friendRecommendationService } from '../services/friend-recommendation.service.js';
 
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import multerS3 from 'multer-s3';
@@ -103,11 +104,19 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
                 notifyFollowingActivity: users.notifyFollowingActivity,
+                xp: users.xp,
+                level: users.level,
+                badges: users.badges,
+                watchStreak: users.watchStreak,
+                lastWatchDate: users.lastWatchDate,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
                 entriesCount: count(entries.id),
                 googleId: users.googleId,
                 passwordHash: users.passwordHash,
+                isEmailVerified: users.isEmailVerified,
             })
             .from(users)
             .leftJoin(entries, eq(entries.userId, users.id))
@@ -119,11 +128,18 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
             throw new AppError('User not found', 404);
         }
 
+        // Compute active streak (streak is active if last watch was today or yesterday)
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const isStreakAlive = userResult.lastWatchDate === todayStr || userResult.lastWatchDate === yesterdayStr;
+        const activeStreak = isStreakAlive ? (userResult.watchStreak || 0) : 0;
+
         // Strip sensitive fields; expose computed boolean flags instead
         const { googleId, passwordHash, ...safeUser } = userResult;
 
         const user = {
             ...safeUser,
+            watchStreak: activeStreak,
             hasGoogleLinked: !!googleId,
             hasPassword: !!passwordHash,
             _count: {
@@ -171,7 +187,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 router.put('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
-        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings, notifyFollowingActivity } = req.body;
+        const { displayName, bio, location, isPrivate, privacyLevel, showWatchEntries, showCurrentlyWatching, showWatchlist, showRankings, notifyFollowingActivity, preferences, hasCompletedOnboarding } = req.body;
 
         if (displayName !== undefined && String(displayName).trim().length > 50) {
             res.status(400).json({ error: 'Display name cannot exceed 50 characters' });
@@ -201,6 +217,8 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 ...(showWatchlist !== undefined && { showWatchlist }),
                 ...(showRankings !== undefined && { showRankings }),
                 ...(notifyFollowingActivity !== undefined && { notifyFollowingActivity }),
+                ...(preferences !== undefined && { preferences }),
+                ...(hasCompletedOnboarding !== undefined && { hasCompletedOnboarding: Boolean(hasCompletedOnboarding) }),
                 updatedAt: new Date(),
             })
             .where(eq(users.id, userId))
@@ -219,6 +237,8 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
                 notifyFollowingActivity: users.notifyFollowingActivity,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
                 createdAt: users.createdAt,
                 updatedAt: users.updatedAt,
             });
@@ -228,6 +248,59 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
         }
 
         res.json(user);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/me/preferences:
+ *   put:
+ *     tags: [User]
+ *     summary: Update onboarding watch preferences (languages, genres, streaming platforms)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               preferences:
+ *                 type: object
+ *               hasCompletedOnboarding:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Preferences updated
+ */
+router.put('/me/preferences', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.user!.userId;
+        const { preferences, hasCompletedOnboarding = true } = req.body;
+
+        const [user] = await db
+            .update(users)
+            .set({
+                ...(preferences !== undefined && { preferences }),
+                hasCompletedOnboarding: Boolean(hasCompletedOnboarding),
+                updatedAt: new Date(),
+            })
+            .where(eq(users.id, userId))
+            .returning({
+                id: users.id,
+                username: users.username,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
+                updatedAt: users.updatedAt,
+            });
+
+        res.json({
+            success: true,
+            user,
+        });
     } catch (error) {
         next(error);
     }
@@ -454,11 +527,12 @@ router.delete('/me', authMiddleware, async (req: Request, res: Response, next: N
  */
 router.get('/search', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const query = req.query.q as string;
+        const rawQuery = (req.query.q as string) || '';
+        const query = rawQuery.trim().replace(/^@/, '');
         const page = parseInt(req.query.page as string, 10) || 1;
         const limit = parseInt(req.query.limit as string, 10) || 20;
 
-        if (!query || query.trim().length === 0) {
+        if (!query || query.length === 0) {
             res.json({ users: [], pagination: { page, limit, total: 0, totalPages: 0 } });
             return;
         }
@@ -480,12 +554,18 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
                 username: users.username,
                 displayName: users.displayName,
                 profilePictureUrl: users.profilePictureUrl,
+                bio: users.bio,
                 isPrivate: users.isPrivate,
                 privacyLevel: users.privacyLevel,
                 isFollowing: exists(
                     db.select()
                         .from(follows)
                         .where(and(eq(follows.followerId, currentId), eq(follows.followingId, users.id)))
+                ),
+                isFollower: exists(
+                    db.select()
+                        .from(follows)
+                        .where(and(eq(follows.followerId, users.id), eq(follows.followingId, currentId)))
                 ),
                 isRequested: exists(
                     db.select()
@@ -499,6 +579,18 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
             })
                 .from(users)
                 .where(whereClause)
+                .orderBy(
+                    sql`
+                        CASE
+                            WHEN lower(${users.username}) = lower(${query}) THEN 1
+                            WHEN lower(${users.displayName}) = lower(${query}) THEN 2
+                            WHEN lower(${users.username}) LIKE lower(${query}) || '%' THEN 3
+                            WHEN lower(${users.displayName}) LIKE lower(${query}) || '%' THEN 4
+                            ELSE 5
+                        END ASC,
+                        ${users.xp} DESC
+                    `
+                )
                 .limit(limit)
                 .offset(offset),
             db.select({ total: count() }).from(users).where(whereClause)
@@ -526,56 +618,27 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
  * /api/v1/users/suggested:
  *   get:
  *     tags: [User]
- *     summary: Get suggested users to follow
+ *     summary: Get smart, relevant suggested users to follow
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
  *     responses:
  *       200:
- *         description: List of suggested users
+ *         description: List of suggested users with relevance reasons
  */
 router.get('/suggested', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const currentId = req.user!.userId;
-        const limit = 5;
+        const limitParam = parseInt(req.query.limit as string, 10);
+        const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 50) : 20;
 
-        // Suggested users: strictly users who follow the current user,
-        // but whom the current user is not following yet (or requested)
-        const whereClause = and(
-            not(eq(users.id, currentId)),
-            exists(
-                db.select()
-                    .from(follows)
-                    .where(and(eq(follows.followerId, users.id), eq(follows.followingId, currentId)))
-            ),
-            not(exists(
-                db.select()
-                    .from(follows)
-                    .where(and(eq(follows.followerId, currentId), eq(follows.followingId, users.id)))
-            )),
-            not(exists(
-                db.select()
-                    .from(followRequests)
-                    .where(and(eq(followRequests.senderId, currentId), eq(followRequests.recipientId, users.id)))
-            ))
-        );
+        const suggestedUsers = await friendRecommendationService.getSuggestedUsers(currentId, limit);
 
-        const usersList = await db.select({
-            id: users.id,
-            username: users.username,
-            displayName: users.displayName,
-            profilePictureUrl: users.profilePictureUrl,
-            bio: users.bio
-        })
-            .from(users)
-            .where(whereClause)
-            .limit(limit);
-
-        res.json({
-            users: await Promise.all(usersList.map(async (u) => ({
-                ...u,
-                profilePictureUrl: await getAvatarUrl(u.profilePictureUrl)
-            })))
-        });
+        res.json({ users: suggestedUsers });
     } catch (error) {
         next(error);
     }
@@ -621,6 +684,13 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 showCurrentlyWatching: users.showCurrentlyWatching,
                 showWatchlist: users.showWatchlist,
                 showRankings: users.showRankings,
+                xp: users.xp,
+                level: users.level,
+                badges: users.badges,
+                watchStreak: users.watchStreak,
+                lastWatchDate: users.lastWatchDate,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
                 createdAt: users.createdAt,
             })
             .from(users)
@@ -634,7 +704,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
         const isOwner = targetId === currentId;
         
         // Fetch follow status first to check permissions if needed
-        const [followStatus, followerStatus] = await Promise.all([
+        const [followRows, followerRows] = await Promise.all([
             db.select()
                 .from(follows)
                 .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
@@ -645,8 +715,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 .limit(1),
         ]);
 
-        const isFollowing = !!followStatus;
-        const isFollower = !!followerStatus;
+        const isFollowing = Array.isArray(followRows) && followRows.length > 0;
+        const isFollower = Array.isArray(followerRows) && followerRows.length > 0;
 
         // Fetch follow request status
         const [followReq] = await db
@@ -744,8 +814,14 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
 
         const watchlistCount = Array.isArray(watchlist?.items) ? watchlist.items.length : 0;
 
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const isStreakAlive = user.lastWatchDate === todayStr || user.lastWatchDate === yesterdayStr;
+        const activeStreak = isStreakAlive ? (user.watchStreak || 0) : 0;
+
         res.json({
             ...user,
+            watchStreak: activeStreak,
             profilePictureUrl: await getAvatarUrl(user.profilePictureUrl),
             _count: {
                 followers: Number(followersCount) || 0,

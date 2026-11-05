@@ -28,24 +28,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
-          cache: 'npm'
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Run lint
-        run: npm run lint
+        run: bun run lint
 
       - name: Build TypeScript
-        run: npm run build
+        run: bun run build
 
       - name: Run tests
-        run: npm test
+        run: bun test
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/watchhive_test
           JWT_SECRET: test-secret
+          TMDB_API_KEY: mock-tmdb-key-for-ci
+          NODE_ENV: test
           JWT_REFRESH_SECRET: test-refresh-secret

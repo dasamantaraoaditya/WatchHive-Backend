@@ -24,6 +24,9 @@ export interface AppleAuthResponse {
         hasGoogleLinked: boolean;
         hasAppleLinked: boolean;
         hasPassword: boolean;
+        isEmailVerified: boolean;
+        preferences?: any;
+        hasCompletedOnboarding?: boolean;
     };
     accessToken: string;
     refreshToken: string;
@@ -76,6 +79,9 @@ export const appleAuthService = {
                 googleId: users.googleId,
                 appleId: users.appleId,
                 passwordHash: users.passwordHash,
+                tokenVersion: users.tokenVersion,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
             })
             .from(users)
             .where(eq(users.appleId, appleSub))
@@ -93,6 +99,9 @@ export const appleAuthService = {
                     googleId: users.googleId,
                     appleId: users.appleId,
                     passwordHash: users.passwordHash,
+                    tokenVersion: users.tokenVersion,
+                    preferences: users.preferences,
+                    hasCompletedOnboarding: users.hasCompletedOnboarding,
                 })
                 .from(users)
                 .where(eq(users.email, effectiveEmail))
@@ -116,6 +125,9 @@ export const appleAuthService = {
                         googleId: users.googleId,
                         appleId: users.appleId,
                         passwordHash: users.passwordHash,
+                        tokenVersion: users.tokenVersion,
+                        preferences: users.preferences,
+                        hasCompletedOnboarding: users.hasCompletedOnboarding,
                     });
 
                 user = updatedUser;
@@ -164,6 +176,7 @@ export const appleAuthService = {
                     profilePictureUrl: null,
                     isPrivate: false,
                     privacyLevel: 'PUBLIC',
+                    isEmailVerified: true,
                 })
                 .returning({
                     id: users.id,
@@ -174,6 +187,9 @@ export const appleAuthService = {
                     googleId: users.googleId,
                     appleId: users.appleId,
                     passwordHash: users.passwordHash,
+                    tokenVersion: users.tokenVersion,
+                    preferences: users.preferences,
+                    hasCompletedOnboarding: users.hasCompletedOnboarding,
                 });
 
             user = newUser;
@@ -183,11 +199,15 @@ export const appleAuthService = {
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
 
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
+            tokenVersion: user.tokenVersion ?? 1,
+            isEmailVerified: true,
         });
 
         return {
@@ -200,6 +220,9 @@ export const appleAuthService = {
                 hasGoogleLinked: Boolean(user.googleId),
                 hasAppleLinked: Boolean(user.appleId),
                 hasPassword: Boolean(user.passwordHash),
+                isEmailVerified: true,
+                preferences: user.preferences,
+                hasCompletedOnboarding: user.hasCompletedOnboarding,
             },
             accessToken,
             refreshToken,

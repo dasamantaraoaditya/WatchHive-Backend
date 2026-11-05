@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -25,7 +26,9 @@ import suggestionsRoutes from './routes/suggestions.routes.js';
 import dataRoutes from './routes/data.routes.js';
 import avatarRoutes from './routes/avatar.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
+import appVersionRoutes from './routes/app-version.routes.js';
 import { apiLimiter } from './middleware/rate-limit.middleware.js';
+import { emailService } from './services/email.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,12 +41,72 @@ app.set('trust proxy', 1);
 // Swagger Documentation
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// Security middleware — allow images from same origin, enable HSTS, hide Express fingerprint
+// Security middleware — allow images from same origin, enable HSTS, hide Express fingerprint, and enforce Content Security Policy (CSP)
 app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     hsts: config.nodeEnv === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
     hidePoweredBy: true,
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                "'unsafe-eval'",
+                'https://cdn.tailwindcss.com',
+                'https://accounts.google.com',
+                'https://apis.google.com',
+            ],
+            styleSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                'https://fonts.googleapis.com',
+                'https://cdn.tailwindcss.com',
+            ],
+            fontSrc: [
+                "'self'",
+                'data:',
+                'https://fonts.gstatic.com',
+            ],
+            imgSrc: [
+                "'self'",
+                'data:',
+                'blob:',
+                'https://image.tmdb.org',
+                'https://*.tmdb.org',
+                'https://lh3.googleusercontent.com',
+                'https://*.googleusercontent.com',
+                'https://watchershive.com',
+                'https://*.watchershive.com',
+                'https://*.railway.app',
+            ],
+            connectSrc: [
+                "'self'",
+                'https://api.themoviedb.org',
+                'https://*.themoviedb.org',
+                'https://accounts.google.com',
+                'https://watchhive-api-production.up.railway.app',
+                'https://watchhive-api-staging.up.railway.app',
+                'https://watchershive.com',
+                'https://*.watchershive.com',
+                'https://*.railway.app',
+                'https://*.vercel.app',
+                'http://localhost:*',
+                'ws://localhost:*',
+            ],
+            frameSrc: [
+                "'self'",
+                'https://accounts.google.com',
+                'https://www.youtube.com',
+                'https://www.youtube-nocookie.com',
+            ],
+            objectSrc: ["'none'"],
+        },
+    },
 }));
+
+// Cookie parsing for HttpOnly cookie authentication
+app.use(cookieParser());
 
 // CORS — allow both production URL and localhost for development
 const allowedOrigins: string[] = [];
@@ -131,9 +194,17 @@ import { checkDbHealth } from './db/index.js';
  */
 app.get('/health', async (_req, res) => {
     const isDbHealthy = await checkDbHealth();
+    const isEmailConfigured = emailService.isConfigured();
+    const cleanStr = (s?: string) => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
+    const rKey = cleanStr(config.email.resendApiKey || process.env.RESEND_API_KEY || process.env.RESEND_KEY);
     res.json({
         status: isDbHealthy ? 'ok' : 'error',
+        version: '1.0.4-verified-domain',
         database: isDbHealthy ? 'connected' : 'disconnected',
+        email: isEmailConfigured ? 'configured' : 'unconfigured',
+        emailProvider: rKey ? 'resend' : config.email.smtp.user ? 'smtp' : 'none',
+        resendPrefix: rKey ? `${rKey.substring(0, 7)}...` : 'missing',
+        emailFrom: config.email.from,
         environment: config.nodeEnv
     });
 });
@@ -168,6 +239,7 @@ app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/suggestions', suggestionsRoutes);
 app.use('/api/v1/data', dataRoutes);
 app.use('/api/v1/reports', reportsRoutes);
+app.use('/api/v1/app', appVersionRoutes);
 
 // 404 handler
 app.use(notFoundHandler);

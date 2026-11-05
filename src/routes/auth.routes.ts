@@ -36,18 +36,75 @@ const registerValidation = [
 const loginValidation = [
     body('email')
         .trim()
-        .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .notEmpty()
+        .withMessage('Please enter your email or username')
+        .custom((val) => {
+            if (val.includes('@')) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(val)) {
+                    throw new Error('Please enter a valid email address');
+                }
+            }
+            return true;
+        }),
     body('password')
         .notEmpty()
-        .withMessage('Password is required'),
+        .withMessage('Please enter your password'),
 ];
 
 const refreshValidation = [
     body('refreshToken')
+        .optional()
+        .isString()
+        .withMessage('Refresh token must be a string'),
+    (req: any, res: any, next: any) => {
+        if (!req.body?.refreshToken && !req.cookies?.jwt_refresh) {
+            return res.status(400).json({ error: 'Refresh token is required' });
+        }
+        next();
+    },
+];
+
+const verifyEmailValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+    body('token')
+        .trim()
         .notEmpty()
-        .withMessage('Refresh token is required'),
+        .withMessage('Verification token or code is required'),
+];
+
+const resendVerificationValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+];
+
+const emailOtpRequestValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+];
+
+const emailOtpVerifyValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+    body('code')
+        .trim()
+        .isLength({ min: 6, max: 6 })
+        .withMessage('Sign-in code must be exactly 6 digits')
+        .isNumeric()
+        .withMessage('Sign-in code must contain numbers only'),
 ];
 
 const forgotPasswordValidation = [
@@ -289,7 +346,126 @@ router.post('/reset-password', passwordResetLimiter, resetPasswordValidation, va
  *       400:
  *         description: Account already has a password or is not Google-linked
  */
-router.post('/set-password', authMiddleware, setPasswordValidation, validate, authController.setPassword);
+router.post('/set-password', authMiddleware, passwordResetLimiter, setPasswordValidation, validate, authController.setPassword);
 
+/**
+ * @openapi
+ * /api/v1/auth/verify-email:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Verify email address using token or 6-digit OTP code
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - token
+ *             properties:
+ *               email:
+ *                 type: string
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Verify email address via query parameter link
+ *     parameters:
+ *       - in: query
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/verify-email', authLimiter, verifyEmailValidation, validate, authController.verifyEmail);
+router.get('/verify-email', authLimiter, authController.verifyEmail);
+
+/**
+ * @openapi
+ * /api/v1/auth/resend-verification:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Resend email verification link and code
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Verification email dispatched
+ */
+router.post('/resend-verification', authLimiter, resendVerificationValidation, validate, authController.resendVerification);
+
+/**
+ * @openapi
+ * /api/v1/auth/email-code/request:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Request a passwordless 6-digit sign-in / registration code via email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Sign-in code dispatched to email
+ */
+router.post('/email-code/request', authLimiter, emailOtpRequestValidation, validate, authController.requestEmailOtp);
+
+/**
+ * @openapi
+ * /api/v1/auth/email-code/verify:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Verify 6-digit email code and log in or register
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - code
+ *             properties:
+ *               email:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful with session tokens
+ */
+router.post('/email-code/verify', authLimiter, emailOtpVerifyValidation, validate, authController.verifyEmailOtp);
 
 export default router;

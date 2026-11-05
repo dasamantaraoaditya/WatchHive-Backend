@@ -18,13 +18,19 @@ export const authMiddleware = (
 ): void => {
     try {
         const authHeader = req.headers.authorization;
+        let token: string | undefined;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.substring(7); // Remove 'Bearer ' prefix
+        } else if (req.cookies && (req.cookies.jwt_access || req.cookies.accessToken)) {
+            token = req.cookies.jwt_access || req.cookies.accessToken;
+        }
+
+        if (!token) {
             res.status(401).json({ error: 'No token provided' });
             return;
         }
 
-        const token = authHeader.substring(7); // Remove 'Bearer ' prefix
         const payload = verifyAccessToken(token);
 
         req.user = payload;
@@ -41,9 +47,15 @@ export const optionalAuthMiddleware = (
 ): void => {
     try {
         const authHeader = req.headers.authorization;
+        let token: string | undefined;
 
         if (authHeader && authHeader.startsWith('Bearer ')) {
-            const token = authHeader.substring(7);
+            token = authHeader.substring(7);
+        } else if (req.cookies && (req.cookies.jwt_access || req.cookies.accessToken)) {
+            token = req.cookies.jwt_access || req.cookies.accessToken;
+        }
+
+        if (token) {
             const payload = verifyAccessToken(token);
             req.user = payload;
         }

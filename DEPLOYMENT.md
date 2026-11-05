@@ -38,8 +38,8 @@ railway up
 ## 🧪 Running Tests Locally
 Before pushing, it's good practice to run tests locally:
 ```bash
-npm run lint    # Check for code style
-npm test        # Run automated tests
+bun run lint    # Check for code style
+bun run test    # Run automated test suite
 ```
 
 > [!NOTE]

@@ -4,8 +4,15 @@
  * Covers: auth middleware guard + all input validation rules.
  */
 
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, afterAll } from '@jest/globals';
 import jwt from 'jsonwebtoken';
+
+if (process.versions.bun) {
+    const { mock } = await import('bun:test');
+    (jest as any).unstable_mockModule = (modulePath: string, factory: any) => {
+        return mock.module(modulePath, factory);
+    };
+}
 
 // ─── Mock functions ───────────────────────────────────────────────────────────
 
@@ -36,9 +43,8 @@ await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
     authService: { register: jest.fn(), login: jest.fn(), refresh: jest.fn() },
 }));
 
-await jest.unstable_mockModule('../src/services/google-auth.service.js', () => ({
-    googleAuthService: { loginOrRegister: jest.fn() },
-}));
+const { googleAuthService } = await import('../src/services/google-auth.service.js');
+(googleAuthService as any).loginOrRegister = jest.fn();
 
 await jest.unstable_mockModule('../src/services/notification.service.js', () => ({
     notificationService: { createNotification: jest.fn(), getNotifications: jest.fn(), markAsRead: jest.fn(), markAllAsRead: jest.fn(), getUnreadCount: jest.fn() },
@@ -142,6 +148,21 @@ describe('POST /api/v1/entries — input validation', () => {
             .send({ tmdbId: 550, title: 'Test', type: 'MOVIE', rating: 11 });
 
         expect(res.status).toBe(400);
+    });
+
+    it('403 — blocks movie logging if user email is not verified', async () => {
+        const unverifiedToken = jwt.sign(
+            { userId: TEST_USER_ID, email: 'test@example.com', isEmailVerified: false },
+            JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+        const res = await request(app)
+            .post('/api/v1/entries')
+            .set('Authorization', `Bearer ${unverifiedToken}`)
+            .send({ tmdbId: 550, title: 'Test', type: 'MOVIE', watchedAt: new Date().toISOString() });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('email_verification_required');
     });
 
     it('400 — rating below min (< 0)', async () => {
@@ -267,5 +288,12 @@ describe('DELETE /api/v1/entries/:id — param validation', () => {
             .set('Authorization', authHeader);
 
         expect(res.status).toBe(400);
+    });
+
+    afterAll(async () => {
+        if (process.versions.bun) {
+            const { mock } = await import('bun:test');
+            mock.restore();
+        }
     });
 });

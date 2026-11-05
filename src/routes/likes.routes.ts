@@ -80,13 +80,15 @@ router.post('/:entryId', authMiddleware, async (req: Request, res: Response): Pr
                 createdAt: likes.createdAt,
                 user: {
                     username: users.username,
-                    displayName: users.displayName
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl
                 },
                 entry: {
                     id: entries.id,
                     userId: entries.userId,
                     title: entries.title,
                     type: entries.type,
+                    tmdbId: entries.tmdbId
                 }
             })
             .from(likes)
@@ -102,12 +104,17 @@ router.post('/:entryId', authMiddleware, async (req: Request, res: Response): Pr
 
         // Notify and award XP to the entry owner (if not self-like)
         if (like.entry.userId !== userId) {
+            const normMediaType = (like.entry.type || '').toUpperCase() === 'TV_SHOW' ? 'tv' : 'movie';
             await notificationService.createNotification(like.entry.userId, 'LIKE', {
                 actorId: userId,
                 actorName: like.user.displayName || like.user.username,
+                actorAvatar: like.user.profilePictureUrl || null,
                 entryId: like.entry.id,
                 entryTitle: like.entry.title,
-                type: like.entry.type
+                title: like.entry.title,
+                type: like.entry.type,
+                mediaType: normMediaType,
+                tmdbId: like.entry.tmdbId,
             });
 
             // Award XP to the entry owner

@@ -6,6 +6,42 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
 
+const LANGUAGE_LABELS: Record<string, string> = {
+    te: 'Telugu',
+    hi: 'Hindi',
+    en: 'English',
+    ta: 'Tamil',
+    ml: 'Malayalam',
+    kn: 'Kannada',
+    ko: 'Korean',
+    ja: 'Japanese / Anime',
+    es: 'Spanish',
+    fr: 'French',
+};
+
+const GENRE_MAP: Record<string, number> = {
+    'action': 28,
+    'adventure': 12,
+    'animation': 16,
+    'anime': 16,
+    'comedy': 35,
+    'crime': 80,
+    'documentary': 99,
+    'drama': 18,
+    'family': 10751,
+    'fantasy': 14,
+    'history': 36,
+    'horror': 27,
+    'music': 10402,
+    'mystery': 9648,
+    'romance': 10749,
+    'sci-fi': 878,
+    'science fiction': 878,
+    'thriller': 53,
+    'war': 10752,
+    'western': 37,
+};
+
 const router = Router();
 
 /**
@@ -224,7 +260,17 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                     sql`(${entries.postToFeed} IS NOT FALSE)`
                 )
             )
-            .orderBy(desc(entries.updatedAt))
+            .orderBy(
+                desc(
+                    sql`CASE 
+                        WHEN ${entries.isWatching} IS FALSE 
+                             AND ${entries.completedAt} IS NOT NULL 
+                             AND (${entries.startedAt} IS NOT NULL OR ${entries.completedAt} > ${entries.createdAt} + INTERVAL '2 seconds')
+                        THEN ${entries.completedAt} 
+                        ELSE ${entries.createdAt} 
+                    END`
+                )
+            )
             .limit(limit)
             .offset(offset);
 
@@ -241,11 +287,24 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
             return true;
         });
 
-        // Sort chronologically by latest activity date (started watching, completed, reviewed, or logged)
+        // Sort chronologically by post creation date, or completion date for completed watching updates.
+        // Editing/updating an existing entry does NOT bump it to the top.
+        const nowMs = Date.now();
+        const getEffectiveActivityTime = (item: any): number => {
+            const createdMs = item.createdAt ? new Date(item.createdAt).getTime() : (item.watchedAt ? new Date(item.watchedAt).getTime() : nowMs);
+            const completedMs = item.completedAt ? new Date(item.completedAt).getTime() : 0;
+
+            const isCompletedWatchingUpdate = !item.isWatching &&
+                completedMs > 0 &&
+                (item.startedAt || (createdMs > 0 && completedMs - createdMs > 2000));
+
+            const raw = isCompletedWatchingUpdate ? completedMs : createdMs;
+            if (isNaN(raw)) return nowMs;
+            return raw > nowMs ? nowMs : raw;
+        };
+
         const sortedEntries = (deduplicatedRawEntries as any[]).sort((a, b) => {
-            const timeA = new Date(a.updatedAt || a.completedAt || a.startedAt || a.createdAt || a.watchedAt).getTime();
-            const timeB = new Date(b.updatedAt || b.completedAt || b.startedAt || b.createdAt || b.watchedAt).getTime();
-            return timeB - timeA;
+            return getEffectiveActivityTime(b) - getEffectiveActivityTime(a);
         });
 
         // 3. Advanced Suggestions Generation (WatchHive Movie Recommender)
@@ -305,6 +364,66 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 }
             }
 
+            // B. Fetch user preferences for personalized language & genre suggestions
+            const [userRecord] = await db
+                .select({ preferences: users.preferences })
+                .from(users)
+                .where(eq(users.id, userId))
+                .limit(1);
+
+            const userPrefs = (userRecord?.preferences as any) || {};
+            const prefLanguages: string[] = Array.isArray(userPrefs.languages) ? userPrefs.languages : [];
+            const prefGenres: string[] = Array.isArray(userPrefs.genres) ? userPrefs.genres : [];
+            const preferenceRecs: any[] = [];
+
+            // 1. Language-based discovery (e.g. Telugu, Hindi, English)
+            if (prefLanguages.length > 0) {
+                for (const lang of prefLanguages.slice(0, 3)) {
+                    try {
+                        const cleanLang = String(lang).toLowerCase().trim();
+                        const langResult = await tmdbService.discoverMedia({
+                            withOriginalLanguage: cleanLang,
+                            sortBy: 'popularity.desc',
+                            page: 1,
+                        });
+                        if (langResult && langResult.results && langResult.results.length > 0) {
+                            const label = LANGUAGE_LABELS[cleanLang] || cleanLang.toUpperCase();
+                            preferenceRecs.push(...langResult.results.slice(0, 4).map((r: any) => ({
+                                ...r,
+                                reason: `Trending in ${label}`,
+                            })));
+                        }
+                    } catch (langErr) {
+                        console.error(`Failed to discover language media for ${lang}:`, langErr);
+                    }
+                }
+            }
+
+            // 2. Genre-based discovery (e.g. Sci-Fi, Action, Thriller)
+            if (prefGenres.length > 0) {
+                for (const genreName of prefGenres.slice(0, 3)) {
+                    try {
+                        const cleanGenre = String(genreName).toLowerCase().trim();
+                        const genreId = GENRE_MAP[cleanGenre] || (userPrefs.genreIds && userPrefs.genreIds[0]);
+                        if (genreId) {
+                            const genreResult = await tmdbService.discoverMedia({
+                                genreId,
+                                sortBy: 'popularity.desc',
+                                page: 1,
+                            });
+                            if (genreResult && genreResult.results && genreResult.results.length > 0) {
+                                preferenceRecs.push(...genreResult.results.slice(0, 4).map((r: any) => ({
+                                    ...r,
+                                    reason: `Top Pick in ${genreName}`,
+                                })));
+                            }
+                        }
+                    } catch (genreErr) {
+                        console.error(`Failed to discover genre media for ${genreName}:`, genreErr);
+                    }
+                }
+            }
+
             // Global trending items
             let trendingItems: any[] = [];
             try {
@@ -326,8 +445,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                 .where(eq(entries.userId, userId));
             const userWatchedTmdbSet = new Set(userLoggedEntries.map(e => e.tmdbId));
 
-            // Combine: Contextual recommendations first, followed by trending highlights
-            const rawCandidates = [...tmdbRecs, ...trendingItems];
+            // Combine: Preference-based recommendations first, followed by contextual history, then global trending
+            const rawCandidates = [...preferenceRecs, ...tmdbRecs, ...trendingItems];
             const seenIds = new Set<number>();
             suggestions = [];
 
@@ -374,20 +493,51 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         const feedItems: any[] = [];
         let suggestionIndex = (page - 1) * 3;
 
-        const mappedEntries = (sortedEntries as any[]).map(entry => ({
-            type: 'ENTRY',
-            id: entry.id,
-            timestamp: entry.updatedAt || entry.completedAt || entry.startedAt || entry.watchedAt,
-            data: {
-                ...entry,
-                user: entry.user ? formatUserWithAvatar(entry.user) : entry.user,
-                suggestedByUser: entry.suggestedByUser && entry.suggestedByUser.id ? formatUserWithAvatar(entry.suggestedByUser) : null,
-                _count: { likes: entry.likesCount, comments: entry.commentsCount },
-                isLiked: entry.isLiked,
-                isCommented: entry.isCommented,
-                isWatched: watchedTmdbSet.has(`${entry.type}-${entry.tmdbId}`)
+        const mappedEntries = (sortedEntries as any[]).map(entry => {
+            // Guard: sanitize any future timestamps that might have been saved in the past
+            const now = new Date();
+            const nowTime = now.getTime();
+            const sanitizedEntry = { ...entry };
+
+            if (sanitizedEntry.startedAt && new Date(sanitizedEntry.startedAt).getTime() > nowTime) {
+                sanitizedEntry.startedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
             }
-        }));
+            if (sanitizedEntry.completedAt && new Date(sanitizedEntry.completedAt).getTime() > nowTime) {
+                sanitizedEntry.completedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
+            }
+            if (sanitizedEntry.watchedAt && new Date(sanitizedEntry.watchedAt).getTime() > nowTime) {
+                sanitizedEntry.watchedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
+            }
+            if (sanitizedEntry.updatedAt && new Date(sanitizedEntry.updatedAt).getTime() > nowTime) {
+                sanitizedEntry.updatedAt = sanitizedEntry.createdAt && new Date(sanitizedEntry.createdAt).getTime() <= nowTime ? sanitizedEntry.createdAt : now;
+            }
+
+            const isCompletedWatchingUpdate = !sanitizedEntry.isWatching &&
+                sanitizedEntry.completedAt &&
+                (sanitizedEntry.startedAt || (sanitizedEntry.createdAt && new Date(sanitizedEntry.completedAt).getTime() - new Date(sanitizedEntry.createdAt).getTime() > 2000));
+
+            const rawTimestamp = isCompletedWatchingUpdate
+                ? sanitizedEntry.completedAt
+                : (sanitizedEntry.createdAt || sanitizedEntry.watchedAt);
+            const parsedTs = rawTimestamp ? new Date(rawTimestamp) : now;
+            const safeTimestamp = !isNaN(parsedTs.getTime()) && parsedTs.getTime() > nowTime ? now : parsedTs;
+
+            return {
+                type: 'ENTRY',
+                id: sanitizedEntry.id,
+                timestamp: safeTimestamp,
+                data: {
+                    ...sanitizedEntry,
+                    rating: sanitizedEntry.rating ? parseFloat(sanitizedEntry.rating) : null,
+                    user: sanitizedEntry.user ? formatUserWithAvatar(sanitizedEntry.user) : sanitizedEntry.user,
+                    suggestedByUser: sanitizedEntry.suggestedByUser && sanitizedEntry.suggestedByUser.id ? formatUserWithAvatar(sanitizedEntry.suggestedByUser) : null,
+                    _count: { likes: sanitizedEntry.likesCount, comments: sanitizedEntry.commentsCount },
+                    isLiked: sanitizedEntry.isLiked,
+                    isCommented: sanitizedEntry.isCommented,
+                    isWatched: watchedTmdbSet.has(`${sanitizedEntry.type}-${sanitizedEntry.tmdbId}`)
+                }
+            };
+        });
 
         if (mappedEntries.length === 0 && page === 1) {
             // New user with 0 entries & 0 follows: Show full discovery suggestions

@@ -45,9 +45,21 @@ export const users = pgTable('users', {
     xp: integer('xp').default(0).notNull(),
     level: integer('level').default(1).notNull(),
     badges: jsonb('badges').default([]).notNull(),
+    watchStreak: integer('watch_streak').default(0).notNull(),
+    lastWatchDate: text('last_watch_date'),
+    preferences: jsonb('preferences').default({}).notNull(),
+    hasCompletedOnboarding: boolean('has_completed_onboarding').default(false).notNull(),
+    tokenVersion: integer('token_version').default(1).notNull(),
     // Password reset fields — populated only during active reset request
     passwordResetToken: text('password_reset_token'),
     passwordResetExpiresAt: timestamp('password_reset_expires_at'),
+    // Email verification fields
+    isEmailVerified: boolean('is_email_verified').default(false).notNull(),
+    emailVerificationToken: text('email_verification_token'),
+    emailVerificationExpiresAt: timestamp('email_verification_expires_at'),
+    // Account lockout fields (brute force protection)
+    failedLoginAttempts: integer('failed_login_attempts').default(0).notNull(),
+    lockoutUntil: timestamp('lockout_until'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
