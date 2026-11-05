@@ -1,6 +1,6 @@
 import app from './app.js';
 import { config } from './config.js';
-import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { db } from './db/index.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
