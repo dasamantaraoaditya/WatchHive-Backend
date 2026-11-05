@@ -332,7 +332,7 @@ router.get('/tv/:id/season/:seasonNumber', authMiddleware, cacheHeader(604800, 8
  *       200:
  *         description: Popular movies list
  */
-router.get('/popular/movies', authMiddleware, cacheHeader(7200, 3600), async (req: Request, res: Response): Promise<void> => {
+router.get(['/popular', '/popular/movies'], authMiddleware, cacheHeader(7200, 3600), async (req: Request, res: Response): Promise<void> => {
     try {
         const { page } = req.query;
         const pageNum = page ? parseInt(page as string, 10) : 1;
