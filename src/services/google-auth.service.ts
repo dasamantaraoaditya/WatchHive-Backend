@@ -300,7 +300,7 @@ export const googleAuthService = {
             displayName: user.displayName,
             profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
             hasGoogleLinked: true,
-            hasAppleLinked: Boolean(user.appleId),
+            hasAppleLinked: false,
             hasPassword: false,
             isEmailVerified: true,
             preferences: user.preferences,

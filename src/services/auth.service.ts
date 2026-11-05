@@ -50,13 +50,13 @@ export interface AuthUser {
     notifyFollowingActivity?: boolean;
     xp?: number;
     level?: number;
-    badges?: any[];
+    badges?: any;
     watchStreak?: number;
     lastWatchDate?: string | null;
     preferences?: any;
     hasCompletedOnboarding?: boolean;
     hasGoogleLinked: boolean;
-    hasAppleLinked?: boolean;
+    hasAppleLinked: boolean;
     hasPassword: boolean;
     isEmailVerified: boolean;
     entriesCount?: number;
@@ -140,9 +140,10 @@ export async function getFullAuthUser(userId: string): Promise<AuthUser | null> 
 
         return {
             ...safeUser,
+            badges: (userResult.badges as any[]) || [],
             watchStreak: activeStreak,
             hasGoogleLinked: !!googleId,
-            hasAppleLinked: !!appleId,
+            hasAppleLinked: Boolean(appleId),
             hasPassword: !!passwordHash,
             profilePictureUrl: resolveAvatarUrl(userResult.profilePictureUrl),
             entriesCount: Number(userResult.entriesCount) || 0,
@@ -424,7 +425,7 @@ export const authService = {
             displayName: user.displayName,
             profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
             hasGoogleLinked: !!user.googleId,
-            hasAppleLinked: !!user.appleId,
+            hasAppleLinked: false,
             hasPassword: true,
             isEmailVerified: user.isEmailVerified,
             preferences: user.preferences,
@@ -731,7 +732,7 @@ export const authService = {
             displayName: user.displayName,
             profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
             hasGoogleLinked: !!user.googleId,
-            hasAppleLinked: !!user.appleId,
+            hasAppleLinked: false,
             hasPassword: !!user.passwordHash,
             isEmailVerified: true,
             preferences: user.preferences,
@@ -1034,7 +1035,7 @@ export const authService = {
             displayName: user.displayName,
             profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
             hasGoogleLinked: !!user.googleId,
-            hasAppleLinked: !!user.appleId,
+            hasAppleLinked: false,
             hasPassword: false,
             isEmailVerified: true,
             preferences: user.preferences,
