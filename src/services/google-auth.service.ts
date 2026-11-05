@@ -2,12 +2,14 @@ import { OAuth2Client } from 'google-auth-library';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { emailMatchSql, cleanEmail } from '../utils/email.util.js';
 import {
     generateAccessToken,
     generateRefreshToken,
 } from '../utils/jwt.util.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
+import { getFullAuthUser } from './auth.service.js';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '357857516251-f4gpp8f1j70lu1dcnh405ac0t6lch9tf.apps.googleusercontent.com';
 const GOOGLE_ANDROID_CLIENT_ID = process.env.GOOGLE_ANDROID_CLIENT_ID || '357857516251-hg78ol78gmbornatbm11dro3fof7am1m.apps.googleusercontent.com';
@@ -76,7 +78,7 @@ export const googleAuthService = {
 
             return {
                 googleId: payload.sub,
-                email: payload.email.toLowerCase().trim(),
+                email: cleanEmail(payload.email),
                 name: payload.name || payload.email.split('@')[0],
                 picture: payload.picture,
             };
@@ -99,7 +101,7 @@ export const googleAuthService = {
                         console.log('[GoogleAuth] Fallback tokeninfo verification succeeded for:', data.email);
                         return {
                             googleId: data.sub,
-                            email: (data.email as string).toLowerCase().trim(),
+                            email: cleanEmail(data.email as string),
                             name: data.name || (data.email as string).split('@')[0],
                             picture: data.picture,
                         };
@@ -174,7 +176,7 @@ export const googleAuthService = {
                     hasCompletedOnboarding: users.hasCompletedOnboarding,
                 })
                 .from(users)
-                .where(eq(users.email, googlePayload.email))
+                .where(emailMatchSql(users.email, googlePayload.email))
                 .limit(1);
 
             if (existingEmailUser) {
@@ -290,19 +292,23 @@ export const googleAuthService = {
             isEmailVerified: true,
         });
 
+        const fullUser = await getFullAuthUser(user.id);
+        const resolvedUser = fullUser || {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            displayName: user.displayName,
+            profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
+            hasGoogleLinked: true,
+            hasAppleLinked: false,
+            hasPassword: false,
+            isEmailVerified: true,
+            preferences: user.preferences,
+            hasCompletedOnboarding: user.hasCompletedOnboarding,
+        };
+
         return {
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                displayName: user.displayName,
-                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
-                hasGoogleLinked: true,
-                hasPassword: false, // will be refreshed via getMe() in AuthContext
-                isEmailVerified: true,
-                preferences: user.preferences,
-                hasCompletedOnboarding: user.hasCompletedOnboarding,
-            },
+            user: resolvedUser,
             accessToken,
             refreshToken,
             isNewUser,

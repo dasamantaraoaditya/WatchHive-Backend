@@ -7,6 +7,7 @@ import { users, follows, entries, lists, listItems, followRequests, blockedUsers
 import { eq, or, and, ilike, not, count, exists, desc, sql } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 import { friendRecommendationService } from '../services/friend-recommendation.service.js';
+import { getFullAuthUser } from '../services/auth.service.js';
 
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import multerS3 from 'multer-s3';
@@ -87,70 +88,11 @@ const upload = multer({
 router.get('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user!.userId;
+        const user = await getFullAuthUser(userId);
 
-        const [userResult] = await db
-            .select({
-                id: users.id,
-                username: users.username,
-                email: users.email,
-                displayName: users.displayName,
-                bio: users.bio,
-                profilePictureUrl: users.profilePictureUrl,
-                location: users.location,
-                isPrivate: users.isPrivate,
-                privacyLevel: users.privacyLevel,
-                showWatchEntries: users.showWatchEntries,
-                showCurrentlyWatching: users.showCurrentlyWatching,
-                showWatchlist: users.showWatchlist,
-                showRankings: users.showRankings,
-                notifyFollowingActivity: users.notifyFollowingActivity,
-                xp: users.xp,
-                level: users.level,
-                badges: users.badges,
-                watchStreak: users.watchStreak,
-                lastWatchDate: users.lastWatchDate,
-                preferences: users.preferences,
-                hasCompletedOnboarding: users.hasCompletedOnboarding,
-                createdAt: users.createdAt,
-                updatedAt: users.updatedAt,
-                entriesCount: count(entries.id),
-                googleId: users.googleId,
-                passwordHash: users.passwordHash,
-                isEmailVerified: users.isEmailVerified,
-            })
-            .from(users)
-            .leftJoin(entries, eq(entries.userId, users.id))
-            .where(eq(users.id, userId))
-            .groupBy(users.id)
-            .limit(1);
-
-        if (!userResult) {
+        if (!user) {
             throw new AppError('User not found', 404);
         }
-
-        // Compute active streak (streak is active if last watch was today or yesterday)
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-        const isStreakAlive = userResult.lastWatchDate === todayStr || userResult.lastWatchDate === yesterdayStr;
-        const activeStreak = isStreakAlive ? (userResult.watchStreak || 0) : 0;
-
-        // Strip sensitive fields; expose computed boolean flags instead
-        const { googleId, passwordHash, ...safeUser } = userResult;
-
-        const user = {
-            ...safeUser,
-            watchStreak: activeStreak,
-            hasGoogleLinked: !!googleId,
-            hasPassword: !!passwordHash,
-            _count: {
-                entries: Number(userResult.entriesCount),
-                followers: 0, // Placeholder or fetch separately if needed
-                following: 0,
-            }
-        };
-
-        // Generate signed URL for avatar
-        user.profilePictureUrl = await getAvatarUrl(user.profilePictureUrl);
 
         res.json(user);
     } catch (error) {

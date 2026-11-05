@@ -41,6 +41,7 @@ await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
         requestEmailOtp: mockRequestEmailOtp,
         verifyEmailOtp: mockVerifyEmailOtp,
     },
+    getFullAuthUser: jest.fn(),
 }));
 
 const { googleAuthService } = await import('../src/services/google-auth.service.js');
