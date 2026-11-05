@@ -3,8 +3,15 @@
  * Uses jest.unstable_mockModule (ESM-native) + dynamic import for correct hoisting.
  */
 
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, afterAll } from '@jest/globals';
 import type { AuthResponse } from '../src/services/auth.service.js';
+
+if (process.versions.bun) {
+    const { mock } = await import('bun:test');
+    (jest as any).unstable_mockModule = (modulePath: string, factory: any) => {
+        return mock.module(modulePath, factory);
+    };
+}
 
 // ─── Mock functions ───────────────────────────────────────────────────────────
 
@@ -32,9 +39,8 @@ await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
     },
 }));
 
-await jest.unstable_mockModule('../src/services/google-auth.service.js', () => ({
-    googleAuthService: { loginOrRegister: mockGoogleLogin },
-}));
+const { googleAuthService } = await import('../src/services/google-auth.service.js');
+(googleAuthService as any).loginOrRegister = mockGoogleLogin;
 
 await jest.unstable_mockModule('../src/db/index.js', () => ({
     db: {},
@@ -437,5 +443,12 @@ describe('Email Verification', () => {
 
         expect(res.status).toBe(200);
         expect(res.body.emailSent).toBe(true);
+    });
+
+    afterAll(async () => {
+        if (process.versions.bun) {
+            const { mock } = await import('bun:test');
+            mock.restore();
+        }
     });
 });
