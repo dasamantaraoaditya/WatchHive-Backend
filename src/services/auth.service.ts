@@ -81,57 +81,58 @@ export interface AuthResponse {
  */
 export async function getFullAuthUser(userId: string): Promise<AuthUser | null> {
     try {
-        const [userResult] = await db
-            .select({
-                id: users.id,
-                username: users.username,
-                email: users.email,
-                displayName: users.displayName,
-                bio: users.bio,
-                profilePictureUrl: users.profilePictureUrl,
-                location: users.location,
-                isPrivate: users.isPrivate,
-                privacyLevel: users.privacyLevel,
-                showWatchEntries: users.showWatchEntries,
-                showCurrentlyWatching: users.showCurrentlyWatching,
-                showWatchlist: users.showWatchlist,
-                showRankings: users.showRankings,
-                notifyFollowingActivity: users.notifyFollowingActivity,
-                xp: users.xp,
-                level: users.level,
-                badges: users.badges,
-                watchStreak: users.watchStreak,
-                lastWatchDate: users.lastWatchDate,
-                preferences: users.preferences,
-                hasCompletedOnboarding: users.hasCompletedOnboarding,
-                createdAt: users.createdAt,
-                updatedAt: users.updatedAt,
-                entriesCount: count(entries.id),
-                googleId: users.googleId,
-                appleId: users.appleId,
-                passwordHash: users.passwordHash,
-                isEmailVerified: users.isEmailVerified,
-            })
-            .from(users)
-            .leftJoin(entries, eq(entries.userId, users.id))
-            .where(eq(users.id, userId))
-            .groupBy(users.id)
-            .limit(1);
+        const [
+            userRows,
+            followersRes,
+            followingRes
+        ] = await Promise.all([
+            db
+                .select({
+                    id: users.id,
+                    username: users.username,
+                    email: users.email,
+                    displayName: users.displayName,
+                    bio: users.bio,
+                    profilePictureUrl: users.profilePictureUrl,
+                    location: users.location,
+                    isPrivate: users.isPrivate,
+                    privacyLevel: users.privacyLevel,
+                    showWatchEntries: users.showWatchEntries,
+                    showCurrentlyWatching: users.showCurrentlyWatching,
+                    showWatchlist: users.showWatchlist,
+                    showRankings: users.showRankings,
+                    notifyFollowingActivity: users.notifyFollowingActivity,
+                    xp: users.xp,
+                    level: users.level,
+                    badges: users.badges,
+                    watchStreak: users.watchStreak,
+                    lastWatchDate: users.lastWatchDate,
+                    preferences: users.preferences,
+                    hasCompletedOnboarding: users.hasCompletedOnboarding,
+                    createdAt: users.createdAt,
+                    updatedAt: users.updatedAt,
+                    entriesCount: count(entries.id),
+                    googleId: users.googleId,
+                    appleId: users.appleId,
+                    passwordHash: users.passwordHash,
+                    isEmailVerified: users.isEmailVerified,
+                })
+                .from(users)
+                .leftJoin(entries, eq(entries.userId, users.id))
+                .where(eq(users.id, userId))
+                .groupBy(users.id)
+                .limit(1),
+            db.select({ followersCount: count() }).from(follows).where(eq(follows.followingId, userId)),
+            db.select({ followingCount: count() }).from(follows).where(eq(follows.followerId, userId)),
+        ]);
 
+        const userResult = userRows[0];
         if (!userResult) return null;
 
         const todayStr = new Date().toISOString().slice(0, 10);
         const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
         const isStreakAlive = userResult.lastWatchDate === todayStr || userResult.lastWatchDate === yesterdayStr;
         const activeStreak = isStreakAlive ? (userResult.watchStreak || 0) : 0;
-
-        const [
-            followersRes,
-            followingRes
-        ] = await Promise.all([
-            db.select({ followersCount: count() }).from(follows).where(eq(follows.followingId, userId)),
-            db.select({ followingCount: count() }).from(follows).where(eq(follows.followerId, userId)),
-        ]);
 
         const followersCount = followersRes[0]?.followersCount ?? 0;
         const followingCount = followingRes[0]?.followingCount ?? 0;

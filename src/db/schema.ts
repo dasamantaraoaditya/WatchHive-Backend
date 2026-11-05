@@ -12,7 +12,7 @@ import {
     index,
     pgEnum
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 // Enums
 export const entryTypeEnum = pgEnum('EntryType', ['MOVIE', 'TV_SHOW', 'EPISODE']);
@@ -62,7 +62,12 @@ export const users = pgTable('users', {
     lockoutUntil: timestamp('lockout_until'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+    emailLowerIndex: index('users_email_lower_idx').on(sql`LOWER(${table.email})`),
+    usernameLowerIndex: index('users_username_lower_idx').on(sql`LOWER(${table.username})`),
+    googleIdIndex: index('users_google_id_idx').on(table.googleId),
+    xpIndex: index('users_xp_idx').on(table.xp),
+}));
 
 // Entries Table
 export const entries = pgTable('entries', {
@@ -92,6 +97,9 @@ export const entries = pgTable('entries', {
     watchedAtIndex: index('entries_watched_at_idx').on(table.watchedAt),
     tmdbIndex: index('entries_tmdb_id_idx').on(table.tmdbId),
     suggestedByIndex: index('entries_suggested_by_user_id_idx').on(table.suggestedByUserId),
+    createdAtIndex: index('entries_created_at_idx').on(table.createdAt),
+    userCreatedIndex: index('entries_user_created_idx').on(table.userId, table.createdAt),
+    userTmdbIndex: index('entries_user_tmdb_idx').on(table.userId, table.tmdbId),
 }));
 
 // Follows Table
@@ -246,6 +254,8 @@ export const blockedUsers = pgTable('blocked_users', {
     createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({
     uniqueBlock: unique().on(table.blockerId, table.blockedId),
+    blockedIdIndex: index('blocked_users_blocked_id_idx').on(table.blockedId),
+    blockerIdIndex: index('blocked_users_blocker_id_idx').on(table.blockerId),
 }));
 
 // Relations Definitions

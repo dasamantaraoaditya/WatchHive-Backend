@@ -424,64 +424,65 @@ function determineCognitiveArchetype(
  */
 async function computeSuggestionAnalytics(userId: string, globalUserRating: number) {
     try {
-        // 1. Fetch suggestions sent to this user
-        const receivedSuggestions = await db
-            .select({
-                id: suggestions.id,
-                fromUserId: suggestions.fromUserId,
-                tmdbId: suggestions.tmdbId,
-                mediaType: suggestions.mediaType,
-                createdAt: suggestions.createdAt,
-                fromUser: {
-                    id: users.id,
-                    username: users.username,
-                    displayName: users.displayName,
-                    profilePictureUrl: users.profilePictureUrl,
-                }
-            })
-            .from(suggestions)
-            .innerJoin(users, eq(suggestions.fromUserId, users.id))
-            .where(eq(suggestions.toUserId, userId));
-
-        // 2. Fetch user's entries that have suggestedByUserId
         const suggestorAlias = aliasedTable(users, 'suggestor_user');
-        const suggestedEntries = await db
-            .select({
-                id: entries.id,
-                suggestedByUserId: entries.suggestedByUserId,
-                rating: entries.rating,
-                isWatching: entries.isWatching,
-                review: entries.review,
-                suggestor: {
-                    id: suggestorAlias.id,
-                    username: suggestorAlias.username,
-                    displayName: suggestorAlias.displayName,
-                    profilePictureUrl: suggestorAlias.profilePictureUrl,
-                }
-            })
-            .from(entries)
-            .innerJoin(suggestorAlias, eq(entries.suggestedByUserId, suggestorAlias.id))
-            .where(and(eq(entries.userId, userId), isNotNull(entries.suggestedByUserId)));
 
-        // 3. Fetch user's watchlist items that have suggestedByUserId
-        const userWatchlist = await db.query.lists.findFirst({
-            where: and(eq(lists.userId, userId), eq(lists.name, 'Watchlist')),
-            with: {
-                items: {
-                    where: isNotNull(listItems.suggestedByUserId),
-                    with: {
-                        suggestedByUser: {
-                            columns: {
-                                id: true,
-                                username: true,
-                                displayName: true,
-                                profilePictureUrl: true,
+        // Fetch received suggestions, suggested entries, and watchlist items concurrently
+        const [receivedSuggestions, suggestedEntries, userWatchlist] = await Promise.all([
+            db
+                .select({
+                    id: suggestions.id,
+                    fromUserId: suggestions.fromUserId,
+                    tmdbId: suggestions.tmdbId,
+                    mediaType: suggestions.mediaType,
+                    createdAt: suggestions.createdAt,
+                    fromUser: {
+                        id: users.id,
+                        username: users.username,
+                        displayName: users.displayName,
+                        profilePictureUrl: users.profilePictureUrl,
+                    }
+                })
+                .from(suggestions)
+                .innerJoin(users, eq(suggestions.fromUserId, users.id))
+                .where(eq(suggestions.toUserId, userId)),
+
+            db
+                .select({
+                    id: entries.id,
+                    suggestedByUserId: entries.suggestedByUserId,
+                    rating: entries.rating,
+                    isWatching: entries.isWatching,
+                    review: entries.review,
+                    suggestor: {
+                        id: suggestorAlias.id,
+                        username: suggestorAlias.username,
+                        displayName: suggestorAlias.displayName,
+                        profilePictureUrl: suggestorAlias.profilePictureUrl,
+                    }
+                })
+                .from(entries)
+                .innerJoin(suggestorAlias, eq(entries.suggestedByUserId, suggestorAlias.id))
+                .where(and(eq(entries.userId, userId), isNotNull(entries.suggestedByUserId))),
+
+            db.query.lists.findFirst({
+                where: and(eq(lists.userId, userId), eq(lists.name, 'Watchlist')),
+                with: {
+                    items: {
+                        where: isNotNull(listItems.suggestedByUserId),
+                        with: {
+                            suggestedByUser: {
+                                columns: {
+                                    id: true,
+                                    username: true,
+                                    displayName: true,
+                                    profilePictureUrl: true,
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
+            })
+        ]);
 
         const watchlistSuggestedItems = userWatchlist?.items || [];
 
@@ -874,23 +875,26 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
     try {
         const userId = req.user!.userId;
 
-        // Fetch user watch history (up to 1,000 entries)
-        const userEntries = await db
-            .select({
-                id: entries.id,
-                title: entries.title,
-                type: entries.type,
-                watchedAt: entries.watchedAt,
-                tags: entries.tags,
-                rating: entries.rating,
-                review: entries.review,
-                isRewatch: entries.isRewatch,
-                tmdbId: entries.tmdbId,
-            })
-            .from(entries)
-            .where(eq(entries.userId, userId))
-            .orderBy(desc(entries.watchedAt))
-            .limit(1000);
+        // Fetch user watch history (up to 1,000 entries) and suggestion network concurrently
+        const [userEntries, suggestionAnalytics] = await Promise.all([
+            db
+                .select({
+                    id: entries.id,
+                    title: entries.title,
+                    type: entries.type,
+                    watchedAt: entries.watchedAt,
+                    tags: entries.tags,
+                    rating: entries.rating,
+                    review: entries.review,
+                    isRewatch: entries.isRewatch,
+                    tmdbId: entries.tmdbId,
+                })
+                .from(entries)
+                .where(eq(entries.userId, userId))
+                .orderBy(desc(entries.watchedAt))
+                .limit(1000),
+            computeSuggestionAnalytics(userId, 7.2)
+        ]);
 
         // Milestone Stage Determination
         const totalEntries = userEntries.length;
@@ -915,10 +919,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
         // 3. Affective State (Russell's Circumplex Model) over last 7 watches
         const affectiveState = computeAffectiveState(userEntries);
 
-        // 4. Recommender Network & Social Suggestion Concordance
-        const suggestionAnalytics = await computeSuggestionAnalytics(userId, criticalRigor.averageRating);
-
-        // 5. Cognitive Archetype Selection
+        // 4. Cognitive Archetype Selection
         const selectedArchetype = determineCognitiveArchetype(userEntries, tasteBreadth, criticalRigor, suggestionAnalytics);
 
         // 6. Time of Day Distribution

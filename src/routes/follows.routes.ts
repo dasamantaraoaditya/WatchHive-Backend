@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { users, follows, followRequests, notifications } from '../db/schema.js';
 import { eq, and, or, desc, count, ilike } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
+import { friendRecommendationService } from '../services/friend-recommendation.service.js';
 import { formatUserWithAvatar, formatUsersWithAvatar } from '../utils/avatar.util.js';
 
 const router = Router();
@@ -119,6 +120,7 @@ router.post('/:userId', authMiddleware, async (req: Request, res: Response): Pro
         } else {
             // Direct instant follow for public accounts
             await db.insert(follows).values({ followerId, followingId }).onConflictDoNothing();
+            friendRecommendationService.invalidateCache(followerId);
 
             await notificationService.createNotification(followingId, 'FOLLOW', {
                 actorId: followerId,
@@ -412,6 +414,8 @@ router.delete('/:userId', authMiddleware, async (req: Request, res: Response): P
         await db
             .delete(follows)
             .where(and(eq(follows.followerId, followerId), eq(follows.followingId, followingId)));
+
+        friendRecommendationService.invalidateCache(followerId);
 
         res.json({ message: 'Successfully unfollowed user' });
     } catch (error) {

@@ -44,6 +44,9 @@ const GENRE_MAP: Record<string, number> = {
 
 const router = Router();
 
+// In-memory cache for feed recommendations (5-minute TTL)
+const userFeedSuggestionsCache = new Map<string, { data: any[]; expiresAt: number }>();
+
 /**
  * @openapi
  * tags:
@@ -168,27 +171,27 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         const limit = parseInt(req.query.limit as string) || 20;
         const offset = (page - 1) * limit;
 
-        // 1. Get followed user IDs
-        const followList = await db
-            .select({ followingId: follows.followingId })
-            .from(follows)
-            .where(eq(follows.followerId, userId));
+        // 1. Get followed user IDs and blocks concurrently
+        const [followList, blocks] = await Promise.all([
+            db
+                .select({ followingId: follows.followingId })
+                .from(follows)
+                .where(eq(follows.followerId, userId)),
+            db
+                .select({
+                    blockerId: blockedUsers.blockerId,
+                    blockedId: blockedUsers.blockedId,
+                })
+                .from(blockedUsers)
+                .where(
+                    or(
+                        eq(blockedUsers.blockerId, userId),
+                        eq(blockedUsers.blockedId, userId)
+                    )
+                )
+        ]);
 
         const followedIds = followList.map(f => f.followingId);
-
-        // 1.1 Exclude blocked users (either blocked by userId or blocking userId)
-        const blocks = await db
-            .select({
-                blockerId: blockedUsers.blockerId,
-                blockedId: blockedUsers.blockedId,
-            })
-            .from(blockedUsers)
-            .where(
-                or(
-                    eq(blockedUsers.blockerId, userId),
-                    eq(blockedUsers.blockedId, userId)
-                )
-            );
 
         const blockedUserIds = new Set(
             blocks.flatMap(b => [b.blockerId, b.blockedId]).filter(id => id !== userId)
@@ -309,163 +312,152 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
 
         // 3. Advanced Suggestions Generation (WatchHive Movie Recommender)
         let suggestions: any[] = [];
+        const cachedSuggestions = userFeedSuggestionsCache.get(userId);
+        if (cachedSuggestions && cachedSuggestions.expiresAt > Date.now()) {
+            suggestions = cachedSuggestions.data;
+        } else {
+            try {
+                // Fetch recent entries, preferences, and logged entries concurrently
+                const [userRecentEntries, userRecordRows, userLoggedEntries] = await Promise.all([
+                    db
+                        .select({
+                            id: entries.id,
+                            tmdbId: entries.tmdbId,
+                            title: entries.title,
+                            type: entries.type,
+                        })
+                        .from(entries)
+                        .where(eq(entries.userId, userId))
+                        .orderBy(desc(sql`COALESCE(${entries.updatedAt}, ${entries.completedAt}, ${entries.startedAt}, ${entries.createdAt}, ${entries.watchedAt})`))
+                        .limit(3),
+                    db
+                        .select({ preferences: users.preferences })
+                        .from(users)
+                        .where(eq(users.id, userId))
+                        .limit(1),
+                    db
+                        .select({ tmdbId: entries.tmdbId })
+                        .from(entries)
+                        .where(eq(entries.userId, userId))
+                ]);
 
-        try {
-            // A. Fetch the user's most recent entries for contextual suggestions
-            const userRecentEntries = await db
-                .select({
-                    id: entries.id,
-                    tmdbId: entries.tmdbId,
-                    title: entries.title,
-                    type: entries.type,
-                })
-                .from(entries)
-                .where(eq(entries.userId, userId))
-                .orderBy(desc(sql`COALESCE(${entries.updatedAt}, ${entries.completedAt}, ${entries.startedAt}, ${entries.createdAt}, ${entries.watchedAt})`))
-                .limit(3);
+                const userPrefs = (userRecordRows[0]?.preferences as any) || {};
+                const prefLanguages: string[] = Array.isArray(userPrefs.languages) ? userPrefs.languages : [];
+                const prefGenres: string[] = Array.isArray(userPrefs.genres) ? userPrefs.genres : [];
 
-            const tmdbRecs: any[] = [];
+                // Build all TMDB requests to run concurrently via Promise.allSettled
+                const fetchTasks: Promise<any[]>[] = [];
 
-            // Fetch TMDb recommendations for the user's primary/latest watched title
-            if (userRecentEntries.length > 0) {
-                const primaryEntry = userRecentEntries[0];
-                try {
-                    const recs = primaryEntry.type === 'TV_SHOW'
-                        ? await tmdbService.getTVShowRecommendations(primaryEntry.tmdbId)
-                        : await tmdbService.getMovieRecommendations(primaryEntry.tmdbId);
-
-                    if (recs && recs.results && recs.results.length > 0) {
-                        tmdbRecs.push(...recs.results.map((r: any) => ({
-                            ...r,
-                            reason: `Because you watched ${primaryEntry.title}`
-                        })));
-                    }
-                } catch (recErr) {
-                    console.error(`Failed to fetch recommendations for ${primaryEntry.title}:`, recErr);
-                }
-
-                // If primary produced few recs and a 2nd recent entry exists, fetch for it too
-                if (tmdbRecs.length < 6 && userRecentEntries.length > 1) {
-                    const secondaryEntry = userRecentEntries[1];
-                    try {
-                        const recs = secondaryEntry.type === 'TV_SHOW'
-                            ? await tmdbService.getTVShowRecommendations(secondaryEntry.tmdbId)
-                            : await tmdbService.getMovieRecommendations(secondaryEntry.tmdbId);
-
-                        if (recs && recs.results && recs.results.length > 0) {
-                            tmdbRecs.push(...recs.results.map((r: any) => ({
+                // Contextual recommendations
+                if (userRecentEntries.length > 0) {
+                    const primaryEntry = userRecentEntries[0];
+                    fetchTasks.push(
+                        (primaryEntry.type === 'TV_SHOW'
+                            ? tmdbService.getTVShowRecommendations(primaryEntry.tmdbId)
+                            : tmdbService.getMovieRecommendations(primaryEntry.tmdbId)
+                        ).then((recs: any) =>
+                            recs?.results?.map((r: any) => ({
                                 ...r,
-                                reason: `Because you watched ${secondaryEntry.title}`
-                            })));
-                        }
-                    } catch {
-                        // Ignore secondary errors
+                                reason: `Because you watched ${primaryEntry.title}`
+                            })) || []
+                        ).catch(() => [])
+                    );
+
+                    if (userRecentEntries.length > 1) {
+                        const secondaryEntry = userRecentEntries[1];
+                        fetchTasks.push(
+                            (secondaryEntry.type === 'TV_SHOW'
+                                ? tmdbService.getTVShowRecommendations(secondaryEntry.tmdbId)
+                                : tmdbService.getMovieRecommendations(secondaryEntry.tmdbId)
+                            ).then((recs: any) =>
+                                recs?.results?.map((r: any) => ({
+                                    ...r,
+                                    reason: `Because you watched ${secondaryEntry.title}`
+                                })) || []
+                            ).catch(() => [])
+                        );
                     }
                 }
-            }
 
-            // B. Fetch user preferences for personalized language & genre suggestions
-            const [userRecord] = await db
-                .select({ preferences: users.preferences })
-                .from(users)
-                .where(eq(users.id, userId))
-                .limit(1);
-
-            const userPrefs = (userRecord?.preferences as any) || {};
-            const prefLanguages: string[] = Array.isArray(userPrefs.languages) ? userPrefs.languages : [];
-            const prefGenres: string[] = Array.isArray(userPrefs.genres) ? userPrefs.genres : [];
-            const preferenceRecs: any[] = [];
-
-            // 1. Language-based discovery (e.g. Telugu, Hindi, English)
-            if (prefLanguages.length > 0) {
+                // Language discovery
                 for (const lang of prefLanguages.slice(0, 3)) {
-                    try {
-                        const cleanLang = String(lang).toLowerCase().trim();
-                        const langResult = await tmdbService.discoverMedia({
+                    const cleanLang = String(lang).toLowerCase().trim();
+                    const label = LANGUAGE_LABELS[cleanLang] || cleanLang.toUpperCase();
+                    fetchTasks.push(
+                        tmdbService.discoverMedia({
                             withOriginalLanguage: cleanLang,
                             sortBy: 'popularity.desc',
                             page: 1,
-                        });
-                        if (langResult && langResult.results && langResult.results.length > 0) {
-                            const label = LANGUAGE_LABELS[cleanLang] || cleanLang.toUpperCase();
-                            preferenceRecs.push(...langResult.results.slice(0, 4).map((r: any) => ({
+                        }).then((res: any) =>
+                            res?.results?.slice(0, 4).map((r: any) => ({
                                 ...r,
                                 reason: `Trending in ${label}`,
-                            })));
-                        }
-                    } catch (langErr) {
-                        console.error(`Failed to discover language media for ${lang}:`, langErr);
-                    }
+                            })) || []
+                        ).catch(() => [])
+                    );
                 }
-            }
 
-            // 2. Genre-based discovery (e.g. Sci-Fi, Action, Thriller)
-            if (prefGenres.length > 0) {
+                // Genre discovery
                 for (const genreName of prefGenres.slice(0, 3)) {
-                    try {
-                        const cleanGenre = String(genreName).toLowerCase().trim();
-                        const genreId = GENRE_MAP[cleanGenre] || (userPrefs.genreIds && userPrefs.genreIds[0]);
-                        if (genreId) {
-                            const genreResult = await tmdbService.discoverMedia({
+                    const cleanGenre = String(genreName).toLowerCase().trim();
+                    const genreId = GENRE_MAP[cleanGenre] || (userPrefs.genreIds && userPrefs.genreIds[0]);
+                    if (genreId) {
+                        fetchTasks.push(
+                            tmdbService.discoverMedia({
                                 genreId,
                                 sortBy: 'popularity.desc',
                                 page: 1,
-                            });
-                            if (genreResult && genreResult.results && genreResult.results.length > 0) {
-                                preferenceRecs.push(...genreResult.results.slice(0, 4).map((r: any) => ({
+                            }).then((res: any) =>
+                                res?.results?.slice(0, 4).map((r: any) => ({
                                     ...r,
                                     reason: `Top Pick in ${genreName}`,
-                                })));
-                            }
-                        }
-                    } catch (genreErr) {
-                        console.error(`Failed to discover genre media for ${genreName}:`, genreErr);
+                                })) || []
+                            ).catch(() => [])
+                        );
                     }
                 }
-            }
 
-            // Global trending items
-            let trendingItems: any[] = [];
-            try {
-                const globalTrending = await tmdbService.getTrending('all', 'week');
-                if (globalTrending && globalTrending.results) {
-                    trendingItems = globalTrending.results.map((r: any) => ({
-                        ...r,
-                        reason: "Trending this week"
-                    }));
+                // Global trending
+                fetchTasks.push(
+                    tmdbService.getTrending('all', 'week').then((res: any) =>
+                        res?.results?.map((r: any) => ({
+                            ...r,
+                            reason: 'Trending this week'
+                        })) || []
+                    ).catch(() => [])
+                );
+
+                const taskResults = await Promise.allSettled(fetchTasks);
+                const rawCandidates: any[] = [];
+                for (const res of taskResults) {
+                    if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+                        rawCandidates.push(...res.value);
+                    }
                 }
-            } catch (trendErr) {
-                console.error("Failed to fetch trending for feed suggestions", trendErr);
-            }
 
-            // Fetch all tmdbIds this user has logged so we never recommend titles they've already seen
-            const userLoggedEntries = await db
-                .select({ tmdbId: entries.tmdbId })
-                .from(entries)
-                .where(eq(entries.userId, userId));
-            const userWatchedTmdbSet = new Set(userLoggedEntries.map(e => e.tmdbId));
-
-            // Combine: Preference-based recommendations first, followed by contextual history, then global trending
-            const rawCandidates = [...preferenceRecs, ...tmdbRecs, ...trendingItems];
-            const seenIds = new Set<number>();
-            suggestions = [];
-
-            for (const item of rawCandidates) {
-                if (!item || !item.id) continue;
-                if (userWatchedTmdbSet.has(item.id)) continue;
-                if (seenIds.has(item.id)) continue;
-                seenIds.add(item.id);
-                suggestions.push(item);
-            }
-
-        } catch (err) {
-            console.error('Failed to fetch advanced suggestions', err);
-            try {
-                const fallback = await tmdbService.getTrending('all', 'week');
-                suggestions = (fallback?.results || []).map((r: any) => ({ ...r, reason: "Trending Now" }));
-            } catch (fallbackErr) {
-                console.error('Fallback also failed:', fallbackErr);
+                const userWatchedTmdbSet = new Set(userLoggedEntries.map(e => e.tmdbId));
+                const seenIds = new Set<number>();
                 suggestions = [];
+
+                for (const item of rawCandidates) {
+                    if (!item || !item.id) continue;
+                    if (userWatchedTmdbSet.has(item.id)) continue;
+                    if (seenIds.has(item.id)) continue;
+                    seenIds.add(item.id);
+                    suggestions.push(item);
+                }
+
+                // Cache for 5 minutes
+                userFeedSuggestionsCache.set(userId, { data: suggestions, expiresAt: Date.now() + 5 * 60 * 1000 });
+            } catch (err) {
+                console.error('Failed to fetch advanced suggestions', err);
+                try {
+                    const fallback = await tmdbService.getTrending('all', 'week');
+                    suggestions = (fallback?.results || []).map((r: any) => ({ ...r, reason: "Trending Now" }));
+                } catch (fallbackErr) {
+                    console.error('Fallback also failed:', fallbackErr);
+                    suggestions = [];
+                }
             }
         }
 
