@@ -23,6 +23,8 @@ const mockForgotPassword = jest.fn<() => Promise<{ message: string; emailSent: b
 const mockResetPassword = jest.fn<() => Promise<{ message: string }>>();
 const mockVerifyEmail = jest.fn<() => Promise<any>>();
 const mockResendVerification = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
+const mockRequestEmailOtp = jest.fn<() => Promise<{ message: string; email: string; isNewUser: boolean }>>();
+const mockVerifyEmailOtp = jest.fn<() => Promise<any>>();
 const mockCheckDb = jest.fn<() => Promise<boolean>>();
 
 // ─── ESM module mocks (must come before dynamic imports) ─────────────────────
@@ -36,6 +38,8 @@ await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
         resetPassword: mockResetPassword,
         verifyEmail: mockVerifyEmail,
         resendVerification: mockResendVerification,
+        requestEmailOtp: mockRequestEmailOtp,
+        verifyEmailOtp: mockVerifyEmailOtp,
     },
 }));
 
@@ -378,6 +382,54 @@ describe('GET /health', () => {
         const res = await request(app).get('/health');
         expect(res.headers).toHaveProperty('content-security-policy');
         expect(res.headers['content-security-policy']).toContain("default-src 'self'");
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Passwordless Email OTP Authentication', () => {
+    it('POST /email-code/request — 200 dispatches OTP for valid email', async () => {
+        mockRequestEmailOtp.mockResolvedValueOnce({
+            message: 'A 6-digit sign-in code has been sent to test@example.com.',
+            email: 'test@example.com',
+            isNewUser: false,
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/email-code/request')
+            .send({ email: 'test@example.com' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.message).toMatch(/6-digit sign-in code/i);
+        expect(res.body.email).toBe('test@example.com');
+    });
+
+    it('POST /email-code/request — 400 rejects invalid email format', async () => {
+        const res = await request(app)
+            .post('/api/v1/auth/email-code/request')
+            .send({ email: 'not-an-email' });
+
+        expect(res.status).toBe(400);
+    });
+
+    it('POST /email-code/verify — 200 on valid 6-digit code returns session tokens', async () => {
+        mockVerifyEmailOtp.mockResolvedValueOnce(mockAuthResponse);
+
+        const res = await request(app)
+            .post('/api/v1/auth/email-code/verify')
+            .send({ email: 'test@example.com', code: '123456' });
+
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveProperty('accessToken');
+        expect(res.body).toHaveProperty('user');
+    });
+
+    it('POST /email-code/verify — 400 rejects non-6-digit code', async () => {
+        const res = await request(app)
+            .post('/api/v1/auth/email-code/verify')
+            .send({ email: 'test@example.com', code: '12' });
+
+        expect(res.status).toBe(400);
     });
 });
 

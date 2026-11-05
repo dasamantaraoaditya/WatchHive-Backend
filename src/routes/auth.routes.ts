@@ -85,6 +85,28 @@ const resendVerificationValidation = [
         .normalizeEmail(),
 ];
 
+const emailOtpRequestValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+];
+
+const emailOtpVerifyValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Must be a valid email address')
+        .normalizeEmail(),
+    body('code')
+        .trim()
+        .isLength({ min: 6, max: 6 })
+        .withMessage('Sign-in code must be exactly 6 digits')
+        .isNumeric()
+        .withMessage('Sign-in code must contain numbers only'),
+];
+
 const forgotPasswordValidation = [
     body('email')
         .trim()
@@ -396,5 +418,54 @@ router.get('/verify-email', authLimiter, authController.verifyEmail);
  *         description: Verification email dispatched
  */
 router.post('/resend-verification', authLimiter, resendVerificationValidation, validate, authController.resendVerification);
+
+/**
+ * @openapi
+ * /api/v1/auth/email-code/request:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Request a passwordless 6-digit sign-in / registration code via email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Sign-in code dispatched to email
+ */
+router.post('/email-code/request', authLimiter, emailOtpRequestValidation, validate, authController.requestEmailOtp);
+
+/**
+ * @openapi
+ * /api/v1/auth/email-code/verify:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Verify 6-digit email code and log in or register
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - code
+ *             properties:
+ *               email:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful with session tokens
+ */
+router.post('/email-code/verify', authLimiter, emailOtpVerifyValidation, validate, authController.verifyEmailOtp);
 
 export default router;

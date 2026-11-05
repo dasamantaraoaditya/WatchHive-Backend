@@ -710,4 +710,185 @@ export const authService = {
             })
             .where(eq(users.id, userId));
     },
+
+    /**
+     * Request a passwordless 6-digit OTP sign-in / registration code.
+     * If the account exists -> sends login code.
+     * If the account is new -> automatically initializes an account and sends registration code.
+     */
+    async requestEmailOtp(email: string): Promise<{ message: string; email: string; isNewUser: boolean }> {
+        const normalizedEmail = email.trim().toLowerCase();
+        if (!normalizedEmail || !/\S+@\S+\.\S+/.test(normalizedEmail)) {
+            throw new AppError('A valid email address is required', 400);
+        }
+
+        const [existingUser] = await db
+            .select({
+                id: users.id,
+                username: users.username,
+                email: users.email,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
+            })
+            .from(users)
+            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+            .limit(1);
+
+        const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const hashedCode = hashResetToken(rawCode);
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+        let isNewUser = false;
+        let username = '';
+
+        if (existingUser) {
+            isNewUser = !existingUser.hasCompletedOnboarding;
+            username = existingUser.username;
+            await db
+                .update(users)
+                .set({
+                    emailVerificationToken: hashedCode,
+                    emailVerificationExpiresAt: expiresAt,
+                    updatedAt: new Date(),
+                })
+                .where(eq(users.id, existingUser.id));
+        } else {
+            isNewUser = true;
+            let baseUsername = normalizedEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+            if (baseUsername.length < 3) baseUsername = `user_${baseUsername}`;
+            let candidateUsername = baseUsername;
+
+            const [taken] = await db
+                .select({ id: users.id })
+                .from(users)
+                .where(sql`LOWER(${users.username}) = ${candidateUsername.toLowerCase()}`)
+                .limit(1);
+
+            if (taken) {
+                candidateUsername = `${baseUsername}_${Math.floor(1000 + Math.random() * 9000)}`;
+            }
+
+            const [newUser] = await db
+                .insert(users)
+                .values({
+                    email: normalizedEmail,
+                    username: candidateUsername,
+                    displayName: candidateUsername,
+                    isEmailVerified: false,
+                    emailVerificationToken: hashedCode,
+                    emailVerificationExpiresAt: expiresAt,
+                    hasCompletedOnboarding: false,
+                })
+                .returning({ id: users.id, username: users.username });
+
+            username = newUser.username;
+        }
+
+        // Send OTP email in background
+        emailService.sendLoginOtpEmail({
+            to: normalizedEmail,
+            code: rawCode,
+            isNewUser,
+            username,
+        }).catch((err) => {
+            console.error('[requestEmailOtp] Failed to send login OTP email in background:', err);
+        });
+
+        return {
+            message: `A 6-digit sign-in code has been sent to ${normalizedEmail}.`,
+            email: normalizedEmail,
+            isNewUser,
+        };
+    },
+
+    /**
+     * Verify the 6-digit OTP code and log the user in immediately.
+     */
+    async verifyEmailOtp(email: string, code: string): Promise<AuthResponse & { isNewUser: boolean }> {
+        const normalizedEmail = email.trim().toLowerCase();
+        const cleanCode = code.trim();
+
+        if (!cleanCode || cleanCode.length < 6) {
+            throw new AppError('Please enter a valid 6-digit sign-in code.', 400);
+        }
+
+        const hashedInput = hashResetToken(cleanCode);
+
+        const [user] = await db
+            .select()
+            .from(users)
+            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+            .limit(1);
+
+        if (
+            !user ||
+            !user.emailVerificationToken ||
+            !user.emailVerificationExpiresAt ||
+            user.emailVerificationExpiresAt < new Date()
+        ) {
+            throw new AppError('The sign-in code has expired or is invalid. Please request a new code.', 400);
+        }
+
+        // Support both single hash and legacy "token:code" format
+        const parts = user.emailVerificationToken.split(':');
+        const isCodeValid = parts.some((savedHash) => {
+            if (savedHash.length !== hashedInput.length) return false;
+            try {
+                return crypto.timingSafeEqual(Buffer.from(savedHash), Buffer.from(hashedInput));
+            } catch {
+                return false;
+            }
+        });
+
+        if (!isCodeValid) {
+            throw new AppError('Incorrect sign-in code. Please check your email and try again.', 400);
+        }
+
+        // Activate user and clear OTP tokens
+        await db
+            .update(users)
+            .set({
+                isEmailVerified: true,
+                emailVerificationToken: null,
+                emailVerificationExpiresAt: null,
+                failedLoginAttempts: 0,
+                lockoutUntil: null,
+                tokenVersion: sql`${users.tokenVersion} + 1`,
+                updatedAt: new Date(),
+            })
+            .where(eq(users.id, user.id));
+
+        const nextTokenVersion = (user.tokenVersion ?? 1) + 1;
+
+        const accessToken = generateAccessToken({
+            userId: user.id,
+            email: user.email,
+            tokenVersion: nextTokenVersion,
+            isEmailVerified: true,
+        });
+
+        const refreshToken = generateRefreshToken({
+            userId: user.id,
+            email: user.email,
+            tokenVersion: nextTokenVersion,
+            isEmailVerified: true,
+        });
+
+        return {
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                displayName: user.displayName,
+                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
+                hasGoogleLinked: !!user.googleId,
+                hasPassword: false,
+                isEmailVerified: true,
+                preferences: user.preferences,
+                hasCompletedOnboarding: user.hasCompletedOnboarding,
+            },
+            accessToken,
+            refreshToken,
+            isNewUser: !user.hasCompletedOnboarding,
+        };
+    },
 };
