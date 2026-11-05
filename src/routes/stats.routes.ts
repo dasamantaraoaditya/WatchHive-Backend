@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { entries } from '../db/schema.js';
-import { eq, and, desc, gte, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, isNotNull } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = Router();
@@ -44,12 +44,13 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
         if (days > 0) {
             const startDate = new Date();
             startDate.setDate(startDate.getDate() - days);
-            conditions.push(gte(entries.watchedAt, startDate));
+            conditions.push(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt}) >= ${startDate.toISOString()}`);
         }
 
         if (typeFilter) conditions.push(eq(entries.type, typeFilter as any));
         if (minRating > 0) {
-            conditions.push(gte(sql`CAST(NULLIF(${entries.rating}, '') AS NUMERIC)`, minRating));
+            conditions.push(isNotNull(entries.rating));
+            conditions.push(sql`${entries.rating} >= ${minRating}`);
         }
 
         const whereClause = and(...conditions);
@@ -119,7 +120,7 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
 
         // 6. Basic Averages
         const ratings = filteredEntries
-            .map(e => parseInt(e.rating || '0'))
+            .map(e => parseFloat(e.rating || '0'))
             .filter(r => r > 0);
         const averageRating = ratings.length > 0 
             ? parseFloat((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
