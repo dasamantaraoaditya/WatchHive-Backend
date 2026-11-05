@@ -6,6 +6,7 @@ import { emailMatchSql, cleanEmail } from '../utils/email.util.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.util.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
+import { getFullAuthUser, AuthUser } from './auth.service.js';
 
 export interface AppleAuthRequest {
     identityToken: string;
@@ -211,20 +212,23 @@ export const appleAuthService = {
             isEmailVerified: true,
         });
 
+        const fullUser = await getFullAuthUser(user.id);
+        const resolvedUser: AuthUser = fullUser || {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            displayName: user.displayName,
+            profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
+            hasGoogleLinked: Boolean(user.googleId),
+            hasAppleLinked: Boolean(user.appleId),
+            hasPassword: Boolean(user.passwordHash),
+            isEmailVerified: true,
+            preferences: user.preferences,
+            hasCompletedOnboarding: user.hasCompletedOnboarding,
+        };
+
         return {
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                displayName: user.displayName,
-                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
-                hasGoogleLinked: Boolean(user.googleId),
-                hasAppleLinked: Boolean(user.appleId),
-                hasPassword: Boolean(user.passwordHash),
-                isEmailVerified: true,
-                preferences: user.preferences,
-                hasCompletedOnboarding: user.hasCompletedOnboarding,
-            },
+            user: resolvedUser,
             accessToken,
             refreshToken,
             isNewUser,

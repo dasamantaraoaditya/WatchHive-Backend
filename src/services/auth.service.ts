@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
-import { users } from '../db/schema.js';
-import { eq, or, sql } from 'drizzle-orm';
+import { users, entries, follows } from '../db/schema.js';
+import { eq, or, sql, count } from 'drizzle-orm';
 import { hashPassword, comparePassword } from '../utils/bcrypt.util.js';
 import {
     generateAccessToken,
@@ -33,21 +33,130 @@ export interface RegisterResult {
     message: string;
 }
 
-export interface AuthResponse {
-    user: {
-        id: string;
-        username: string;
-        email: string;
-        displayName: string | null;
-        profilePictureUrl: string | null;
-        hasGoogleLinked: boolean;
-        hasPassword: boolean;
-        isEmailVerified: boolean;
-        preferences?: any;
-        hasCompletedOnboarding?: boolean;
+export interface AuthUser {
+    id: string;
+    username: string;
+    email: string;
+    displayName: string | null;
+    bio?: string | null;
+    profilePictureUrl: string | null;
+    location?: string | null;
+    isPrivate?: boolean;
+    privacyLevel?: string;
+    showWatchEntries?: boolean;
+    showCurrentlyWatching?: boolean;
+    showWatchlist?: boolean;
+    showRankings?: boolean;
+    notifyFollowingActivity?: boolean;
+    xp?: number;
+    level?: number;
+    badges?: any;
+    watchStreak?: number;
+    lastWatchDate?: string | null;
+    preferences?: any;
+    hasCompletedOnboarding?: boolean;
+    hasGoogleLinked: boolean;
+    hasAppleLinked: boolean;
+    hasPassword: boolean;
+    isEmailVerified: boolean;
+    entriesCount?: number;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    _count?: {
+        entries: number;
+        followers: number;
+        following: number;
     };
+}
+
+export interface AuthResponse {
+    user: AuthUser;
     accessToken: string;
     refreshToken: string;
+}
+
+/**
+ * Fetch complete user profile data with calculated streaks and counts.
+ * Returns null if user is not found.
+ */
+export async function getFullAuthUser(userId: string): Promise<AuthUser | null> {
+    try {
+        const [userResult] = await db
+            .select({
+                id: users.id,
+                username: users.username,
+                email: users.email,
+                displayName: users.displayName,
+                bio: users.bio,
+                profilePictureUrl: users.profilePictureUrl,
+                location: users.location,
+                isPrivate: users.isPrivate,
+                privacyLevel: users.privacyLevel,
+                showWatchEntries: users.showWatchEntries,
+                showCurrentlyWatching: users.showCurrentlyWatching,
+                showWatchlist: users.showWatchlist,
+                showRankings: users.showRankings,
+                notifyFollowingActivity: users.notifyFollowingActivity,
+                xp: users.xp,
+                level: users.level,
+                badges: users.badges,
+                watchStreak: users.watchStreak,
+                lastWatchDate: users.lastWatchDate,
+                preferences: users.preferences,
+                hasCompletedOnboarding: users.hasCompletedOnboarding,
+                createdAt: users.createdAt,
+                updatedAt: users.updatedAt,
+                entriesCount: count(entries.id),
+                googleId: users.googleId,
+                appleId: users.appleId,
+                passwordHash: users.passwordHash,
+                isEmailVerified: users.isEmailVerified,
+            })
+            .from(users)
+            .leftJoin(entries, eq(entries.userId, users.id))
+            .where(eq(users.id, userId))
+            .groupBy(users.id)
+            .limit(1);
+
+        if (!userResult) return null;
+
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const isStreakAlive = userResult.lastWatchDate === todayStr || userResult.lastWatchDate === yesterdayStr;
+        const activeStreak = isStreakAlive ? (userResult.watchStreak || 0) : 0;
+
+        const [
+            followersRes,
+            followingRes
+        ] = await Promise.all([
+            db.select({ followersCount: count() }).from(follows).where(eq(follows.followingId, userId)),
+            db.select({ followingCount: count() }).from(follows).where(eq(follows.followerId, userId)),
+        ]);
+
+        const followersCount = followersRes[0]?.followersCount ?? 0;
+        const followingCount = followingRes[0]?.followingCount ?? 0;
+
+        const { googleId, appleId, passwordHash, ...safeUser } = userResult;
+
+        return {
+            ...safeUser,
+            badges: (userResult.badges as any[]) || [],
+            watchStreak: activeStreak,
+            hasGoogleLinked: !!googleId,
+            hasAppleLinked: Boolean(appleId),
+            hasPassword: !!passwordHash,
+            profilePictureUrl: resolveAvatarUrl(userResult.profilePictureUrl),
+            entriesCount: Number(userResult.entriesCount) || 0,
+            _count: {
+                entries: Number(userResult.entriesCount) || 0,
+                followers: Number(followersCount) || 0,
+                following: Number(followingCount) || 0,
+            },
+        };
+    } catch (err) {
+        console.error('[getFullAuthUser] Error fetching user profile details:', err);
+        return null;
+    }
 }
 
 /** Hash a reset token for safe DB storage (SHA-256, not bcrypt — speed matters here) */
@@ -308,19 +417,23 @@ export const authService = {
             isEmailVerified: user.isEmailVerified,
         });
 
+        const fullUser = await getFullAuthUser(user.id);
+        const resolvedUser: AuthUser = fullUser || {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            displayName: user.displayName,
+            profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
+            hasGoogleLinked: !!user.googleId,
+            hasAppleLinked: false,
+            hasPassword: true,
+            isEmailVerified: user.isEmailVerified,
+            preferences: user.preferences,
+            hasCompletedOnboarding: user.hasCompletedOnboarding,
+        };
+
         return {
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                displayName: user.displayName,
-                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
-                hasGoogleLinked: !!user.googleId,
-                hasPassword: true,
-                isEmailVerified: user.isEmailVerified,
-                preferences: user.preferences,
-                hasCompletedOnboarding: user.hasCompletedOnboarding,
-            },
+            user: resolvedUser,
             accessToken,
             refreshToken,
         };
@@ -611,19 +724,23 @@ export const authService = {
             isEmailVerified: true,
         });
 
+        const fullUser = await getFullAuthUser(user.id);
+        const resolvedUser: AuthUser = fullUser || {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            displayName: user.displayName,
+            profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
+            hasGoogleLinked: !!user.googleId,
+            hasAppleLinked: false,
+            hasPassword: !!user.passwordHash,
+            isEmailVerified: true,
+            preferences: user.preferences,
+            hasCompletedOnboarding: user.hasCompletedOnboarding,
+        };
+
         return {
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                displayName: user.displayName,
-                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
-                hasGoogleLinked: !!user.googleId,
-                hasPassword: !!user.passwordHash,
-                isEmailVerified: true,
-                preferences: user.preferences,
-                hasCompletedOnboarding: user.hasCompletedOnboarding,
-            },
+            user: resolvedUser,
             accessToken,
             refreshToken,
         };
@@ -910,19 +1027,23 @@ export const authService = {
             isEmailVerified: true,
         });
 
+        const fullUser = await getFullAuthUser(user.id);
+        const resolvedUser: AuthUser = fullUser || {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            displayName: user.displayName,
+            profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
+            hasGoogleLinked: !!user.googleId,
+            hasAppleLinked: false,
+            hasPassword: false,
+            isEmailVerified: true,
+            preferences: user.preferences,
+            hasCompletedOnboarding: user.hasCompletedOnboarding,
+        };
+
         return {
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                displayName: user.displayName,
-                profilePictureUrl: resolveAvatarUrl(user.profilePictureUrl),
-                hasGoogleLinked: !!user.googleId,
-                hasPassword: false,
-                isEmailVerified: true,
-                preferences: user.preferences,
-                hasCompletedOnboarding: user.hasCompletedOnboarding,
-            },
+            user: resolvedUser,
             accessToken,
             refreshToken,
             isNewUser: !user.hasCompletedOnboarding,
