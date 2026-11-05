@@ -4,6 +4,7 @@ import { authController } from '../controllers/auth.controller.js';
 import { validate } from '../middleware/validation.middleware.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { authLimiter, passwordResetLimiter } from '../middleware/rate-limit.middleware.js';
+import { cleanEmail } from '../utils/email.util.js';
 
 
 const router = Router();
@@ -17,10 +18,9 @@ const registerValidation = [
         .matches(/^[a-zA-Z0-9_]+$/)
         .withMessage('Username can only contain letters, numbers, and underscores'),
     body('email')
-        .trim()
+        .customSanitizer((val) => cleanEmail(val))
         .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail({ gmail_remove_dots: false }),
+        .withMessage('Must be a valid email address'),
     body('password')
         .isLength({ min: 8 })
         .withMessage('Password must be at least 8 characters long')
@@ -67,10 +67,9 @@ const refreshValidation = [
 
 const verifyEmailValidation = [
     body('email')
-        .trim()
+        .customSanitizer((val) => cleanEmail(val))
         .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail({ gmail_remove_dots: false }),
+        .withMessage('Must be a valid email address'),
     body('token')
         .trim()
         .notEmpty()
@@ -79,26 +78,23 @@ const verifyEmailValidation = [
 
 const resendVerificationValidation = [
     body('email')
-        .trim()
+        .customSanitizer((val) => cleanEmail(val))
         .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail({ gmail_remove_dots: false }),
+        .withMessage('Must be a valid email address'),
 ];
 
 const emailOtpRequestValidation = [
     body('email')
-        .trim()
+        .customSanitizer((val) => cleanEmail(val))
         .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail({ gmail_remove_dots: false }),
+        .withMessage('Must be a valid email address'),
 ];
 
 const emailOtpVerifyValidation = [
     body('email')
-        .trim()
+        .customSanitizer((val) => cleanEmail(val))
         .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail({ gmail_remove_dots: false }),
+        .withMessage('Must be a valid email address'),
     body('code')
         .trim()
         .isLength({ min: 6, max: 6 })
@@ -109,10 +105,9 @@ const emailOtpVerifyValidation = [
 
 const forgotPasswordValidation = [
     body('email')
-        .trim()
+        .customSanitizer((val) => cleanEmail(val))
         .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail({ gmail_remove_dots: false }),
+        .withMessage('Must be a valid email address'),
 ];
 
 const resetPasswordValidation = [
@@ -120,10 +115,9 @@ const resetPasswordValidation = [
         .notEmpty()
         .withMessage('Reset token is required'),
     body('email')
-        .trim()
+        .customSanitizer((val) => cleanEmail(val))
         .isEmail()
-        .withMessage('Must be a valid email address')
-        .normalizeEmail({ gmail_remove_dots: false }),
+        .withMessage('Must be a valid email address'),
     body('newPassword')
         .isLength({ min: 8 })
         .withMessage('Password must be at least 8 characters long')

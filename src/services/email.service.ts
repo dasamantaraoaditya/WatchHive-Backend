@@ -1,5 +1,6 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { config } from '../config.js';
+import { cleanEmail } from '../utils/email.util.js';
 
 export interface SendEmailOptions {
     to: string;
@@ -74,7 +75,7 @@ class EmailService {
      * Sends an email trying available providers in order: Resend (HTTPS) -> SMTP -> SendGrid.
      */
     async sendEmail(options: SendEmailOptions): Promise<EmailResult> {
-        const to = (options.to || '').trim().toLowerCase();
+        const to = cleanEmail(options.to);
         const { subject, html, text } = options;
         const fromAddress = config.email.from;
         const fromName = config.email.fromName || 'WatchersHive';

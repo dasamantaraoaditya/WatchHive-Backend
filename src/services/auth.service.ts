@@ -12,7 +12,7 @@ import crypto from 'crypto';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
 import { getCanonicalFrontendUrl } from '../utils/url.util.js';
 import { emailService } from './email.service.js';
-import { emailMatchSql, normalizeEmail } from '../utils/email.util.js';
+import { emailMatchSql, normalizeEmail, cleanEmail, getCanonicalEmail } from '../utils/email.util.js';
 
 export interface RegisterData {
     username: string;
@@ -57,7 +57,7 @@ function hashResetToken(token: string): string {
 
 export const authService = {
     async register(data: RegisterData): Promise<RegisterResult> {
-        const normalizedEmail = data.email.trim().toLowerCase();
+        const normalizedEmail = cleanEmail(data.email);
         const cleanUsername = data.username.trim();
 
         // Check if user already exists
@@ -73,7 +73,7 @@ export const authService = {
             .limit(1);
 
         if (existingUser) {
-            if (normalizeEmail(existingUser.email) === normalizeEmail(normalizedEmail)) {
+            if (getCanonicalEmail(existingUser.email) === getCanonicalEmail(normalizedEmail)) {
                 // If already registered AND verified -> prompt user to sign in directly
                 if (existingUser.isEmailVerified) {
                     const err = new AppError('This email is already registered. Please sign in.', 409) as any;
@@ -169,7 +169,7 @@ export const authService = {
     },
 
     async login(data: LoginData): Promise<AuthResponse> {
-        const identifier = data.email.trim();
+        const identifier = cleanEmail(data.email);
 
         // Find user by email or username (case-insensitive)
         const [user] = await db
@@ -378,7 +378,7 @@ export const authService = {
         message: string;
         emailSent: boolean;
     }> {
-        const normalizedEmail = email.trim().toLowerCase();
+        const normalizedEmail = cleanEmail(email);
         const [user] = await db
             .select({ id: users.id, email: users.email })
             .from(users)
@@ -440,7 +440,7 @@ export const authService = {
     async resetPassword(token: string, email: string, newPassword: string): Promise<{ message: string }> {
         const cleanToken = token.trim();
         const hashedInput = hashResetToken(cleanToken);
-        const normalizedEmail = email.trim().toLowerCase();
+        const normalizedEmail = cleanEmail(email);
 
         const [user] = await db
             .select({
@@ -549,7 +549,7 @@ export const authService = {
     async verifyEmail(token: string, email: string): Promise<AuthResponse> {
         const cleanToken = token.trim();
         const hashedInput = hashResetToken(cleanToken);
-        const normalizedEmail = email.trim().toLowerCase();
+        const normalizedEmail = cleanEmail(email);
 
         const [user] = await db
             .select()
@@ -633,7 +633,7 @@ export const authService = {
      * Resend email verification link and code.
      */
     async resendVerification(email: string): Promise<{ message: string; emailSent: boolean }> {
-        const normalizedEmail = email.trim().toLowerCase();
+        const normalizedEmail = cleanEmail(email);
         const [user] = await db
             .select({
                 id: users.id,
@@ -719,7 +719,7 @@ export const authService = {
      * If the account is new -> automatically initializes an account and sends registration code.
      */
     async requestEmailOtp(emailOrUsername: string): Promise<{ message: string; email: string; isNewUser: boolean }> {
-        const cleanInput = emailOrUsername.trim();
+        const cleanInput = cleanEmail(emailOrUsername);
         if (!cleanInput) {
             throw new AppError('A valid email address or username is required', 400);
         }
@@ -832,7 +832,7 @@ export const authService = {
      * Verify the 6-digit OTP code and log the user in immediately.
      */
     async verifyEmailOtp(emailOrUsername: string, code: string): Promise<AuthResponse & { isNewUser: boolean }> {
-        const cleanInput = emailOrUsername.trim();
+        const cleanInput = cleanEmail(emailOrUsername);
         const cleanCode = code.trim();
 
         if (!cleanCode || cleanCode.length < 6) {
