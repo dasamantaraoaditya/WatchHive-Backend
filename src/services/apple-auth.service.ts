@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { emailMatchSql } from '../utils/email.util.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.util.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
@@ -104,7 +105,7 @@ export const appleAuthService = {
                     hasCompletedOnboarding: users.hasCompletedOnboarding,
                 })
                 .from(users)
-                .where(eq(users.email, effectiveEmail))
+                .where(emailMatchSql(users.email, effectiveEmail))
                 .limit(1);
 
             if (existingEmailUser) {

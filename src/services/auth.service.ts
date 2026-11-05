@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
 import { getCanonicalFrontendUrl } from '../utils/url.util.js';
 import { emailService } from './email.service.js';
+import { emailMatchSql, normalizeEmail } from '../utils/email.util.js';
 
 export interface RegisterData {
     username: string;
@@ -65,14 +66,14 @@ export const authService = {
             .from(users)
             .where(
                 or(
-                    sql`LOWER(${users.email}) = ${normalizedEmail}`,
+                    emailMatchSql(users.email, normalizedEmail),
                     sql`LOWER(${users.username}) = ${cleanUsername.toLowerCase()}`
                 )
             )
             .limit(1);
 
         if (existingUser) {
-            if (existingUser.email.toLowerCase() === normalizedEmail) {
+            if (normalizeEmail(existingUser.email) === normalizeEmail(normalizedEmail)) {
                 // If already registered AND verified -> prompt user to sign in directly
                 if (existingUser.isEmailVerified) {
                     const err = new AppError('This email is already registered. Please sign in.', 409) as any;
@@ -190,7 +191,7 @@ export const authService = {
             .from(users)
             .where(
                 or(
-                    eq(sql`lower(${users.email})`, identifier.toLowerCase()),
+                    emailMatchSql(users.email, identifier),
                     eq(sql`lower(${users.username})`, identifier.toLowerCase())
                 )
             )
@@ -381,7 +382,7 @@ export const authService = {
         const [user] = await db
             .select({ id: users.id, email: users.email })
             .from(users)
-            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+            .where(emailMatchSql(users.email, normalizedEmail))
             .limit(1);
 
         // Return explicit 404 if user doesn't exist so user is not misled by false success
@@ -449,7 +450,7 @@ export const authService = {
                 passwordResetExpiresAt: users.passwordResetExpiresAt,
             })
             .from(users)
-            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+            .where(emailMatchSql(users.email, normalizedEmail))
             .limit(1);
 
         if (
@@ -553,7 +554,7 @@ export const authService = {
         const [user] = await db
             .select()
             .from(users)
-            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+            .where(emailMatchSql(users.email, normalizedEmail))
             .limit(1);
 
         if (!user) {
@@ -641,7 +642,7 @@ export const authService = {
                 isEmailVerified: users.isEmailVerified,
             })
             .from(users)
-            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+            .where(emailMatchSql(users.email, normalizedEmail))
             .limit(1);
 
         // Always return success response to prevent email enumeration
@@ -713,25 +714,51 @@ export const authService = {
 
     /**
      * Request a passwordless 6-digit OTP sign-in / registration code.
+     * Supports both email address and username lookups.
      * If the account exists -> sends login code.
      * If the account is new -> automatically initializes an account and sends registration code.
      */
-    async requestEmailOtp(email: string): Promise<{ message: string; email: string; isNewUser: boolean }> {
-        const normalizedEmail = email.trim().toLowerCase();
-        if (!normalizedEmail || !/\S+@\S+\.\S+/.test(normalizedEmail)) {
-            throw new AppError('A valid email address is required', 400);
+    async requestEmailOtp(emailOrUsername: string): Promise<{ message: string; email: string; isNewUser: boolean }> {
+        const cleanInput = emailOrUsername.trim();
+        if (!cleanInput) {
+            throw new AppError('A valid email address or username is required', 400);
         }
 
-        const [existingUser] = await db
-            .select({
-                id: users.id,
-                username: users.username,
-                email: users.email,
-                hasCompletedOnboarding: users.hasCompletedOnboarding,
-            })
-            .from(users)
-            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
-            .limit(1);
+        let existingUser: any = null;
+        let normalizedEmail = cleanInput.toLowerCase();
+
+        if (cleanInput.includes('@')) {
+            if (!/\S+@\S+\.\S+/.test(cleanInput)) {
+                throw new AppError('A valid email address is required', 400);
+            }
+            [existingUser] = await db
+                .select({
+                    id: users.id,
+                    username: users.username,
+                    email: users.email,
+                    hasCompletedOnboarding: users.hasCompletedOnboarding,
+                })
+                .from(users)
+                .where(emailMatchSql(users.email, normalizedEmail))
+                .limit(1);
+        } else {
+            // Username lookup
+            [existingUser] = await db
+                .select({
+                    id: users.id,
+                    username: users.username,
+                    email: users.email,
+                    hasCompletedOnboarding: users.hasCompletedOnboarding,
+                })
+                .from(users)
+                .where(sql`LOWER(${users.username}) = ${cleanInput.toLowerCase()}`)
+                .limit(1);
+
+            if (!existingUser) {
+                throw new AppError('No account found with this username. Please enter a valid email address to sign up.', 404);
+            }
+            normalizedEmail = existingUser.email.toLowerCase();
+        }
 
         const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
         const hashedCode = hashResetToken(rawCode);
@@ -739,6 +766,7 @@ export const authService = {
 
         let isNewUser = false;
         let username = '';
+        const targetEmail = existingUser ? existingUser.email : normalizedEmail;
 
         if (existingUser) {
             isNewUser = !existingUser.hasCompletedOnboarding;
@@ -753,7 +781,7 @@ export const authService = {
                 .where(eq(users.id, existingUser.id));
         } else {
             isNewUser = true;
-            let baseUsername = normalizedEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+            let baseUsername = targetEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
             if (baseUsername.length < 3) baseUsername = `user_${baseUsername}`;
             let candidateUsername = baseUsername;
 
@@ -770,7 +798,7 @@ export const authService = {
             const [newUser] = await db
                 .insert(users)
                 .values({
-                    email: normalizedEmail,
+                    email: targetEmail,
                     username: candidateUsername,
                     displayName: candidateUsername,
                     isEmailVerified: false,
@@ -785,7 +813,7 @@ export const authService = {
 
         // Send OTP email in background
         emailService.sendLoginOtpEmail({
-            to: normalizedEmail,
+            to: targetEmail,
             code: rawCode,
             isNewUser,
             username,
@@ -794,8 +822,8 @@ export const authService = {
         });
 
         return {
-            message: `A 6-digit sign-in code has been sent to ${normalizedEmail}.`,
-            email: normalizedEmail,
+            message: `A 6-digit sign-in code has been sent to ${targetEmail}.`,
+            email: targetEmail,
             isNewUser,
         };
     },
@@ -803,8 +831,8 @@ export const authService = {
     /**
      * Verify the 6-digit OTP code and log the user in immediately.
      */
-    async verifyEmailOtp(email: string, code: string): Promise<AuthResponse & { isNewUser: boolean }> {
-        const normalizedEmail = email.trim().toLowerCase();
+    async verifyEmailOtp(emailOrUsername: string, code: string): Promise<AuthResponse & { isNewUser: boolean }> {
+        const cleanInput = emailOrUsername.trim();
         const cleanCode = code.trim();
 
         if (!cleanCode || cleanCode.length < 6) {
@@ -813,11 +841,20 @@ export const authService = {
 
         const hashedInput = hashResetToken(cleanCode);
 
-        const [user] = await db
-            .select()
-            .from(users)
-            .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
-            .limit(1);
+        let user: any = null;
+        if (cleanInput.includes('@')) {
+            [user] = await db
+                .select()
+                .from(users)
+                .where(emailMatchSql(users.email, cleanInput))
+                .limit(1);
+        } else {
+            [user] = await db
+                .select()
+                .from(users)
+                .where(sql`LOWER(${users.username}) = ${cleanInput.toLowerCase()}`)
+                .limit(1);
+        }
 
         if (
             !user ||
@@ -829,8 +866,8 @@ export const authService = {
         }
 
         // Support both single hash and legacy "token:code" format
-        const parts = user.emailVerificationToken.split(':');
-        const isCodeValid = parts.some((savedHash) => {
+        const parts = (user.emailVerificationToken as string).split(':');
+        const isCodeValid = parts.some((savedHash: string) => {
             if (savedHash.length !== hashedInput.length) return false;
             try {
                 return crypto.timingSafeEqual(Buffer.from(savedHash), Buffer.from(hashedInput));
