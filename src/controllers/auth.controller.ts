@@ -242,4 +242,38 @@ export const authController = {
             next(error);
         }
     },
+
+    async requestEmailOtp(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { email } = req.body;
+            if (!email) {
+                res.status(400).json({ error: 'Email is required' });
+                return;
+            }
+            const result = await authService.requestEmailOtp(email);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    async verifyEmailOtp(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { email, code } = req.body;
+            if (!email || !code) {
+                res.status(400).json({ error: 'Email and 6-digit code are required' });
+                return;
+            }
+            const result = await authService.verifyEmailOtp(email, code);
+
+            // Set HttpOnly / SameSite cookies for web clients
+            if (result.accessToken && result.refreshToken) {
+                setAuthCookies(res, result.accessToken, result.refreshToken);
+            }
+
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    },
 };

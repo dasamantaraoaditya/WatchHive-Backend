@@ -481,6 +481,114 @@ This code and link expire in 24 hours.
 
         return result;
     }
+
+    /**
+     * Send passwordless sign-in / registration 6-digit OTP code.
+     */
+    async sendLoginOtpEmail(params: {
+        to: string;
+        code: string;
+        isNewUser: boolean;
+        username?: string;
+    }): Promise<EmailResult> {
+        const { to, code, isNewUser, username } = params;
+        const greeting = username ? `Welcome back, ${username}!` : (isNewUser ? 'Welcome to WatchersHive!' : 'Welcome back!');
+        const intro = isNewUser
+            ? 'Use the 6-digit code below to verify your email and finish creating your WatchersHive account:'
+            : 'Use the 6-digit code below to sign in to your WatchersHive account:';
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Your WatchersHive Sign-In Code</title>
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #FAF8F5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAF8F5; padding: 40px 20px;">
+                    <tr>
+                        <td align="center">
+                            <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 520px; background-color: #FFFFFF; border-radius: 16px; border: 1px solid #EBE5DF; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                                <tr>
+                                    <td style="padding: 32px 32px 20px 32px; text-align: center; border-bottom: 1px solid #F3EFEA;">
+                                        <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #2D2926; letter-spacing: -0.5px;">
+                                            🎬 Watchers<span style="color: #FFB700;">Hive</span>
+                                        </h1>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 32px;">
+                                        <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700; color: #2D2926;">
+                                            ${greeting}
+                                        </h2>
+                                        <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #5C554E;">
+                                            ${intro}
+                                        </p>
+
+                                        <!-- Sign-In Code Box -->
+                                        <div style="background-color: #FFF9E6; border: 2px dashed #FFB700; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+                                            <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.5px; color: #B38000; text-transform: uppercase; margin-bottom: 8px;">
+                                                Sign-In Code
+                                            </div>
+                                            <span style="font-size: 40px; font-weight: 900; letter-spacing: 8px; color: #2D2926; font-family: monospace;">
+                                                ${code}
+                                            </span>
+                                        </div>
+
+                                        <p style="margin: 24px 0 0 0; font-size: 12.5px; line-height: 1.5; color: #8C827A;">
+                                            ⏱️ This single-use code is valid for <strong>15 minutes</strong>.<br>
+                                            🔒 If you did not request this sign-in code, you can safely disregard this email.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 20px 32px; background-color: #FAF8F5; border-top: 1px solid #F3EFEA; text-align: center;">
+                                        <p style="margin: 0; font-size: 12px; color: #8C827A;">
+                                            © ${new Date().getFullYear()} WatchersHive. All rights reserved.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+        `;
+
+        const text = `
+${greeting}
+
+${intro}
+
+Sign-In Code: ${code}
+
+This code expires in 15 minutes.
+If you did not request this code, you can safely ignore this email.
+        `.trim();
+
+        const result = await this.sendEmail({
+            to,
+            subject: `Your WatchersHive Sign-In Code: ${code}`,
+            html,
+            text,
+        });
+
+        if (!result.success) {
+            console.warn(
+                `\n╔══════════════════════════════════════════════════════════════════════════╗\n` +
+                `║ 🔑 [WatchersHive Sign-In Code OTP]                                      ║\n` +
+                `║ To:   ${to}\n` +
+                `║ Code: ${code}\n` +
+                `║ Status: ${isNewUser ? 'New User Registration' : 'Existing User Login'}\n` +
+                `║ Note: Configure SMTP_USER / SMTP_PASS in .env to deliver real emails.     ║\n` +
+                `╚══════════════════════════════════════════════════════════════════════════╝\n`
+            );
+        }
+
+        return result;
+    }
 }
 
 export const emailService = new EmailService();
