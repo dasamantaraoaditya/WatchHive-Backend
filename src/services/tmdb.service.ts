@@ -351,6 +351,34 @@ class TMDbService {
   }
 
   /**
+   * Get lightweight media summary (title, year, poster_path, media_type) without heavy enrichments
+   */
+  async getMediaSummary(tmdbId: number, mediaType?: 'movie' | 'tv'): Promise<{ title: string; year: string; poster_path: string | null; media_type: 'movie' | 'tv' } | null> {
+    const typesToTry: ('movie' | 'tv')[] = mediaType ? [mediaType] : ['movie', 'tv'];
+    for (const type of typesToTry) {
+      try {
+        const data = await this.requestWithRetry<any>({
+          url: `/${type}/${tmdbId}`,
+        });
+        if (data) {
+          return {
+            title: data.title || data.name || '',
+            year: (data.release_date || data.first_air_date || '').slice(0, 4),
+            poster_path: data.poster_path || null,
+            media_type: type,
+          };
+        }
+      } catch (err: any) {
+        if (err?.response?.status === 404) {
+          continue;
+        }
+        console.warn(`Failed to fetch ${type} summary for ID ${tmdbId}:`, err?.message || err);
+      }
+    }
+    return null;
+  }
+
+  /**
    * Get TV season details by TV ID and Season Number
    */
   async getTVSeasonDetails(tvId: number, seasonNumber: number): Promise<any> {

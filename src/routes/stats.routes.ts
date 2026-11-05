@@ -94,6 +94,7 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
         }
 
         filteredEntries.forEach(e => {
+            if (!e.watchedAt) return;
             const dateStr = new Date(e.watchedAt).toISOString().split('T')[0];
             if (!timeSeriesMap.has(dateStr)) {
                 timeSeriesMap.set(dateStr, { count: 0, items: [] });
@@ -130,6 +131,7 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
         for (let i = 0; i < 24; i += 4) rhythmMap.set(i, 0); // Initializing blocks
 
         filteredEntries.forEach(e => {
+            if (!e.watchedAt) return;
             const hour = new Date(e.watchedAt).getHours();
             const block = Math.floor(hour / 4) * 4;
             rhythmMap.set(block, (rhythmMap.get(block) || 0) + 1);

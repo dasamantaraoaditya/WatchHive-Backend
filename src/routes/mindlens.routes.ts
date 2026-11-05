@@ -923,6 +923,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
         // 6. Time of Day Distribution
         const timeOfDay = { morning: 0, afternoon: 0, evening: 0, night: 0 };
         userEntries.forEach(entry => {
+            if (!entry.watchedAt) return;
             const hour = new Date(entry.watchedAt).getHours();
             if (hour >= 5 && hour < 12) timeOfDay.morning++;
             else if (hour >= 12 && hour < 17) timeOfDay.afternoon++;
