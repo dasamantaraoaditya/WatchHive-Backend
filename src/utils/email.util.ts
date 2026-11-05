@@ -4,6 +4,7 @@ import { sql, type SQL } from 'drizzle-orm';
  * Regex matching invisible Unicode characters, zero-width spaces, BOM,
  * non-breaking spaces, directional formatting marks, and control characters.
  */
+// eslint-disable-next-line no-control-regex
 const INVISIBLE_AND_WHITESPACE_REGEX = /[\u0000-\u001F\u007F\u00A0\u2000-\u200D\u2028\u2029\u202F\u205F\u2060\u3000\uFEFF]/g;
 
 /**
