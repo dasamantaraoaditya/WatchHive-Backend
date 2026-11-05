@@ -8,16 +8,28 @@ import type { AuthResponse } from '../src/services/auth.service.js';
 
 // ─── Mock functions ───────────────────────────────────────────────────────────
 
-const mockRegister = jest.fn<() => Promise<AuthResponse>>();
+const mockRegister = jest.fn<() => Promise<any>>();
 const mockLogin = jest.fn<() => Promise<AuthResponse>>();
 const mockRefresh = jest.fn<() => Promise<{ accessToken: string; refreshToken: string }>>();
 const mockGoogleLogin = jest.fn<() => Promise<AuthResponse>>();
+const mockForgotPassword = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
+const mockResetPassword = jest.fn<() => Promise<{ message: string }>>();
+const mockVerifyEmail = jest.fn<() => Promise<any>>();
+const mockResendVerification = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
 const mockCheckDb = jest.fn<() => Promise<boolean>>();
 
 // ─── ESM module mocks (must come before dynamic imports) ─────────────────────
 
 await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
-    authService: { register: mockRegister, login: mockLogin, refresh: mockRefresh },
+    authService: {
+        register: mockRegister,
+        login: mockLogin,
+        refresh: mockRefresh,
+        forgotPassword: mockForgotPassword,
+        resetPassword: mockResetPassword,
+        verifyEmail: mockVerifyEmail,
+        resendVerification: mockResendVerification,
+    },
 }));
 
 await jest.unstable_mockModule('../src/services/google-auth.service.js', () => ({
@@ -82,17 +94,21 @@ beforeEach(() => {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('POST /api/v1/auth/register', () => {
-    it('201 — returns user + tokens on valid registration', async () => {
-        mockRegister.mockResolvedValueOnce(mockAuthResponse);
+    it('201 — returns requiresVerification on valid registration', async () => {
+        mockRegister.mockResolvedValueOnce({
+            requiresVerification: true,
+            email: 'newuser@example.com',
+            username: 'newuser',
+            message: 'Account created! Please enter the 6-digit verification code sent to your email.',
+        });
 
         const res = await request(app)
             .post('/api/v1/auth/register')
             .send(validRegisterPayload);
 
         expect(res.status).toBe(201);
-        expect(res.body).toHaveProperty('accessToken');
-        expect(res.body).toHaveProperty('refreshToken');
-        expect(res.body.user.username).toBe(mockUser.username);
+        expect(res.body.requiresVerification).toBe(true);
+        expect(res.body.email).toBe('newuser@example.com');
     });
 
     it('400 — rejects username shorter than 3 chars', async () => {
@@ -281,11 +297,145 @@ describe('POST /api/v1/auth/google', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe('POST /api/v1/auth/forgot-password', () => {
+    it('200 — returns confirmation message and emailSent without exposing tokens', async () => {
+        mockForgotPassword.mockResolvedValueOnce({
+            message: 'If that email is registered, a password reset link and code have been sent to your inbox.',
+            emailSent: true,
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/forgot-password')
+            .send({ email: 'test@example.com' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.message).toContain('reset link');
+        expect(res.body.emailSent).toBe(true);
+        expect(res.body.resetCode).toBeUndefined();
+        expect(res.body.resetToken).toBeUndefined();
+        expect(res.body.devToken).toBeUndefined();
+    });
+
+    it('400 — rejects invalid email', async () => {
+        const res = await request(app)
+            .post('/api/v1/auth/forgot-password')
+            .send({ email: 'not-an-email' });
+
+        expect(res.status).toBe(400);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/v1/auth/reset-password', () => {
+    it('200 — resets password successfully with code or token', async () => {
+        mockResetPassword.mockResolvedValueOnce({
+            message: 'Password has been reset successfully. You can now sign in.',
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/reset-password')
+            .send({
+                email: 'test@example.com',
+                token: '123456',
+                newPassword: 'Password123!',
+            });
+
+        expect(res.status).toBe(200);
+        expect(res.body.message).toMatch(/reset successfully/i);
+    });
+
+    it('400 — rejects short passwords', async () => {
+        const res = await request(app)
+            .post('/api/v1/auth/reset-password')
+            .send({
+                email: 'test@example.com',
+                token: '123456',
+                newPassword: 'short',
+            });
+
+        expect(res.status).toBe(400);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 describe('GET /health', () => {
     it('200 — returns status and environment fields', async () => {
         const res = await request(app).get('/health');
         expect(res.status).toBe(200);
         expect(res.body).toHaveProperty('status');
         expect(res.body).toHaveProperty('environment');
+    });
+
+    it('sets Content Security Policy (CSP) headers', async () => {
+        const res = await request(app).get('/health');
+        expect(res.headers).toHaveProperty('content-security-policy');
+        expect(res.headers['content-security-policy']).toContain("default-src 'self'");
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Security: HttpOnly Cookies & Account Lockout', () => {
+    it('sets HttpOnly cookies on successful registration and login', async () => {
+        mockLogin.mockResolvedValueOnce(mockAuthResponse);
+
+        const res = await request(app)
+            .post('/api/v1/auth/login')
+            .send({ email: 'test@example.com', password: 'MyPassword1' });
+
+        expect(res.status).toBe(200);
+        const cookies = res.headers['set-cookie'];
+        expect(cookies).toBeDefined();
+        const cookieStr = Array.isArray(cookies) ? cookies.join('; ') : cookies;
+        expect(cookieStr).toContain('jwt_access=');
+        expect(cookieStr).toContain('HttpOnly');
+    });
+
+    it('returns 423 when account is locked out', async () => {
+        const lockErr: any = new Error('Account temporarily locked');
+        lockErr.statusCode = 423;
+        lockErr.code = 'account_locked';
+        lockErr.lockoutUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+        mockLogin.mockRejectedValueOnce(lockErr);
+
+        const res = await request(app)
+            .post('/api/v1/auth/login')
+            .send({ email: 'test@example.com', password: 'WrongPassword1' });
+
+        expect(res.status).toBe(423);
+        expect(res.body.code).toBe('account_locked');
+        expect(res.body).toHaveProperty('lockoutUntil');
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Email Verification', () => {
+    it('POST /verify-email — 200 on valid token and email, returns user and tokens', async () => {
+        mockVerifyEmail.mockResolvedValueOnce(mockAuthResponse);
+
+        const res = await request(app)
+            .post('/api/v1/auth/verify-email')
+            .send({ email: 'test@example.com', token: '123456' });
+
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveProperty('accessToken');
+        expect(res.body).toHaveProperty('user');
+    });
+
+    it('POST /resend-verification — 200 on valid email', async () => {
+        mockResendVerification.mockResolvedValueOnce({
+            message: 'If the email address is registered, a new verification link has been sent.',
+            emailSent: true,
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/resend-verification')
+            .send({ email: 'test@example.com' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.emailSent).toBe(true);
     });
 });

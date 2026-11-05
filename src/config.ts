@@ -5,6 +5,16 @@ if (process.env.NODE_ENV !== 'production') {
     dotenv.config();
 }
 
+const cleanEnv = (val?: string): string => {
+    if (!val) return '';
+    return val.trim().replace(/^["']|["']$/g, '');
+};
+
+const cleanPass = (val?: string): string => {
+    if (!val) return '';
+    return val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+};
+
 export const config = {
     port: process.env.PORT || 5001,
     nodeEnv: process.env.NODE_ENV || 'development',
@@ -38,8 +48,23 @@ export const config = {
     },
 
     email: {
-        from: process.env.EMAIL_FROM || 'noreply@watchhive.com',
-        sendgridApiKey: process.env.SENDGRID_API_KEY,
+        from: cleanEnv(process.env.EMAIL_FROM) || 'watchershive@gmail.com',
+        fromName: cleanEnv(process.env.EMAIL_FROM_NAME) || 'WatchersHive',
+        sendgridApiKey: cleanEnv(process.env.SENDGRID_API_KEY),
+        resendApiKey: cleanEnv(
+            process.env.RESEND_API_KEY ||
+            process.env.RESEND_KEY ||
+            process.env.RESEND_TOKEN ||
+            process.env.RESEND_APIKEY
+        ),
+        smtp: {
+            host: cleanEnv(process.env.SMTP_HOST) || 'smtp.gmail.com',
+            port: parseInt(cleanEnv(process.env.SMTP_PORT) || '587', 10),
+            secure: cleanEnv(process.env.SMTP_SECURE) === 'true' || cleanEnv(process.env.SMTP_PORT) === '465',
+            user: cleanEnv(process.env.SMTP_USER),
+            pass: cleanPass(process.env.SMTP_PASS),
+            service: cleanEnv(process.env.SMTP_SERVICE) || 'gmail',
+        },
     },
 
     cloudinary: {

@@ -144,6 +144,21 @@ describe('POST /api/v1/entries — input validation', () => {
         expect(res.status).toBe(400);
     });
 
+    it('403 — blocks movie logging if user email is not verified', async () => {
+        const unverifiedToken = jwt.sign(
+            { userId: TEST_USER_ID, email: 'test@example.com', isEmailVerified: false },
+            JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+        const res = await request(app)
+            .post('/api/v1/entries')
+            .set('Authorization', `Bearer ${unverifiedToken}`)
+            .send({ tmdbId: 550, title: 'Test', type: 'MOVIE', watchedAt: new Date().toISOString() });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('email_verification_required');
+    });
+
     it('400 — rating below min (< 0)', async () => {
         const res = await request(app)
             .post('/api/v1/entries')

@@ -189,6 +189,7 @@ router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: R
                             title: title || `Media #${item.tmdbId}`,
                             posterPath,
                             releaseDate,
+                            localRating: localEntry?.rating ? Number(localEntry.rating) : null,
                             voteAverage: localEntry?.rating ? Number(localEntry.rating) : voteAverage,
                         };
                     })
@@ -563,7 +564,8 @@ router.get('/:listId/ranked', authMiddleware, async (req: Request, res: Response
                     mediaType: item.mediaType,
                     orderIndex: item.orderIndex,
                     addedAt: item.addedAt,
-                    localRating: localEntry?.rating || null,
+                    localRating: localEntry?.rating ? Number(localEntry.rating) : null,
+                    voteAverage: localEntry?.rating ? Number(localEntry.rating) : null,
                     localReview: localEntry?.review || null,
                     tags: localEntry?.tags || [],
                     watchedAt: localEntry?.watchedAt || null,

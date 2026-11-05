@@ -9,9 +9,14 @@ export const validate = (
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
+        const errorList = errors.array();
+        const firstError = errorList[0];
+        const userFriendlyMessage = firstError?.msg || 'Please check the details you entered and try again.';
+
         res.status(400).json({
-            error: 'Validation failed',
-            details: errors.array().map((err) => ({
+            error: userFriendlyMessage,
+            message: userFriendlyMessage,
+            details: errorList.map((err) => ({
                 field: err.type === 'field' ? err.path : undefined,
                 message: err.msg,
             })),

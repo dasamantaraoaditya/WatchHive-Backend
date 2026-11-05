@@ -128,12 +128,18 @@ class TMDbService {
   private apiKey: string;
   private client: AxiosInstance;
   private cache = new TMDbCache(3000);
+  private inFlightRequests = new Map<string, Promise<any>>();
 
   constructor() {
     if (!TMDB_API_KEY) {
-      throw new Error('TMDB_API_KEY is not defined in environment variables');
+      if (process.env.NODE_ENV === 'test') {
+        this.apiKey = 'mock-tmdb-key-for-test';
+      } else {
+        throw new Error('TMDB_API_KEY is not defined in environment variables');
+      }
+    } else {
+      this.apiKey = TMDB_API_KEY;
     }
-    this.apiKey = TMDB_API_KEY;
 
     // Use connection pooling with keepAlive to reuse TCP/TLS connections
     this.client = axios.create({
@@ -175,42 +181,56 @@ class TMDbService {
       return cached;
     }
 
-    let lastError: Error | null = null;
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        const response = await this.client.request<T>({
-          ...config,
-          params: {
-            api_key: this.apiKey,
-            ...config.params,
-          },
-        });
-        const data = response.data;
-        const effectiveTtl = ttlMs ?? this.getTtlForUrl(config.url);
-        this.cache.set(cacheKey, data, effectiveTtl);
-        return data;
-      } catch (error: any) {
-        lastError = error;
-        const code = error?.code || error?.cause?.code || '';
-        const isRetryable = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'ERR_SOCKET_CONNECTION_TIMEOUT'].includes(code)
-          || (error?.response?.status === 429)  // rate limited
-          || (error?.response?.status >= 500);  // server error
-
-        // Don't retry on 404 Not Found
-        if (error?.response?.status === 404) {
-          throw error;
-        }
-
-        if (isRetryable && attempt < retries) {
-          const delay = 1000;
-          console.warn(`TMDb request failed (attempt ${attempt}/${retries}, code: ${code}). Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        } else {
-          break;
-        }
-      }
+    // Single-flight deduplication: reuse ongoing request for the same key
+    if (this.inFlightRequests.has(cacheKey)) {
+      return this.inFlightRequests.get(cacheKey) as Promise<T>;
     }
-    throw lastError;
+
+    const requestPromise = (async () => {
+      try {
+        let lastError: Error | null = null;
+        for (let attempt = 1; attempt <= retries; attempt++) {
+          try {
+            const response = await this.client.request<T>({
+              ...config,
+              params: {
+                api_key: this.apiKey,
+                ...config.params,
+              },
+            });
+            const data = response.data;
+            const effectiveTtl = ttlMs ?? this.getTtlForUrl(config.url);
+            this.cache.set(cacheKey, data, effectiveTtl);
+            return data;
+          } catch (error: any) {
+            lastError = error;
+            const code = error?.code || error?.cause?.code || '';
+            const isRetryable = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'ERR_SOCKET_CONNECTION_TIMEOUT'].includes(code)
+              || (error?.response?.status === 429)  // rate limited
+              || (error?.response?.status >= 500);  // server error
+
+            // Don't retry on 404 Not Found
+            if (error?.response?.status === 404) {
+              throw error;
+            }
+
+            if (isRetryable && attempt < retries) {
+              const delay = 1000;
+              console.warn(`TMDb request failed (attempt ${attempt}/${retries}, code: ${code}). Retrying in ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              break;
+            }
+          }
+        }
+        throw lastError;
+      } finally {
+        this.inFlightRequests.delete(cacheKey);
+      }
+    })();
+
+    this.inFlightRequests.set(cacheKey, requestPromise);
+    return requestPromise;
   }
 
   /**
@@ -448,11 +468,26 @@ class TMDbService {
     mediaType?: 'movie' | 'tv' | 'all';
     year?: number;
     genreId?: number;
+    withGenres?: string | number | number[];
+    withOriginalLanguage?: string;
+    withWatchProviders?: string | number;
+    watchRegion?: string;
     sortBy?: string;
     page?: number;
     query?: string;
   }): Promise<TMDbSearchResult> {
-    const { mediaType = 'all', year, genreId, sortBy = 'popularity.desc', page = 1, query } = options;
+    const {
+      mediaType = 'all',
+      year,
+      genreId,
+      withGenres,
+      withOriginalLanguage,
+      withWatchProviders,
+      watchRegion,
+      sortBy = 'popularity.desc',
+      page = 1,
+      query,
+    } = options;
     try {
       if (query && query.trim()) {
         const cleanQuery = query.trim();
@@ -516,6 +551,18 @@ class TMDbService {
         };
         if (year) params.primary_release_year = year;
         if (genreId && genreId > 0) params.with_genres = genreId;
+        if (withGenres) {
+          params.with_genres = Array.isArray(withGenres) ? withGenres.join(',') : withGenres;
+        }
+        if (withOriginalLanguage) {
+          params.with_original_language = withOriginalLanguage;
+        }
+        if (withWatchProviders) {
+          params.with_watch_providers = String(withWatchProviders);
+        }
+        if (watchRegion) {
+          params.watch_region = watchRegion;
+        }
 
         const res = await this.requestWithRetry<TMDbSearchResult>({
           url: '/discover/movie',
@@ -535,6 +582,18 @@ class TMDbService {
         };
         if (year) params.first_air_date_year = year;
         if (genreId && genreId > 0) params.with_genres = genreId;
+        if (withGenres) {
+          params.with_genres = Array.isArray(withGenres) ? withGenres.join(',') : withGenres;
+        }
+        if (withOriginalLanguage) {
+          params.with_original_language = withOriginalLanguage;
+        }
+        if (withWatchProviders) {
+          params.with_watch_providers = String(withWatchProviders);
+        }
+        if (watchRegion) {
+          params.watch_region = watchRegion;
+        }
 
         const res = await this.requestWithRetry<TMDbSearchResult>({
           url: '/discover/tv',

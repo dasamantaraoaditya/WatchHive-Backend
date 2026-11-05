@@ -48,4 +48,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/watchhive_test
           JWT_SECRET: test-secret
+          TMDB_API_KEY: mock-tmdb-key-for-ci
+          NODE_ENV: test
           JWT_REFRESH_SECRET: test-refresh-secret

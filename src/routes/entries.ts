@@ -157,6 +157,15 @@ router.post(
                 return;
             }
 
+            // Gating: Require email verification before logging movies
+            if ((req as any).user?.isEmailVerified === false) {
+                res.status(403).json({
+                    error: 'Please verify your email address before logging movies.',
+                    code: 'email_verification_required',
+                });
+                return;
+            }
+
             const userId = (req as any).user.userId;
             const {
                 tmdbId,
@@ -249,15 +258,36 @@ router.post(
                 const placeholderEntry = existingEntriesList.find(e => e.rating === null && !e.review);
                 const targetExisting = activeWatchingEntry || placeholderEntry;
 
+                // Check if user already has a completed watch entry for this title
+                const completedWatch = existingEntriesList.find(
+                    e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null)
+                );
+
+                // If user has already watched this title, and this submission is a completed entry without isRewatch,
+                // do not allow standard duplicate logging
+                if (completedWatch && !targetExisting && !isWatching && !isRewatch) {
+                    res.status(400).json({
+                        error: 'You have already watched this title. Rewatch must be enabled to log a duplicate entry.',
+                        code: 'ALREADY_WATCHED',
+                        existingEntry: {
+                            ...completedWatch,
+                            rating: completedWatch.rating ? parseFloat(completedWatch.rating) : null,
+                        }
+                    });
+                    return;
+                }
+
+                const isDateOmitted = watchedAt === null || watchedAt === '' || req.body.unspecifiedDate === true;
                 if (targetExisting && (!isWatching || rating || review)) {
                     const finalIsWatching = isWatching !== undefined ? isWatching : false;
                     const now = new Date();
+                    const resolvedWatchedAt = isDateOmitted ? null : (watchedAt !== undefined ? resolveValidDate(watchedAt, now) : targetExisting.watchedAt);
                     await db
                         .update(entries)
                         .set({
                             title: resolvedTitle,
                             type: type as any,
-                            watchedAt: resolveValidDate(watchedAt, now)!,
+                            watchedAt: resolvedWatchedAt,
                             rating: rating ? rating.toString() : targetExisting.rating,
                             review: review !== undefined ? (review || null) : targetExisting.review,
                             tags: entryTags.length > 0 ? entryTags : targetExisting.tags,
@@ -287,12 +317,14 @@ router.post(
             if (!targetEntryId) {
                 // Create entry
                 const now = new Date();
+                const isDateOmitted = watchedAt === null || watchedAt === '' || req.body.unspecifiedDate === true;
+                const resolvedWatchedAt = isDateOmitted ? null : (watchedAt !== undefined ? resolveValidDate(watchedAt, now) : now);
                 const [newEntry] = await db.insert(entries).values({
                     userId,
                     tmdbId,
                     title: resolvedTitle,
                     type: type as any,
-                    watchedAt: resolveValidDate(watchedAt, now)!,
+                    watchedAt: resolvedWatchedAt,
                     rating: rating ? rating.toString() : null,
                     review: review || null,
                     tags: entryTags,
@@ -343,6 +375,22 @@ router.post(
             // Award additional XP if they wrote a review
             if (review && review.trim().length > 10) {
                 await xpService.awardXp(userId, XpAction.WRITE_REVIEW);
+            }
+
+            // Update watch streak and award streak badges
+            await xpService.updateStreakAndCheckBadges(userId);
+
+            // If entry was from a suggestion, mark suggestion as watched and award suggestion badges
+            if (finalSuggestedByUserId) {
+                try {
+                    await db.update(suggestions)
+                        .set({ status: 'watched' })
+                        .where(and(eq(suggestions.toUserId, userId), eq(suggestions.tmdbId, tmdbId)));
+                    await xpService.awardXp(userId, XpAction.COMPLETE_SUGGESTION);
+                    await xpService.checkSuggestionBadges(userId);
+                } catch (suggErr) {
+                    console.error('[Entries] Error resolving suggestion on watch log:', suggErr);
+                }
             }
 
             // Notify followers about watching activity (fire & forget) if allowed to post to feed
@@ -511,12 +559,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
 
         // Whitelist allowed sort fields and sort directions
         const ALLOWED_SORT_FIELDS: Record<string, any> = {
-            watchedAt: entries.watchedAt,
+            watchedAt: sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`,
             createdAt: entries.createdAt,
             rating: entries.rating,
             title: entries.title,
         };
-        const sortColumn = ALLOWED_SORT_FIELDS[sortBy as string] || entries.watchedAt;
+        const sortColumn = ALLOWED_SORT_FIELDS[sortBy as string] || sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`;
         const sortOrder = String(order).toLowerCase() === 'asc' ? asc(sortColumn) : desc(sortColumn);
 
         // Sanitize limit and offset
@@ -633,6 +681,71 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
  *       404:
  *         description: Entry not found
  */
+/**
+ * @openapi
+ * /api/v1/entries/check/{tmdbId}:
+ *   get:
+ *     tags: [Entries]
+ *     summary: Check if user has already logged a completed watch for this title
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tmdbId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Check result with hasWatched and previous entry
+ */
+router.get(
+    '/check/:tmdbId',
+    authMiddleware,
+    async (req: Request, res: Response): Promise<any> => {
+        try {
+            const userId = (req as any).user.userId || (req as any).user.id;
+            const tmdbId = parseInt(req.params.tmdbId, 10);
+            if (isNaN(tmdbId)) {
+                res.status(400).json({ error: 'Invalid TMDb ID' });
+                return;
+            }
+
+            const existingEntries = await db
+                .select()
+                .from(entries)
+                .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)))
+                .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`), desc(entries.createdAt));
+
+            const completed = existingEntries.filter(
+                e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null)
+            );
+
+            if (completed.length > 0) {
+                const latest = completed[0];
+                res.json({
+                    hasWatched: true,
+                    watchCount: completed.length,
+                    existingEntry: {
+                        ...latest,
+                        rating: latest.rating ? parseFloat(latest.rating) : null,
+                    }
+                });
+                return;
+            }
+
+            res.json({
+                hasWatched: false,
+                watchCount: 0,
+                existingEntry: null
+            });
+        } catch (error) {
+            console.error('Failed to check existing entry:', error);
+            res.status(500).json({ error: 'Failed to check entry' });
+        }
+    }
+);
+
 router.get(
     '/:id',
     authMiddleware,
@@ -840,7 +953,11 @@ router.put(
                     .set({ isWatching: false, completedAt: now, updatedAt: now })
                     .where(and(eq(entries.userId, userId), eq(entries.tmdbId, existingEntry.tmdbId), eq(entries.isWatching, true)));
             }
-            if (updateData.watchedAt) updateData.watchedAt = resolveValidDate(updateData.watchedAt, now);
+            if (req.body.watchedAt === null || req.body.watchedAt === '' || req.body.unspecifiedDate === true) {
+                updateData.watchedAt = null;
+            } else if (updateData.watchedAt) {
+                updateData.watchedAt = resolveValidDate(updateData.watchedAt, now);
+            }
             if (updateData.startedAt) updateData.startedAt = resolveValidDate(updateData.startedAt, null);
             if (updateData.completedAt) updateData.completedAt = resolveValidDate(updateData.completedAt, null);
             if (updateData.rating) updateData.rating = updateData.rating.toString();
@@ -911,6 +1028,18 @@ router.put(
                     isWatching: true,
                     tmdbId: entry?.tmdbId || existingEntry.tmdbId,
                 }).catch(err => console.error('[FollowerActivity] Notification error on PUT:', err));
+            }
+
+            if (existingEntry.isWatching && updateData.isWatching === false) {
+                try {
+                    await xpService.updateStreakAndCheckBadges(userId);
+                    if (existingEntry.suggestedByUserId) {
+                        await xpService.awardXp(userId, XpAction.COMPLETE_SUGGESTION);
+                        await xpService.checkSuggestionBadges(userId);
+                    }
+                } catch (streakErr) {
+                    console.error('[Entries] Error updating streak/badges on completion:', streakErr);
+                }
             }
 
             res.json({

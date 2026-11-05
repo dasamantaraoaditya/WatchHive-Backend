@@ -2,9 +2,10 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { db } from '../db/index.js';
 import { users, suggestions, follows } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, or, desc } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
+import { smartSuggestService } from '../services/smart-suggest.service.js';
 
 const router = Router();
 
@@ -73,15 +74,20 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
 
         for (const recipientId of targetIds) {
             try {
-                // Validate that the recipient is a follower of the current user
-                const [isFollowedBy] = await db
+                // Validate that there is a follow connection (either current user follows recipient OR recipient follows current user)
+                const [followConnection] = await db
                     .select()
                     .from(follows)
-                    .where(and(eq(follows.followerId, recipientId), eq(follows.followingId, fromUserId)))
+                    .where(
+                        or(
+                            and(eq(follows.followerId, fromUserId), eq(follows.followingId, recipientId)),
+                            and(eq(follows.followerId, recipientId), eq(follows.followingId, fromUserId))
+                        )
+                    )
                     .limit(1);
 
-                if (!isFollowedBy) {
-                    errors.push(`User ${recipientId} is not following you`);
+                if (!followConnection) {
+                    errors.push(`You must be connected with user ${recipientId} to send suggestions`);
                     continue;
                 }
 
@@ -235,6 +241,39 @@ router.get('/sent', authMiddleware, async (req: Request, res: Response): Promise
     } catch (error) {
         console.error('Error fetching sent suggestions:', error);
         res.status(500).json({ error: 'Failed to fetch sent suggestions' });
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/suggestions/smart-suggest:
+ *   get:
+ *     tags: [Suggestions]
+ *     summary: Get personalized SmartSuggest recommendations balancing social influence, consensus, and personal taste
+ *     parameters:
+ *       - in: query
+ *         name: mode
+ *         schema:
+ *           type: string
+ *           enum: [social, critic, explore]
+ *           default: social
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ */
+router.get('/smart-suggest', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+        const mode = (req.query.mode === 'critic' || req.query.mode === 'explore') ? req.query.mode : 'social';
+        const limit = Math.min(20, Math.max(1, parseInt(req.query.limit as string) || 10));
+
+        const result = await smartSuggestService.getSmartSuggestions(userId, mode, limit);
+        res.json(result);
+    } catch (error) {
+        console.error('[Suggestions] Error getting smart suggestions:', error);
+        res.status(500).json({ error: 'Failed to generate smart suggestions' });
     }
 });
 
