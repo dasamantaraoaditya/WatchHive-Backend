@@ -2,6 +2,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { emailMatchSql } from '../utils/email.util.js';
 import {
     generateAccessToken,
     generateRefreshToken,
@@ -174,7 +175,7 @@ export const googleAuthService = {
                     hasCompletedOnboarding: users.hasCompletedOnboarding,
                 })
                 .from(users)
-                .where(eq(users.email, googlePayload.email))
+                .where(emailMatchSql(users.email, googlePayload.email))
                 .limit(1);
 
             if (existingEmailUser) {

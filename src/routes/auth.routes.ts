@@ -20,7 +20,7 @@ const registerValidation = [
         .trim()
         .isEmail()
         .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .normalizeEmail({ gmail_remove_dots: false }),
     body('password')
         .isLength({ min: 8 })
         .withMessage('Password must be at least 8 characters long')
@@ -70,7 +70,7 @@ const verifyEmailValidation = [
         .trim()
         .isEmail()
         .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .normalizeEmail({ gmail_remove_dots: false }),
     body('token')
         .trim()
         .notEmpty()
@@ -82,7 +82,7 @@ const resendVerificationValidation = [
         .trim()
         .isEmail()
         .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .normalizeEmail({ gmail_remove_dots: false }),
 ];
 
 const emailOtpRequestValidation = [
@@ -90,7 +90,7 @@ const emailOtpRequestValidation = [
         .trim()
         .isEmail()
         .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .normalizeEmail({ gmail_remove_dots: false }),
 ];
 
 const emailOtpVerifyValidation = [
@@ -98,7 +98,7 @@ const emailOtpVerifyValidation = [
         .trim()
         .isEmail()
         .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .normalizeEmail({ gmail_remove_dots: false }),
     body('code')
         .trim()
         .isLength({ min: 6, max: 6 })
@@ -112,7 +112,7 @@ const forgotPasswordValidation = [
         .trim()
         .isEmail()
         .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .normalizeEmail({ gmail_remove_dots: false }),
 ];
 
 const resetPasswordValidation = [
@@ -123,7 +123,7 @@ const resetPasswordValidation = [
         .trim()
         .isEmail()
         .withMessage('Must be a valid email address')
-        .normalizeEmail(),
+        .normalizeEmail({ gmail_remove_dots: false }),
     body('newPassword')
         .isLength({ min: 8 })
         .withMessage('Password must be at least 8 characters long')
