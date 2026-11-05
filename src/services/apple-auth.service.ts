@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
-import { emailMatchSql } from '../utils/email.util.js';
+import { emailMatchSql, cleanEmail } from '../utils/email.util.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.util.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
@@ -65,7 +65,7 @@ export const appleAuthService = {
         // Verify token structure and extract sub & email
         const tokenData = this.decodeAppleToken(identityToken);
         const appleSub = userIdentifier || tokenData.sub;
-        const effectiveEmail = (tokenData.email || clientEmail || '').trim().toLowerCase();
+        const effectiveEmail = cleanEmail(tokenData.email || clientEmail);
 
         let isNewUser = false;
 

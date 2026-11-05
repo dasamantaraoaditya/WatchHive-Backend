@@ -2,7 +2,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
-import { emailMatchSql } from '../utils/email.util.js';
+import { emailMatchSql, cleanEmail } from '../utils/email.util.js';
 import {
     generateAccessToken,
     generateRefreshToken,
@@ -77,7 +77,7 @@ export const googleAuthService = {
 
             return {
                 googleId: payload.sub,
-                email: payload.email.toLowerCase().trim(),
+                email: cleanEmail(payload.email),
                 name: payload.name || payload.email.split('@')[0],
                 picture: payload.picture,
             };
@@ -100,7 +100,7 @@ export const googleAuthService = {
                         console.log('[GoogleAuth] Fallback tokeninfo verification succeeded for:', data.email);
                         return {
                             googleId: data.sub,
-                            email: (data.email as string).toLowerCase().trim(),
+                            email: cleanEmail(data.email as string),
                             name: data.name || (data.email as string).split('@')[0],
                             picture: data.picture,
                         };
