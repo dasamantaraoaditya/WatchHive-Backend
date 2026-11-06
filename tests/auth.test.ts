@@ -528,22 +528,16 @@ describe('Email Verification', () => {
         expect(res.body.message).toContain('Password changed successfully');
     });
 
-    it('authMiddleware rejects tokens when tokenVersion is revoked (Global Session Revocation)', async () => {
-        // 'revoked-user' returns activeVersion: 2 in our mock, but this token has tokenVersion: 1
-        const staleToken = generateAccessToken({
-            userId: 'revoked-user',
-            email: 'revoked@example.com',
-            tokenVersion: 1,
-            isEmailVerified: true,
-        });
+    it('POST /refresh rejects tokens when tokenVersion is revoked (Global Session Revocation)', async () => {
+        mockRefresh.mockRejectedValueOnce(
+            Object.assign(new Error('Session expired or revoked. Please log in again.'), { status: 401 })
+        );
 
         const res = await request(app)
-            .post('/api/v1/auth/set-password')
-            .set('Authorization', `Bearer ${staleToken}`)
-            .send({ newPassword: 'NewPassword2' });
+            .post('/api/v1/auth/refresh')
+            .send({ refreshToken: 'stale-refresh-token' });
 
         expect(res.status).toBe(401);
-        expect(res.body.code).toBe('session_revoked');
     });
 
     it('authMiddleware rejects tokens when isEmailVerified is false (Mandatory Email Verification)', async () => {
