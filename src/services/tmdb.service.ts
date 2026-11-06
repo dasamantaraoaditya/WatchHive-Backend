@@ -279,6 +279,21 @@ class TMDbService {
   }
 
   /**
+   * Find movie or TV show by external ID (e.g. IMDb ID)
+   */
+  async findByExternalId(externalId: string, source: string = 'imdb_id'): Promise<any> {
+    try {
+      return await this.requestWithRetry<any>({
+        url: `/find/${externalId}`,
+        params: { external_source: source },
+      });
+    } catch (error) {
+      console.error('Error finding by external ID:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get movie details by TMDb ID
    */
   async getMovieDetails(movieId: number): Promise<TMDbMovieDetails> {
@@ -353,6 +368,34 @@ class TMDbService {
       console.error('Error getting TV show details:', error);
       throw new Error('Failed to get TV show details from TMDb');
     }
+  }
+
+  /**
+   * Get lightweight media summary (title, year, poster_path, media_type) without heavy enrichments
+   */
+  async getMediaSummary(tmdbId: number, mediaType?: 'movie' | 'tv'): Promise<{ title: string; year: string; poster_path: string | null; media_type: 'movie' | 'tv' } | null> {
+    const typesToTry: ('movie' | 'tv')[] = mediaType ? [mediaType] : ['movie', 'tv'];
+    for (const type of typesToTry) {
+      try {
+        const data = await this.requestWithRetry<any>({
+          url: `/${type}/${tmdbId}`,
+        });
+        if (data) {
+          return {
+            title: data.title || data.name || '',
+            year: (data.release_date || data.first_air_date || '').slice(0, 4),
+            poster_path: data.poster_path || null,
+            media_type: type,
+          };
+        }
+      } catch (err: any) {
+        if (err?.response?.status === 404) {
+          continue;
+        }
+        console.warn(`Failed to fetch ${type} summary for ID ${tmdbId}:`, err?.message || err);
+      }
+    }
+    return null;
   }
 
   /**
