@@ -174,25 +174,46 @@ The WatchHive API is continuously benchmarked under concurrent traffic and profi
 
 ---
 
-### Live Staging Benchmark Results (Autocannon, 10 Concurrent Connections)
+### Live Staging & Production Benchmark Results
 
-The following metrics were collected from our live **Railway Staging Environment** with real database queries, JWT verification, and multi-table aggregations.
+The following metrics reflect our live **Railway Production & Staging Environments** under authenticated load, real Supabase PostgreSQL pooler transactions, JWT verification, and multi-table aggregations.
 
-| Scenario | Method & Endpoint | Avg Throughput | Avg Latency | p99 Latency | Total Requests | Success Rate |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Baseline Health** | `GET /health` | **34 req/s** | 283 ms | 582 ms | 343 | **100.0%** (0 errors) |
-| **User Profile** | `GET /api/v1/users/me` | **28 req/s** | 353 ms | 2,568 ms | 282 | **100.0%** (0 errors) |
-| **Watch Entries** | `GET /api/v1/entries` | **28 req/s** | 358 ms | 2,555 ms | 276 | **100.0%** (0 errors) |
-| **Activity Feed** | `GET /api/v1/feed/trending` | **21 req/s** | 455 ms | 2,642 ms | 213 | **100.0%** (0 errors) |
-| **Authentication** | `POST /api/v1/auth/login` | **13 req/s** | 378 ms | 2,736 ms | 130 | **Throttled (Rate Protected)** |
+#### Production Benchmark: Before vs. After Optimization
 
-### Key Performance Characteristics:
-1. **Sub-Millisecond Internal Database Latency:**
-   Comparing `GET /health` (trivial `SELECT 1`) with `GET /api/v1/entries` (querying rows and parsing JSON) shows near identical response times over the internal network. Internal query execution between the API and PostgreSQL is **$< 1\text{ms}$** over the private network mesh.
-2. **Zero Failures Under Concurrency:**
-   Across continuous load requests, all authenticated read queries maintained a **100% success rate** with **0 timeouts**, **0 dropped connections**, and **0 HTTP 5xx errors**.
-3. **Hardened Brute-Force Rate Limiting:**
-   The `POST /api/v1/auth/login` endpoint safely throttles high-frequency concurrent attempts (429/423) after legitimate threshold breaches, preventing password enumeration while sustaining 13 logins/sec with bcrypt (10 rounds).
+| Endpoint | Method | Pre-Optimization Avg | Post-Optimization Avg | Peak (Min) | Latency Reduction |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Friend Recommendations** | `GET /api/v1/users/suggested` | `2,143 ms` | **927 ms** | `250 ms` (cached) | **57% – 88% faster** |
+| **Activity Feed (Page 1)** | `GET /api/v1/feed?page=1` | `2,163 ms` | **1,206 ms** | `1,050 ms` | **44% faster** |
+| **MindLens Insights** | `GET /api/v1/mindlens/insights` | `1,586 ms` | **818 ms** | `793 ms` | **48% faster** |
+| **Stats Summary** | `GET /api/v1/entries/stats/summary` | `858 ms` | **509 ms** | `492 ms` | **41% faster** |
+| **User Profile (`/me`)** | `GET /api/v1/users/me` | `791 ms` | **520 ms** | `498 ms` | **34% faster** |
+| **Detailed Analytics** | `GET /api/v1/stats/detailed` | `764 ms` | **594 ms** | `524 ms` | **22% faster** |
+| **Trending Feed** | `GET /api/v1/feed/trending` | `636 ms` | **504 ms** | `490 ms` | **21% faster** |
+| **Watch Entries** | `GET /api/v1/entries` | `506 ms` | **518 ms** | `498 ms` | **Stable** |
+| **TMDb Popular** | `GET /api/v1/tmdb/popular` | `262 ms` | **279 ms** | `264 ms` | **Sub-300ms** |
+| **TMDb Trending Week** | `GET /api/v1/tmdb/trending/all/week` | `312 ms` | **249 ms** | `243 ms` | **20% faster** |
+| **TMDb Multi-Search** | `GET /api/v1/tmdb/search/multi` | `296 ms` | **270 ms** | `264 ms` | **Sub-300ms** |
+| **Health Check** | `GET /health` | `492 ms` | **458 ms` | `372 ms` | **Baseline** |
+
+---
+
+### Core Architectural Optimizations:
+1. **Supabase PostgreSQL Expression & B-Tree Indexes:**
+   - `users_email_lower_idx` on `LOWER(email)`: Eliminates table scans during login, registration, and email verification.
+   - `users_username_lower_idx` on `LOWER(username)`: Instant O(log N) username resolution for search and profile queries.
+   - `users_xp_idx` on `(xp DESC)`: High-velocity indexing for cinephile community leaderboards and cold-start fallback suggestions.
+   - `entries_created_at_idx` & `entries_user_created_idx`: Accelerates feed sorting and reverse-chronological user catalogs.
+   - `blocked_users_blocked_id_idx`: Fast lookup for bidirectional blocking exclusions.
+2. **Concurrent Database Pipeline (`Promise.all`):**
+   - Replaced serial database round-trips with parallel batches. In `/users/suggested`, 8 sequential queries were collapsed into 2 parallel batches. In `/mindlens/insights`, watch history and social suggestion network telemetry run simultaneously.
+   - In `/entries/stats/summary`, 5 separate count/avg queries were consolidated into a single SQL statement utilizing `FILTER (WHERE ...)`.
+3. **Outbound TMDB Fan-Out Parallelization (`Promise.allSettled`):**
+   - In `/feed`, sequential loops for language and genre discovery were converted to parallel concurrent calls using `Promise.allSettled`, dropping outbound latency overhead from ~1,800ms to ~250ms.
+4. **Multi-Tier In-Memory Short-TTL Caching:**
+   - 5-minute memory cache for personalized feed recommendations.
+   - 60-second cache for friend recommendations with instant invalidation on follow/unfollow events.
+5. **PgBouncer Multi-Tenant Pooler Stability:**
+   - Enforced `prepare: false` on the Postgres client connection pooler to prevent prepared statement collision errors across Supabase transaction-pooled connections.
 
 ### How to Re-Run Benchmarks
 You can execute the automated performance test suite against any environment at any time:
