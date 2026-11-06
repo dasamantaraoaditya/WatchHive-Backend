@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { users, follows, followRequests, entries, blockedUsers } from '../db/schema.js';
-import { eq, and, or, inArray, notInArray, desc, count, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, notInArray, desc, sql } from 'drizzle-orm';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 export interface SuggestedUserResult {
