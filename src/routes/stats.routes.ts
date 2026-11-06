@@ -55,22 +55,23 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
 
         const whereClause = and(...conditions);
 
-        // 2. Fetch Data for Aggregation
-        const userEntries = await db.select({
-            id: entries.id,
-            title: entries.title,
-            type: entries.type,
-            watchedAt: entries.watchedAt,
-            createdAt: entries.createdAt,
-            tags: entries.tags,
-            rating: entries.rating,
-        })
-            .from(entries)
-            .where(whereClause)
-            .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`));
+        // 2. Fetch Data for Aggregation (concurrent)
+        const [userEntries, allUserEntries] = await Promise.all([
+            db.select({
+                id: entries.id,
+                title: entries.title,
+                type: entries.type,
+                watchedAt: entries.watchedAt,
+                createdAt: entries.createdAt,
+                tags: entries.tags,
+                rating: entries.rating,
+            })
+                .from(entries)
+                .where(whereClause)
+                .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`)),
+            db.select({ tags: entries.tags }).from(entries).where(eq(entries.userId, userId))
+        ]);
 
-        // Also fetch all user tags for availableGenres filter dropdown
-        const allUserEntries = await db.select({ tags: entries.tags }).from(entries).where(eq(entries.userId, userId));
         const genreMap = new Map<string, number>();
         allUserEntries.forEach(e => {
             if (e.tags && Array.isArray(e.tags)) {

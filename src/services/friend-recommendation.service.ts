@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { users, follows, followRequests, entries, blockedUsers } from '../db/schema.js';
-import { eq, and, or, inArray, notInArray, desc, count, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, notInArray, desc, sql } from 'drizzle-orm';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 export interface SuggestedUserResult {
@@ -24,7 +24,21 @@ interface CandidateScoring {
     mutualCount: number;
 }
 
+// In-memory cache for suggested users (60-second TTL)
+const suggestedUsersCache = new Map<string, { data: SuggestedUserResult[]; expiresAt: number }>();
+
 export const friendRecommendationService = {
+    /**
+     * Clear cached suggestions for a user (call on follow/unfollow)
+     */
+    invalidateCache(userId?: string) {
+        if (userId) {
+            suggestedUsersCache.delete(userId);
+        } else {
+            suggestedUsersCache.clear();
+        }
+    },
+
     /**
      * Get smart, relevant friend suggestions:
      * 1. Inbound followers (users who follow you)
@@ -33,8 +47,21 @@ export const friendRecommendationService = {
      * 4. Cold-start fallback for new users (top active cinephiles, shared genre preferences)
      */
     async getSuggestedUsers(currentId: string, limit: number = 20): Promise<SuggestedUserResult[]> {
-        // Step 1: Collect exclusions (self, already followed, pending follow requests, blocked)
-        const [followedRows, pendingRows, blockedRows] = await Promise.all([
+        const cacheKey = `${currentId}:${limit}`;
+        const cached = suggestedUsersCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+            return cached.data;
+        }
+
+        // Step 1: Collect exclusions, inbound followers, user recent entries, and user preferences in parallel
+        const [
+            followedRows,
+            pendingRows,
+            blockedRows,
+            inboundFollowers,
+            userEntries,
+            currentUserRows
+        ] = await Promise.all([
             db.select({ followingId: follows.followingId })
                 .from(follows)
                 .where(eq(follows.followerId, currentId)),
@@ -44,6 +71,17 @@ export const friendRecommendationService = {
             db.select({ blockerId: blockedUsers.blockerId, blockedId: blockedUsers.blockedId })
                 .from(blockedUsers)
                 .where(or(eq(blockedUsers.blockerId, currentId), eq(blockedUsers.blockedId, currentId))),
+            db.select({ followerId: follows.followerId })
+                .from(follows)
+                .where(eq(follows.followingId, currentId)),
+            db.select({ tmdbId: entries.tmdbId })
+                .from(entries)
+                .where(eq(entries.userId, currentId))
+                .limit(100),
+            db.select({ preferences: users.preferences })
+                .from(users)
+                .where(eq(users.id, currentId))
+                .limit(1)
         ]);
 
         const followedIds = new Set(followedRows.map((r) => r.followingId));
@@ -60,11 +98,6 @@ export const friendRecommendationService = {
         const candidateMap = new Map<string, CandidateScoring>();
 
         // Step 2: Inbound Followers (People who already follow the current user)
-        const inboundFollowers = await db
-            .select({ followerId: follows.followerId })
-            .from(follows)
-            .where(eq(follows.followingId, currentId));
-
         for (const { followerId } of inboundFollowers) {
             if (!excludeSet.has(followerId)) {
                 candidateMap.set(followerId, {
@@ -76,17 +109,45 @@ export const friendRecommendationService = {
             }
         }
 
-        // Step 3: Friends of Friends (Mutual Connections / 2nd-degree network)
-        if (followedIds.size > 0) {
-            const followedIdsArray = Array.from(followedIds);
-            const friendsOfFriends = await db
-                .select({
-                    candidateId: follows.followingId,
-                    friendId: follows.followerId,
-                })
-                .from(follows)
-                .where(inArray(follows.followerId, followedIdsArray));
+        const followedIdsArray = Array.from(followedIds);
+        const userTmdbIds = Array.from(new Set(userEntries.map((e) => e.tmdbId)));
+        const excludeArray = Array.from(excludeSet);
 
+        // Step 3 & Step 4: Run Friends of Friends and Shared Taste queries concurrently
+        const [friendsOfFriends, sharedEntries] = await Promise.all([
+            followedIdsArray.length > 0
+                ? db
+                    .select({
+                        candidateId: follows.followingId,
+                        friendId: follows.followerId,
+                    })
+                    .from(follows)
+                    .where(inArray(follows.followerId, followedIdsArray))
+                : Promise.resolve([]),
+            userTmdbIds.length > 0
+                ? db
+                    .select({
+                        candidateId: entries.userId,
+                        sharedCount: sql<number>`count(distinct ${entries.tmdbId})`,
+                    })
+                    .from(entries)
+                    .where(
+                        excludeArray.length > 0
+                            ? and(
+                                  inArray(entries.tmdbId, userTmdbIds),
+                                  notInArray(entries.userId, excludeArray)
+                              )
+                            : inArray(entries.tmdbId, userTmdbIds)
+                    )
+                    .groupBy(entries.userId)
+                    .having(sql`count(distinct ${entries.tmdbId}) >= 2`)
+                    .orderBy(desc(sql`count(distinct ${entries.tmdbId})`))
+                    .limit(30)
+                : Promise.resolve([])
+        ]);
+
+        // Process Friends of Friends
+        if (friendsOfFriends.length > 0) {
             const mutualsMap = new Map<string, string[]>();
             for (const row of friendsOfFriends) {
                 if (excludeSet.has(row.candidateId)) continue;
@@ -117,83 +178,41 @@ export const friendRecommendationService = {
             }
         }
 
-        // Step 4: Shared Movie / Watch Taste
-        const userEntries = await db
-            .select({ tmdbId: entries.tmdbId })
-            .from(entries)
-            .where(eq(entries.userId, currentId))
-            .limit(100);
-
-        const userTmdbIds = Array.from(new Set(userEntries.map((e) => e.tmdbId)));
-
-        if (userTmdbIds.length > 0) {
-            const excludeArray = Array.from(excludeSet);
-            const sharedTasteQuery = db
-                .select({
-                    candidateId: entries.userId,
-                    sharedCount: sql<number>`count(distinct ${entries.tmdbId})`,
-                })
-                .from(entries)
-                .where(
-                    excludeArray.length > 0
-                        ? and(
-                              inArray(entries.tmdbId, userTmdbIds),
-                              notInArray(entries.userId, excludeArray)
-                          )
-                        : inArray(entries.tmdbId, userTmdbIds)
-                )
-                .groupBy(entries.userId)
-                .having(sql`count(distinct ${entries.tmdbId}) >= 2`)
-                .orderBy(desc(sql`count(distinct ${entries.tmdbId})`))
-                .limit(30);
-
-            const sharedEntries = await sharedTasteQuery;
-
-            for (const row of sharedEntries) {
-                const countVal = Number(row.sharedCount) || 0;
-                const tasteScore = 40 + countVal * 5;
-                const existing = candidateMap.get(row.candidateId);
-                if (existing) {
-                    existing.score += tasteScore;
-                } else {
-                    candidateMap.set(row.candidateId, {
-                        userId: row.candidateId,
-                        score: tasteScore,
-                        reason: countVal >= 3 ? `${countVal} shared movies` : 'Shared movie taste',
-                        mutualCount: 0,
-                    });
-                }
+        // Process Shared Movie / Watch Taste
+        for (const row of sharedEntries) {
+            const countVal = Number(row.sharedCount) || 0;
+            const tasteScore = 40 + countVal * 5;
+            const existing = candidateMap.get(row.candidateId);
+            if (existing) {
+                existing.score += tasteScore;
+            } else {
+                candidateMap.set(row.candidateId, {
+                    userId: row.candidateId,
+                    score: tasteScore,
+                    reason: countVal >= 3 ? `${countVal} shared movies` : 'Shared movie taste',
+                    mutualCount: 0,
+                });
             }
         }
 
         // Step 5: Cold-Start / New User Fallback (Community Cinephiles & Genre Matches)
         if (candidateMap.size < limit) {
-            const [currentUser] = await db
-                .select({ preferences: users.preferences })
-                .from(users)
-                .where(eq(users.id, currentId))
-                .limit(1);
-
+            const currentUser = currentUserRows[0];
             const userPrefs = currentUser?.preferences as any;
             const userGenreIds: number[] = Array.isArray(userPrefs?.genreIds) ? userPrefs.genreIds : [];
 
-            const excludeArray = Array.from(excludeSet);
-            const communityQuery = db
+            // Query top cinephiles by XP (indexed on users_xp_idx) without full-table cross join
+            const communityUsers = await db
                 .select({
                     id: users.id,
                     xp: users.xp,
                     level: users.level,
                     preferences: users.preferences,
-                    entriesCount: count(entries.id),
                 })
                 .from(users)
-                .leftJoin(entries, eq(entries.userId, users.id))
                 .where(excludeArray.length > 0 ? notInArray(users.id, excludeArray) : undefined)
-                .groupBy(users.id)
-                .orderBy(desc(count(entries.id)), desc(users.xp))
+                .orderBy(desc(users.xp))
                 .limit(limit * 2);
-
-            const communityUsers = await communityQuery;
 
             for (const u of communityUsers) {
                 if (candidateMap.has(u.id)) continue;
@@ -210,12 +229,12 @@ export const friendRecommendationService = {
                 if (hasGenreOverlap) {
                     reason = 'Shared genre taste';
                     score = 25;
-                } else if (Number(u.entriesCount) >= 5) {
-                    reason = 'Active Cinephile';
-                    score = 20;
                 } else if ((u.xp || 0) > 100) {
                     reason = 'Top Reviewer';
                     score = 18;
+                } else if ((u.xp || 0) > 20) {
+                    reason = 'Active Cinephile';
+                    score = 15;
                 }
 
                 candidateMap.set(u.id, {
@@ -273,6 +292,9 @@ export const friendRecommendationService = {
                 mutualFriendsCount: candidate.mutualCount,
             });
         }
+
+        // Cache results for 60 seconds
+        suggestedUsersCache.set(cacheKey, { data: results, expiresAt: Date.now() + 60 * 1000 });
 
         return results;
     },

@@ -762,19 +762,20 @@ router.get('/stats/summary', authMiddleware, async (req: Request, res: Response)
     try {
         const userId = (req as any).user.userId;
 
-        const [
-            [{ totalEntries }],
-            [{ movieCount }],
-            [{ tvShowCount }],
-            [{ avgRating }],
-            [{ totalWatchTime }] // Still placeholder
-        ] = await Promise.all([
-            db.select({ totalEntries: count() }).from(entries).where(eq(entries.userId, userId)),
-            db.select({ movieCount: count() }).from(entries).where(and(eq(entries.userId, userId), eq(entries.type, 'MOVIE' as any))),
-            db.select({ tvShowCount: count() }).from(entries).where(and(eq(entries.userId, userId), eq(entries.type, 'TV_SHOW' as any))),
-            db.select({ avgRating: avg(entries.rating) }).from(entries).where(eq(entries.userId, userId)),
-            db.select({ totalWatchTime: count() }).from(entries).where(eq(entries.userId, userId)),
-        ]);
+        const [statsRow] = await db
+            .select({
+                totalEntries: count(),
+                movieCount: sql<number>`count(*) filter (where ${entries.type} = 'MOVIE')`.mapWith(Number),
+                tvShowCount: sql<number>`count(*) filter (where ${entries.type} = 'TV_SHOW')`.mapWith(Number),
+                avgRating: avg(entries.rating),
+            })
+            .from(entries)
+            .where(eq(entries.userId, userId));
+
+        const totalEntries = statsRow?.totalEntries ?? 0;
+        const movieCount = statsRow?.movieCount ?? 0;
+        const tvShowCount = statsRow?.tvShowCount ?? 0;
+        const avgRating = statsRow?.avgRating;
 
         res.json({
             stats: {
@@ -783,7 +784,7 @@ router.get('/stats/summary', authMiddleware, async (req: Request, res: Response)
                 tvShowCount,
                 episodeCount: (totalEntries || 0) - (movieCount || 0) - (tvShowCount || 0),
                 averageRating: parseFloat((avgRating as any) || 0),
-                totalWatchTime,
+                totalWatchTime: totalEntries,
             },
         });
     } catch (error) {
