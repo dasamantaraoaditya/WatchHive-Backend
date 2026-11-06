@@ -57,6 +57,7 @@ app.use(helmet({
                 'https://cdn.tailwindcss.com',
                 'https://accounts.google.com',
                 'https://apis.google.com',
+                'https://va.vercel-scripts.com',
             ],
             styleSrc: [
                 "'self'",
@@ -92,6 +93,8 @@ app.use(helmet({
                 'https://*.watchershive.com',
                 'https://*.railway.app',
                 'https://*.vercel.app',
+                'https://va.vercel-scripts.com',
+                'https://vitals.vercel-insights.com',
                 'http://localhost:*',
                 'ws://localhost:*',
             ],

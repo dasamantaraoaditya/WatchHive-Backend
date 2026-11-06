@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken, JWTPayload } from '../utils/jwt.util.js';
+import { getActiveTokenVersion } from '../services/auth.service.js';
 
 // Extend Express Request type to include user
 declare global {
@@ -11,11 +12,11 @@ declare global {
     }
 }
 
-export const authMiddleware = (
+export const authMiddleware = async (
     req: Request,
     res: Response,
     next: NextFunction
-): void => {
+): Promise<void> => {
     try {
         const authHeader = req.headers.authorization;
         let token: string | undefined;
@@ -33,6 +34,27 @@ export const authMiddleware = (
 
         const payload = verifyAccessToken(token);
 
+        // Mandatory Email Verification Enforcement
+        if (payload.isEmailVerified === false) {
+            res.status(403).json({
+                error: 'Please verify your email address to access this service.',
+                code: 'email_verification_required',
+            });
+            return;
+        }
+
+        // Global Session Revocation Enforcement
+        if (payload.tokenVersion !== undefined) {
+            const activeVersion = await getActiveTokenVersion(payload.userId);
+            if (activeVersion !== null && activeVersion !== payload.tokenVersion) {
+                res.status(401).json({
+                    error: 'Session has been revoked. Please sign in again.',
+                    code: 'session_revoked',
+                });
+                return;
+            }
+        }
+
         req.user = payload;
         next();
     } catch (error) {
@@ -40,11 +62,11 @@ export const authMiddleware = (
     }
 };
 
-export const optionalAuthMiddleware = (
+export const optionalAuthMiddleware = async (
     req: Request,
     _res: Response,
     next: NextFunction
-): void => {
+): Promise<void> => {
     try {
         const authHeader = req.headers.authorization;
         let token: string | undefined;
@@ -57,6 +79,14 @@ export const optionalAuthMiddleware = (
 
         if (token) {
             const payload = verifyAccessToken(token);
+            if (payload.tokenVersion !== undefined) {
+                const activeVersion = await getActiveTokenVersion(payload.userId);
+                if (activeVersion !== null && activeVersion !== payload.tokenVersion) {
+                    // Token version revoked; continue without user
+                    next();
+                    return;
+                }
+            }
             req.user = payload;
         }
 

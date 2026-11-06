@@ -203,6 +203,30 @@ export const authController = {
         }
     },
 
+    async changePassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const userId = req.user?.userId;
+
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const { currentPassword, newPassword } = req.body;
+
+            const result = await authService.changePassword(userId, currentPassword, newPassword);
+
+            // Update HttpOnly / SameSite cookies for web clients on the current device
+            if (result.accessToken && result.refreshToken) {
+                setAuthCookies(res, result.accessToken, result.refreshToken);
+            }
+
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    },
+
     async verifyEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const token = (req.body?.token || req.query?.token) as string;

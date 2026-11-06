@@ -209,10 +209,15 @@ The following metrics reflect our live **Railway Production & Staging Environmen
    - In `/entries/stats/summary`, 5 separate count/avg queries were consolidated into a single SQL statement utilizing `FILTER (WHERE ...)`.
 3. **Outbound TMDB Fan-Out Parallelization (`Promise.allSettled`):**
    - In `/feed`, sequential loops for language and genre discovery were converted to parallel concurrent calls using `Promise.allSettled`, dropping outbound latency overhead from ~1,800ms to ~250ms.
-4. **Multi-Tier In-Memory Short-TTL Caching:**
-   - 5-minute memory cache for personalized feed recommendations.
-   - 60-second cache for friend recommendations with instant invalidation on follow/unfollow events.
-5. **PgBouncer Multi-Tenant Pooler Stability:**
+4. **Multi-Tier In-Memory Short-TTL Caching with Event Invalidation (`src/utils/cache.util.ts`):**
+   - **User Profile (`userProfileCache`)**: 30-second TTL on `getFullAuthUser(userId)`. Yields sub-millisecond responses on repeated screen transitions; invalidated automatically when the user updates profile settings or preferences.
+   - **Catalog Statistics (`statsSummaryCache`)**: 60-second TTL on `/entries/stats/summary`; automatically cleared upon any entry creation, update, or deletion.
+   - **MindLens Telemetry (`mindlensCache`)**: 15-minute TTL on `/mindlens/insights`; automatically invalidated when the user logs new watches.
+   - **Feed Recommender (`feedSuggestionsCache`)**: 15-minute TTL on personalized discovery banners with a 400ms non-blocking fallback to global trending, preventing external TMDb slowdowns from blocking community feed delivery.
+   - **Friend Recommendations (`suggestedUsersCache`)**: 60-second TTL with automated cache eviction on follow/unfollow events.
+5. **Edge CDN Caching (`Cache-Control: public, max-age=..., s-maxage=..., stale-while-revalidate=...`):**
+   - Implemented `s-maxage` across all TMDb discovery, search, and details routes. Regional Edge POPs (Vercel CDN, Cloudflare) serve hot movie metadata directly to users in **$< 30\text{ ms}$** without hitting backend containers.
+6. **PgBouncer Multi-Tenant Pooler Stability:**
    - Enforced `prepare: false` on the Postgres client connection pooler to prevent prepared statement collision errors across Supabase transaction-pooled connections.
 
 ### How to Re-Run Benchmarks

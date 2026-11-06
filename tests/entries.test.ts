@@ -40,8 +40,9 @@ await jest.unstable_mockModule('../src/services/tmdb.service.js', () => ({
 }));
 
 await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
-    authService: { register: jest.fn(), login: jest.fn(), refresh: jest.fn() },
+    authService: { register: jest.fn(), login: jest.fn(), refresh: jest.fn(), changePassword: jest.fn() },
     getFullAuthUser: jest.fn(),
+    getActiveTokenVersion: jest.fn().mockResolvedValue(1),
 }));
 
 const { googleAuthService } = await import('../src/services/google-auth.service.js');

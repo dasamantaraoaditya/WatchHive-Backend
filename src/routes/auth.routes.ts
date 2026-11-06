@@ -133,6 +133,17 @@ const setPasswordValidation = [
         .withMessage('Password must contain uppercase, lowercase, and number'),
 ];
 
+const changePasswordValidation = [
+    body('currentPassword')
+        .notEmpty()
+        .withMessage('Current password is required'),
+    body('newPassword')
+        .isLength({ min: 8 })
+        .withMessage('Password must be at least 8 characters long')
+        .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+        .withMessage('Password must contain uppercase, lowercase, and number'),
+];
+
 /**
  * @openapi
  * tags:
@@ -341,6 +352,36 @@ router.post('/reset-password', passwordResetLimiter, resetPasswordValidation, va
  *         description: Account already has a password or is not Google-linked
  */
 router.post('/set-password', authMiddleware, passwordResetLimiter, setPasswordValidation, validate, authController.setPassword);
+
+/**
+ * @openapi
+ * /api/v1/auth/change-password:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Change password for authenticated user and revoke all other sessions
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - currentPassword
+ *               - newPassword
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *       400:
+ *         description: Current password incorrect or validation error
+ */
+router.post('/change-password', authMiddleware, passwordResetLimiter, changePasswordValidation, validate, authController.changePassword);
 
 /**
  * @openapi

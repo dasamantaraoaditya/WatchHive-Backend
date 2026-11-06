@@ -10,9 +10,9 @@ const router = Router();
 const cacheHeader = (maxAgeSeconds: number, swrSeconds?: number) => {
     return (_req: Request, res: Response, next: () => void) => {
         if (swrSeconds) {
-            res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}, stale-while-revalidate=${swrSeconds}`);
+            res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}, s-maxage=${maxAgeSeconds}, stale-while-revalidate=${swrSeconds}`);
         } else {
-            res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}`);
+            res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}, s-maxage=${maxAgeSeconds}`);
         }
         next();
     };

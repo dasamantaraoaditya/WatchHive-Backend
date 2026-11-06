@@ -8,6 +8,7 @@ import { eq, or, and, ilike, not, count, exists, desc, sql } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 import { friendRecommendationService } from '../services/friend-recommendation.service.js';
 import { getFullAuthUser } from '../services/auth.service.js';
+import { invalidateUserCaches } from '../utils/cache.util.js';
 
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import multerS3 from 'multer-s3';
@@ -189,6 +190,8 @@ router.put('/me', authMiddleware, async (req: Request, res: Response, next: Next
             user.profilePictureUrl = await getAvatarUrl(user.profilePictureUrl);
         }
 
+        invalidateUserCaches(userId);
+
         res.json(user);
     } catch (error) {
         next(error);
@@ -238,6 +241,8 @@ router.put('/me/preferences', authMiddleware, async (req: Request, res: Response
                 hasCompletedOnboarding: users.hasCompletedOnboarding,
                 updatedAt: users.updatedAt,
             });
+
+        invalidateUserCaches(userId);
 
         res.json({
             success: true,

@@ -8,6 +8,7 @@ import tmdbService from '../services/tmdb.service.js';
 import { xpService, XpAction } from '../services/xp.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
 import notificationService from '../services/notification.service.js';
+import { statsSummaryCache, invalidateUserCaches } from '../utils/cache.util.js';
 
 const router = Router();
 
@@ -411,6 +412,8 @@ router.post(
                 }).catch(err => console.error('[FollowerActivity] Notification error on create:', err));
             }
 
+            invalidateUserCaches(userId);
+
             res.status(201).json({
                 message: 'Entry created successfully',
                 entry: {
@@ -762,6 +765,12 @@ router.get('/stats/summary', authMiddleware, async (req: Request, res: Response)
     try {
         const userId = (req as any).user.userId;
 
+        const cached = statsSummaryCache.get(userId);
+        if (cached) {
+            res.json({ stats: cached });
+            return;
+        }
+
         const [statsRow] = await db
             .select({
                 totalEntries: count(),
@@ -777,16 +786,18 @@ router.get('/stats/summary', authMiddleware, async (req: Request, res: Response)
         const tvShowCount = statsRow?.tvShowCount ?? 0;
         const avgRating = statsRow?.avgRating;
 
-        res.json({
-            stats: {
-                totalEntries,
-                movieCount,
-                tvShowCount,
-                episodeCount: (totalEntries || 0) - (movieCount || 0) - (tvShowCount || 0),
-                averageRating: parseFloat((avgRating as any) || 0),
-                totalWatchTime: totalEntries,
-            },
-        });
+        const stats = {
+            totalEntries,
+            movieCount,
+            tvShowCount,
+            episodeCount: (totalEntries || 0) - (movieCount || 0) - (tvShowCount || 0),
+            averageRating: parseFloat((avgRating as any) || 0),
+            totalWatchTime: totalEntries,
+        };
+
+        statsSummaryCache.set(userId, stats, 60 * 1000); // 60s in-memory TTL
+
+        res.json({ stats });
     } catch (error) {
         console.error('Get stats error:', error);
         res.status(500).json({ error: 'Failed to fetch statistics' });
@@ -1244,6 +1255,8 @@ router.put(
                 }
             }
 
+            invalidateUserCaches(userId);
+
             res.json({
                 message: 'Entry updated successfully',
                 entry: {
@@ -1308,6 +1321,8 @@ router.delete(
 
             // Delete entry (cascading deletes handled by DB)
             await db.delete(entries).where(eq(entries.id, id));
+
+            invalidateUserCaches(userId);
 
             res.json({
                 message: 'Entry deleted successfully',

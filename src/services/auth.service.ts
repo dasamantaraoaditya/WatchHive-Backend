@@ -13,6 +13,7 @@ import { resolveAvatarUrl } from '../utils/avatar.util.js';
 import { getCanonicalFrontendUrl } from '../utils/url.util.js';
 import { emailService } from './email.service.js';
 import { emailMatchSql, cleanEmail, getCanonicalEmail } from '../utils/email.util.js';
+import { userProfileCache, tokenVersionCache, invalidateUserCaches } from '../utils/cache.util.js';
 
 export interface RegisterData {
     username: string;
@@ -80,6 +81,9 @@ export interface AuthResponse {
  * Returns null if user is not found.
  */
 export async function getFullAuthUser(userId: string): Promise<AuthUser | null> {
+    const cached = userProfileCache.get(userId);
+    if (cached) return cached;
+
     try {
         const [
             userRows,
@@ -139,7 +143,7 @@ export async function getFullAuthUser(userId: string): Promise<AuthUser | null> 
 
         const { googleId, appleId, passwordHash, ...safeUser } = userResult;
 
-        return {
+        const fullUser: AuthUser = {
             ...safeUser,
             badges: (userResult.badges as any[]) || [],
             watchStreak: activeStreak,
@@ -154,8 +158,35 @@ export async function getFullAuthUser(userId: string): Promise<AuthUser | null> 
                 following: Number(followingCount) || 0,
             },
         };
+
+        userProfileCache.set(userId, fullUser, 30 * 1000); // 30s in-memory TTL
+        return fullUser;
     } catch (err) {
         console.error('[getFullAuthUser] Error fetching user profile details:', err);
+        return null;
+    }
+}
+
+/**
+ * Fast lookup of the current active tokenVersion for a user.
+ * Cached in memory (30s) to avoid hitting PostgreSQL on every micro-request.
+ */
+export async function getActiveTokenVersion(userId: string): Promise<number | null> {
+    try {
+        const cached = tokenVersionCache.get(userId);
+        if (cached !== undefined) return cached;
+
+        const [user] = await db
+            .select({ tokenVersion: users.tokenVersion })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+
+        if (!user) return null;
+        const version = user.tokenVersion ?? 1;
+        tokenVersionCache.set(userId, version, 30 * 1000);
+        return version;
+    } catch {
         return null;
     }
 }
@@ -344,7 +375,7 @@ export const authService = {
 
         if (!isPasswordValid) {
             const currentAttempts = (user.failedLoginAttempts || 0) + 1;
-            const MAX_ATTEMPTS = 5;
+            const MAX_ATTEMPTS = 3;
 
             if (currentAttempts >= MAX_ATTEMPTS) {
                 const lockoutUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
@@ -358,7 +389,7 @@ export const authService = {
                     .where(eq(users.id, user.id));
 
                 const err = new AppError(
-                    'Account locked due to 5 consecutive failed login attempts. Please try again in 15 minutes or reset your password.',
+                    'Account locked due to 3 consecutive failed login attempts. Please try again in 15 minutes or reset your password.',
                     423
                 ) as any;
                 err.code = 'account_locked';
@@ -375,7 +406,7 @@ export const authService = {
 
                 const remaining = MAX_ATTEMPTS - currentAttempts;
                 throw new AppError(
-                    `Incorrect email, username, or password. ${remaining} attempt${remaining > 1 ? 's' : ''} remaining before temporary lockout.`,
+                    `Incorrect email, username, or password. ${remaining} attempt${remaining > 1 ? 's' : ''} remaining before account lockout.`,
                     401
                 );
             }
@@ -607,6 +638,8 @@ export const authService = {
             })
             .where(eq(users.id, user.id));
 
+        invalidateUserCaches(user.id);
+
         return { message: 'Password has been reset successfully. You can now sign in.' };
     },
 
@@ -653,7 +686,78 @@ export const authService = {
             })
             .where(eq(users.id, user.id));
 
+        invalidateUserCaches(user.id);
+
         return { message: 'Password set successfully. You can now sign in with either Google or your email and password.' };
+    },
+
+    /**
+     * Change password for an authenticated user.
+     * Verifies current password, updates to new password hash, resets failed attempts,
+     * and increments tokenVersion to revoke all other active sessions globally.
+     */
+    async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ message: string; accessToken: string; refreshToken: string }> {
+        const [user] = await db
+            .select({
+                id: users.id,
+                email: users.email,
+                passwordHash: users.passwordHash,
+                tokenVersion: users.tokenVersion,
+                isEmailVerified: users.isEmailVerified,
+            })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+
+        if (!user) {
+            throw new AppError('User not found', 404);
+        }
+
+        if (!user.passwordHash) {
+            throw new AppError('This account does not have a password set. Please use the set password option.', 400);
+        }
+
+        const isCurrentValid = await comparePassword(currentPassword, user.passwordHash);
+        if (!isCurrentValid) {
+            throw new AppError('Current password is incorrect.', 400);
+        }
+
+        const newHash = await hashPassword(newPassword);
+        const nextTokenVersion = (user.tokenVersion ?? 1) + 1;
+
+        await db
+            .update(users)
+            .set({
+                passwordHash: newHash,
+                failedLoginAttempts: 0,
+                lockoutUntil: null,
+                tokenVersion: nextTokenVersion,
+                updatedAt: new Date(),
+            })
+            .where(eq(users.id, user.id));
+
+        invalidateUserCaches(user.id);
+        tokenVersionCache.set(user.id, nextTokenVersion, 30 * 1000);
+
+        const accessToken = generateAccessToken({
+            userId: user.id,
+            email: user.email,
+            tokenVersion: nextTokenVersion,
+            isEmailVerified: user.isEmailVerified,
+        });
+
+        const refreshToken = generateRefreshToken({
+            userId: user.id,
+            email: user.email,
+            tokenVersion: nextTokenVersion,
+            isEmailVerified: user.isEmailVerified,
+        });
+
+        return {
+            message: 'Password changed successfully. All other active sessions have been signed out.',
+            accessToken,
+            refreshToken,
+        };
     },
 
     /**
@@ -828,6 +932,8 @@ export const authService = {
                 updatedAt: new Date(),
             })
             .where(eq(users.id, userId));
+
+        invalidateUserCaches(userId);
     },
 
     /**
