@@ -90,6 +90,10 @@ export const entries = pgTable('entries', {
     posterPath: text('poster_path'),
     backdropPath: text('backdrop_path'),
     postToFeed: boolean('post_to_feed').default(true).notNull(),
+    currentSeason: integer('current_season'),
+    currentEpisode: integer('current_episode'),
+    totalEpisodesWatched: integer('total_episodes_watched').default(0).notNull(),
+    totalEpisodesCount: integer('total_episodes_count'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
@@ -258,6 +262,26 @@ export const blockedUsers = pgTable('blocked_users', {
     blockerIdIndex: index('blocked_users_blocker_id_idx').on(table.blockerId),
 }));
 
+// Episode Watches Table (Granular TV / Anime Episode Progress)
+export const episodeWatches = pgTable('episode_watches', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    seasonNumber: integer('season_number').notNull(),
+    episodeNumber: integer('episode_number').notNull(),
+    episodeId: integer('episode_id'),
+    episodeName: text('episode_name'),
+    watchedAt: timestamp('watched_at').defaultNow().notNull(),
+    rating: decimal('rating', { precision: 3, scale: 1 }),
+    review: text('review'),
+    postToFeed: boolean('post_to_feed').default(false).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+    uniqueEpisodeWatch: unique().on(table.userId, table.tmdbId, table.seasonNumber, table.episodeNumber),
+    userTmdbIdx: index('episode_watches_user_tmdb_idx').on(table.userId, table.tmdbId),
+    userWatchedIdx: index('episode_watches_user_watched_idx').on(table.userId, table.watchedAt),
+}));
+
 // Relations Definitions
 export const usersRelations = relations(users, ({ many }) => ({
     entries: many(entries),
@@ -323,4 +347,11 @@ export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one })
 export const deviceTokensRelations = relations(deviceTokens, ({ one }) => ({
     user: one(users, { fields: [deviceTokens.userId], references: [users.id] }),
 }));
+
+export const episodeWatchesRelations = relations(episodeWatches, ({ one }) => ({
+    user: one(users, { fields: [episodeWatches.userId], references: [users.id] }),
+}));
+
+export type EpisodeWatch = typeof episodeWatches.$inferSelect;
+export type NewEpisodeWatch = typeof episodeWatches.$inferInsert;
 

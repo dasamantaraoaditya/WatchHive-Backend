@@ -27,6 +27,7 @@ import dataRoutes from './routes/data.routes.js';
 import avatarRoutes from './routes/avatar.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import appVersionRoutes from './routes/app-version.routes.js';
+import episodeRoutes from './routes/episode.routes.js';
 import { apiLimiter } from './middleware/rate-limit.middleware.js';
 import { emailService } from './services/email.service.js';
 
@@ -240,6 +241,7 @@ app.use('/api/v1/suggestions', suggestionsRoutes);
 app.use('/api/v1/data', dataRoutes);
 app.use('/api/v1/reports', reportsRoutes);
 app.use('/api/v1/app', appVersionRoutes);
+app.use('/api/v1', episodeRoutes);
 
 // 404 handler
 app.use(notFoundHandler);
