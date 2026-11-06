@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { entries, users, suggestions, listItems, lists } from '../db/schema.js';
 import { eq, desc, and, isNotNull, aliasedTable, count } from 'drizzle-orm';
 import { resolveAvatarUrl } from '../utils/avatar.util.js';
+import { mindlensCache } from '../utils/cache.util.js';
 
 const router = Router();
 
@@ -875,6 +876,12 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
     try {
         const userId = req.user!.userId;
 
+        const cached = mindlensCache.get(userId);
+        if (cached) {
+            res.json(cached);
+            return;
+        }
+
         // Fetch user watch history (up to 1,000 entries) and suggestion network concurrently
         const [userEntries, suggestionAnalytics] = await Promise.all([
             db
@@ -973,7 +980,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             imageUrl: '',
         };
 
-        res.json({
+        const responsePayload = {
             hasEnoughData: true,
             milestoneStage,
             calibrationProgress: { current: totalEntries, target: 15 },
@@ -997,7 +1004,10 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             timeDistribution: timeOfDay,
             insights,
             generatedAt: new Date(),
-        });
+        };
+
+        mindlensCache.set(userId, responsePayload, 15 * 60 * 1000); // 15m in-memory cache
+        res.json(responsePayload);
 
     } catch (error) {
         console.error('MindLens Analysis Error:', error);

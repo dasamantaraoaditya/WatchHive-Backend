@@ -5,6 +5,7 @@ import { eq, desc, sql, inArray, and, or, not, aliasedTable } from 'drizzle-orm'
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
+import { feedSuggestionsCache } from '../utils/cache.util.js';
 
 const LANGUAGE_LABELS: Record<string, string> = {
     te: 'Telugu',
@@ -44,8 +45,8 @@ const GENRE_MAP: Record<string, number> = {
 
 const router = Router();
 
-// In-memory cache for feed recommendations (5-minute TTL)
-const userFeedSuggestionsCache = new Map<string, { data: any[]; expiresAt: number }>();
+// In-memory cache for global trending fallback (1 hour TTL)
+let globalTrendingFallbackCache: { data: any[]; expiresAt: number } | null = null;
 
 /**
  * @openapi
@@ -312,151 +313,182 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
 
         // 3. Advanced Suggestions Generation (WatchHive Movie Recommender)
         let suggestions: any[] = [];
-        const cachedSuggestions = userFeedSuggestionsCache.get(userId);
-        if (cachedSuggestions && cachedSuggestions.expiresAt > Date.now()) {
-            suggestions = cachedSuggestions.data;
+
+        if (page > 1) {
+            // Never block infinite scroll pagination on TMDb discovery
+            suggestions = feedSuggestionsCache.get(userId) || [];
         } else {
-            try {
-                // Fetch recent entries, preferences, and logged entries concurrently
-                const [userRecentEntries, userRecordRows, userLoggedEntries] = await Promise.all([
-                    db
-                        .select({
-                            id: entries.id,
-                            tmdbId: entries.tmdbId,
-                            title: entries.title,
-                            type: entries.type,
-                        })
-                        .from(entries)
-                        .where(eq(entries.userId, userId))
-                        .orderBy(desc(sql`COALESCE(${entries.updatedAt}, ${entries.completedAt}, ${entries.startedAt}, ${entries.createdAt}, ${entries.watchedAt})`))
-                        .limit(3),
-                    db
-                        .select({ preferences: users.preferences })
-                        .from(users)
-                        .where(eq(users.id, userId))
-                        .limit(1),
-                    db
-                        .select({ tmdbId: entries.tmdbId })
-                        .from(entries)
-                        .where(eq(entries.userId, userId))
-                ]);
+            const cachedSuggestions = feedSuggestionsCache.get(userId);
+            if (cachedSuggestions) {
+                suggestions = cachedSuggestions;
+            } else {
+                try {
+                    // Fetch recent entries, preferences, and logged entries concurrently
+                    const [userRecentEntries, userRecordRows, userLoggedEntries] = await Promise.all([
+                        db
+                            .select({
+                                id: entries.id,
+                                tmdbId: entries.tmdbId,
+                                title: entries.title,
+                                type: entries.type,
+                            })
+                            .from(entries)
+                            .where(eq(entries.userId, userId))
+                            .orderBy(desc(sql`COALESCE(${entries.updatedAt}, ${entries.completedAt}, ${entries.startedAt}, ${entries.createdAt}, ${entries.watchedAt})`))
+                            .limit(3),
+                        db
+                            .select({ preferences: users.preferences })
+                            .from(users)
+                            .where(eq(users.id, userId))
+                            .limit(1),
+                        db
+                            .select({ tmdbId: entries.tmdbId })
+                            .from(entries)
+                            .where(eq(entries.userId, userId))
+                    ]);
 
-                const userPrefs = (userRecordRows[0]?.preferences as any) || {};
-                const prefLanguages: string[] = Array.isArray(userPrefs.languages) ? userPrefs.languages : [];
-                const prefGenres: string[] = Array.isArray(userPrefs.genres) ? userPrefs.genres : [];
+                    const userPrefs = (userRecordRows[0]?.preferences as any) || {};
+                    const prefLanguages: string[] = Array.isArray(userPrefs.languages) ? userPrefs.languages : [];
+                    const prefGenres: string[] = Array.isArray(userPrefs.genres) ? userPrefs.genres : [];
 
-                // Build all TMDB requests to run concurrently via Promise.allSettled
-                const fetchTasks: Promise<any[]>[] = [];
+                    // Build TMDB requests to run concurrently via Promise.allSettled
+                    const fetchTasks: Promise<any[]>[] = [];
 
-                // Contextual recommendations
-                if (userRecentEntries.length > 0) {
-                    const primaryEntry = userRecentEntries[0];
-                    fetchTasks.push(
-                        (primaryEntry.type === 'TV_SHOW'
-                            ? tmdbService.getTVShowRecommendations(primaryEntry.tmdbId)
-                            : tmdbService.getMovieRecommendations(primaryEntry.tmdbId)
-                        ).then((recs: any) =>
-                            recs?.results?.map((r: any) => ({
-                                ...r,
-                                reason: `Because you watched ${primaryEntry.title}`
-                            })) || []
-                        ).catch(() => [])
-                    );
-
-                    if (userRecentEntries.length > 1) {
-                        const secondaryEntry = userRecentEntries[1];
+                    // Contextual recommendations
+                    if (userRecentEntries.length > 0) {
+                        const primaryEntry = userRecentEntries[0];
                         fetchTasks.push(
-                            (secondaryEntry.type === 'TV_SHOW'
-                                ? tmdbService.getTVShowRecommendations(secondaryEntry.tmdbId)
-                                : tmdbService.getMovieRecommendations(secondaryEntry.tmdbId)
+                            (primaryEntry.type === 'TV_SHOW'
+                                ? tmdbService.getTVShowRecommendations(primaryEntry.tmdbId)
+                                : tmdbService.getMovieRecommendations(primaryEntry.tmdbId)
                             ).then((recs: any) =>
                                 recs?.results?.map((r: any) => ({
                                     ...r,
-                                    reason: `Because you watched ${secondaryEntry.title}`
+                                    reason: `Because you watched ${primaryEntry.title}`
                                 })) || []
                             ).catch(() => [])
                         );
+
+                        if (userRecentEntries.length > 1) {
+                            const secondaryEntry = userRecentEntries[1];
+                            fetchTasks.push(
+                                (secondaryEntry.type === 'TV_SHOW'
+                                    ? tmdbService.getTVShowRecommendations(secondaryEntry.tmdbId)
+                                    : tmdbService.getMovieRecommendations(secondaryEntry.tmdbId)
+                                ).then((recs: any) =>
+                                    recs?.results?.map((r: any) => ({
+                                        ...r,
+                                        reason: `Because you watched ${secondaryEntry.title}`
+                                    })) || []
+                                ).catch(() => [])
+                            );
+                        }
                     }
-                }
 
-                // Language discovery
-                for (const lang of prefLanguages.slice(0, 3)) {
-                    const cleanLang = String(lang).toLowerCase().trim();
-                    const label = LANGUAGE_LABELS[cleanLang] || cleanLang.toUpperCase();
-                    fetchTasks.push(
-                        tmdbService.discoverMedia({
-                            withOriginalLanguage: cleanLang,
-                            sortBy: 'popularity.desc',
-                            page: 1,
-                        }).then((res: any) =>
-                            res?.results?.slice(0, 4).map((r: any) => ({
-                                ...r,
-                                reason: `Trending in ${label}`,
-                            })) || []
-                        ).catch(() => [])
-                    );
-                }
-
-                // Genre discovery
-                for (const genreName of prefGenres.slice(0, 3)) {
-                    const cleanGenre = String(genreName).toLowerCase().trim();
-                    const genreId = GENRE_MAP[cleanGenre] || (userPrefs.genreIds && userPrefs.genreIds[0]);
-                    if (genreId) {
+                    // Language discovery
+                    for (const lang of prefLanguages.slice(0, 3)) {
+                        const cleanLang = String(lang).toLowerCase().trim();
+                        const label = LANGUAGE_LABELS[cleanLang] || cleanLang.toUpperCase();
                         fetchTasks.push(
                             tmdbService.discoverMedia({
-                                genreId,
+                                withOriginalLanguage: cleanLang,
                                 sortBy: 'popularity.desc',
                                 page: 1,
                             }).then((res: any) =>
                                 res?.results?.slice(0, 4).map((r: any) => ({
                                     ...r,
-                                    reason: `Top Pick in ${genreName}`,
+                                    reason: `Trending in ${label}`,
                                 })) || []
                             ).catch(() => [])
                         );
                     }
-                }
 
-                // Global trending
-                fetchTasks.push(
-                    tmdbService.getTrending('all', 'week').then((res: any) =>
-                        res?.results?.map((r: any) => ({
-                            ...r,
-                            reason: 'Trending this week'
-                        })) || []
-                    ).catch(() => [])
-                );
-
-                const taskResults = await Promise.allSettled(fetchTasks);
-                const rawCandidates: any[] = [];
-                for (const res of taskResults) {
-                    if (res.status === 'fulfilled' && Array.isArray(res.value)) {
-                        rawCandidates.push(...res.value);
+                    // Genre discovery
+                    for (const genreName of prefGenres.slice(0, 3)) {
+                        const cleanGenre = String(genreName).toLowerCase().trim();
+                        const genreId = GENRE_MAP[cleanGenre] || (userPrefs.genreIds && userPrefs.genreIds[0]);
+                        if (genreId) {
+                            fetchTasks.push(
+                                tmdbService.discoverMedia({
+                                    genreId,
+                                    sortBy: 'popularity.desc',
+                                    page: 1,
+                                }).then((res: any) =>
+                                    res?.results?.slice(0, 4).map((r: any) => ({
+                                        ...r,
+                                        reason: `Top Pick in ${genreName}`,
+                                    })) || []
+                                ).catch(() => [])
+                            );
+                        }
                     }
-                }
 
-                const userWatchedTmdbSet = new Set(userLoggedEntries.map(e => e.tmdbId));
-                const seenIds = new Set<number>();
-                suggestions = [];
+                    // Global trending
+                    fetchTasks.push(
+                        tmdbService.getTrending('all', 'week').then((res: any) =>
+                            res?.results?.map((r: any) => ({
+                                ...r,
+                                reason: 'Trending this week'
+                            })) || []
+                        ).catch(() => [])
+                    );
 
-                for (const item of rawCandidates) {
-                    if (!item || !item.id) continue;
-                    if (userWatchedTmdbSet.has(item.id)) continue;
-                    if (seenIds.has(item.id)) continue;
-                    seenIds.add(item.id);
-                    suggestions.push(item);
-                }
+                    // Bound TMDB network wait time to 400ms to maintain sub-second feed delivery
+                    const timeoutPromise = new Promise<'TIMEOUT'>((resolve) => setTimeout(() => resolve('TIMEOUT'), 400));
+                    const raceResult = await Promise.race([Promise.allSettled(fetchTasks), timeoutPromise]);
 
-                // Cache for 5 minutes
-                userFeedSuggestionsCache.set(userId, { data: suggestions, expiresAt: Date.now() + 5 * 60 * 1000 });
-            } catch (err) {
-                console.error('Failed to fetch advanced suggestions', err);
-                try {
-                    const fallback = await tmdbService.getTrending('all', 'week');
-                    suggestions = (fallback?.results || []).map((r: any) => ({ ...r, reason: "Trending Now" }));
-                } catch (fallbackErr) {
-                    console.error('Fallback also failed:', fallbackErr);
-                    suggestions = [];
+                    const userWatchedTmdbSet = new Set(userLoggedEntries.map(e => e.tmdbId));
+                    const seenIds = new Set<number>();
+
+                    const processCandidates = (rawCandidates: any[]) => {
+                        const results: any[] = [];
+                        for (const item of rawCandidates) {
+                            if (!item || !item.id) continue;
+                            if (userWatchedTmdbSet.has(item.id)) continue;
+                            if (seenIds.has(item.id)) continue;
+                            seenIds.add(item.id);
+                            results.push(item);
+                        }
+                        return results;
+                    };
+
+                    if (raceResult !== 'TIMEOUT') {
+                        const rawCandidates: any[] = [];
+                        for (const res of raceResult) {
+                            if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+                                rawCandidates.push(...res.value);
+                            }
+                        }
+                        suggestions = processCandidates(rawCandidates);
+                        feedSuggestionsCache.set(userId, suggestions, 15 * 60 * 1000); // 15m in-memory cache
+                    } else {
+                        // Fast fallback: use memory cached global trending immediately
+                        if (globalTrendingFallbackCache && globalTrendingFallbackCache.expiresAt > Date.now()) {
+                            suggestions = globalTrendingFallbackCache.data;
+                        } else {
+                            const fallback = await tmdbService.getTrending('all', 'week').catch(() => null);
+                            const fallbackItems = (fallback?.results || []).map((r: any) => ({ ...r, reason: "Trending Now" }));
+                            suggestions = processCandidates(fallbackItems);
+                            globalTrendingFallbackCache = { data: suggestions, expiresAt: Date.now() + 60 * 60 * 1000 };
+                        }
+
+                        // Complete personalization in the background for subsequent requests
+                        Promise.allSettled(fetchTasks).then((tasks) => {
+                            const bgCandidates: any[] = [];
+                            for (const res of tasks) {
+                                if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+                                    bgCandidates.push(...res.value);
+                                }
+                            }
+                            const bgSuggestions = processCandidates(bgCandidates);
+                            if (bgSuggestions.length > 0) {
+                                feedSuggestionsCache.set(userId, bgSuggestions, 15 * 60 * 1000);
+                            }
+                        }).catch(() => {});
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch advanced suggestions', err);
+                    suggestions = globalTrendingFallbackCache?.data || [];
                 }
             }
         }

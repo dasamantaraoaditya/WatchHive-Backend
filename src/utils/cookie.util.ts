@@ -3,8 +3,9 @@ import { config } from '../config.js';
 
 export const setAuthCookies = (res: Response, accessToken: string, refreshToken: string): void => {
     const isProduction = config.nodeEnv === 'production';
-    const isCrossDomainProd = isProduction && Boolean(config.cors.origin?.includes('watchershive.com'));
-    const sameSite = isCrossDomainProd ? 'none' : 'lax';
+    // Cross-origin cookie exchange between frontend (e.g. Vercel/custom domain) and backend (Railway)
+    // requires SameSite=None and Secure=true over HTTPS in production.
+    const sameSite: 'none' | 'lax' = isProduction ? 'none' : 'lax';
     const secure = isProduction;
 
     res.cookie('jwt_access', accessToken, {
@@ -26,8 +27,7 @@ export const setAuthCookies = (res: Response, accessToken: string, refreshToken:
 
 export const clearAuthCookies = (res: Response): void => {
     const isProduction = config.nodeEnv === 'production';
-    const isCrossDomainProd = isProduction && Boolean(config.cors.origin?.includes('watchershive.com'));
-    const sameSite = isCrossDomainProd ? 'none' : 'lax';
+    const sameSite: 'none' | 'lax' = isProduction ? 'none' : 'lax';
     const secure = isProduction;
 
     res.clearCookie('jwt_access', { httpOnly: true, secure, sameSite, path: '/' });

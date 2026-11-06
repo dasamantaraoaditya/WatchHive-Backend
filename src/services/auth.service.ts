@@ -13,6 +13,7 @@ import { resolveAvatarUrl } from '../utils/avatar.util.js';
 import { getCanonicalFrontendUrl } from '../utils/url.util.js';
 import { emailService } from './email.service.js';
 import { emailMatchSql, cleanEmail, getCanonicalEmail } from '../utils/email.util.js';
+import { userProfileCache, tokenVersionCache, invalidateUserCaches } from '../utils/cache.util.js';
 
 export interface RegisterData {
     username: string;
@@ -80,6 +81,9 @@ export interface AuthResponse {
  * Returns null if user is not found.
  */
 export async function getFullAuthUser(userId: string): Promise<AuthUser | null> {
+    const cached = userProfileCache.get(userId);
+    if (cached) return cached;
+
     try {
         const [
             userRows,
@@ -139,7 +143,7 @@ export async function getFullAuthUser(userId: string): Promise<AuthUser | null> 
 
         const { googleId, appleId, passwordHash, ...safeUser } = userResult;
 
-        return {
+        const fullUser: AuthUser = {
             ...safeUser,
             badges: (userResult.badges as any[]) || [],
             watchStreak: activeStreak,
@@ -154,6 +158,9 @@ export async function getFullAuthUser(userId: string): Promise<AuthUser | null> 
                 following: Number(followingCount) || 0,
             },
         };
+
+        userProfileCache.set(userId, fullUser, 30 * 1000); // 30s in-memory TTL
+        return fullUser;
     } catch (err) {
         console.error('[getFullAuthUser] Error fetching user profile details:', err);
         return null;
