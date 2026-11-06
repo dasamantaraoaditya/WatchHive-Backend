@@ -58,7 +58,29 @@ try {
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "poster_path" text;
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "backdrop_path" text;
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "post_to_feed" boolean DEFAULT true NOT NULL;
+        ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "current_season" integer;
+        ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "current_episode" integer;
+        ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "total_episodes_watched" integer DEFAULT 0 NOT NULL;
+        ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "total_episodes_count" integer;
         ALTER TABLE "entries" ALTER COLUMN "watched_at" DROP NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS "episode_watches" (
+            "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+            "tmdb_id" integer NOT NULL,
+            "season_number" integer NOT NULL,
+            "episode_number" integer NOT NULL,
+            "episode_id" integer,
+            "episode_name" text,
+            "watched_at" timestamp with time zone DEFAULT now() NOT NULL,
+            "rating" numeric(3, 1),
+            "review" text,
+            "post_to_feed" boolean DEFAULT false NOT NULL,
+            "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+            CONSTRAINT "episode_watches_user_tmdb_season_episode_unique" UNIQUE("user_id", "tmdb_id", "season_number", "episode_number")
+        );
+        CREATE INDEX IF NOT EXISTS "episode_watches_user_tmdb_idx" ON "episode_watches"("user_id", "tmdb_id");
+        CREATE INDEX IF NOT EXISTS "episode_watches_user_watched_idx" ON "episode_watches"("user_id", "watched_at");
     `);
     console.log('✅ Schema columns verified');
 } catch (schemaErr) {
