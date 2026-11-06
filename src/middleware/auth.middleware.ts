@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken, JWTPayload } from '../utils/jwt.util.js';
-import { getActiveTokenVersion } from '../services/auth.service.js';
 
 // Extend Express Request type to include user
 declare global {
@@ -12,11 +11,11 @@ declare global {
     }
 }
 
-export const authMiddleware = async (
+export const authMiddleware = (
     req: Request,
     res: Response,
     next: NextFunction
-): Promise<void> => {
+): void => {
     try {
         const authHeader = req.headers.authorization;
         let token: string | undefined;
@@ -43,18 +42,6 @@ export const authMiddleware = async (
             return;
         }
 
-        // Global Session Revocation Enforcement
-        if (payload.tokenVersion !== undefined) {
-            const activeVersion = await getActiveTokenVersion(payload.userId);
-            if (activeVersion !== null && activeVersion !== payload.tokenVersion) {
-                res.status(401).json({
-                    error: 'Session has been revoked. Please sign in again.',
-                    code: 'session_revoked',
-                });
-                return;
-            }
-        }
-
         req.user = payload;
         next();
     } catch (error) {
@@ -62,11 +49,11 @@ export const authMiddleware = async (
     }
 };
 
-export const optionalAuthMiddleware = async (
+export const optionalAuthMiddleware = (
     req: Request,
     _res: Response,
     next: NextFunction
-): Promise<void> => {
+): void => {
     try {
         const authHeader = req.headers.authorization;
         let token: string | undefined;
@@ -79,14 +66,6 @@ export const optionalAuthMiddleware = async (
 
         if (token) {
             const payload = verifyAccessToken(token);
-            if (payload.tokenVersion !== undefined) {
-                const activeVersion = await getActiveTokenVersion(payload.userId);
-                if (activeVersion !== null && activeVersion !== payload.tokenVersion) {
-                    // Token version revoked; continue without user
-                    next();
-                    return;
-                }
-            }
             req.user = payload;
         }
 
