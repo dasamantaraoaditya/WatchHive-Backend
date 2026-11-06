@@ -13,7 +13,7 @@ import { resolveAvatarUrl } from '../utils/avatar.util.js';
 import { getCanonicalFrontendUrl } from '../utils/url.util.js';
 import { emailService } from './email.service.js';
 import { emailMatchSql, cleanEmail, getCanonicalEmail } from '../utils/email.util.js';
-import { userProfileCache } from '../utils/cache.util.js';
+import { userProfileCache, tokenVersionCache, invalidateUserCaches } from '../utils/cache.util.js';
 
 export interface RegisterData {
     username: string;

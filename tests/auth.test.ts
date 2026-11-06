@@ -21,6 +21,7 @@ const mockRefresh = jest.fn<() => Promise<{ accessToken: string; refreshToken: s
 const mockGoogleLogin = jest.fn<() => Promise<AuthResponse>>();
 const mockForgotPassword = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
 const mockResetPassword = jest.fn<() => Promise<{ message: string }>>();
+const mockChangePassword = jest.fn<() => Promise<any>>();
 const mockVerifyEmail = jest.fn<() => Promise<any>>();
 const mockResendVerification = jest.fn<() => Promise<{ message: string; emailSent: boolean }>>();
 const mockRequestEmailOtp = jest.fn<() => Promise<{ message: string; email: string; isNewUser: boolean }>>();
@@ -36,12 +37,17 @@ await jest.unstable_mockModule('../src/services/auth.service.js', () => ({
         refresh: mockRefresh,
         forgotPassword: mockForgotPassword,
         resetPassword: mockResetPassword,
+        changePassword: mockChangePassword,
         verifyEmail: mockVerifyEmail,
         resendVerification: mockResendVerification,
         requestEmailOtp: mockRequestEmailOtp,
         verifyEmailOtp: mockVerifyEmailOtp,
     },
     getFullAuthUser: jest.fn(),
+    getActiveTokenVersion: jest.fn().mockImplementation((userId: string) => {
+        if (userId === 'revoked-user') return Promise.resolve(2); // DB has version 2
+        return Promise.resolve(1);
+    }),
 }));
 
 const { googleAuthService } = await import('../src/services/google-auth.service.js');
@@ -72,6 +78,7 @@ await jest.unstable_mockModule('../src/services/tmdb.service.js', () => ({
 
 const { default: request } = await import('supertest');
 const { default: app } = await import('../src/app.js');
+const { generateAccessToken } = await import('../src/utils/jwt.util.js');
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -496,6 +503,64 @@ describe('Email Verification', () => {
 
         expect(res.status).toBe(200);
         expect(res.body.emailSent).toBe(true);
+    });
+
+    it('POST /change-password — 200 changes password and issues new tokens', async () => {
+        mockChangePassword.mockResolvedValueOnce({
+            message: 'Password changed successfully. All other active sessions have been signed out.',
+            accessToken: 'new-token',
+            refreshToken: 'new-refresh',
+        });
+
+        const validToken = generateAccessToken({
+            userId: 'user-uuid-1234',
+            email: 'test@example.com',
+            tokenVersion: 1,
+            isEmailVerified: true,
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/change-password')
+            .set('Authorization', `Bearer ${validToken}`)
+            .send({ currentPassword: 'OldPassword1', newPassword: 'NewPassword2' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.message).toContain('Password changed successfully');
+    });
+
+    it('authMiddleware rejects tokens when tokenVersion is revoked (Global Session Revocation)', async () => {
+        // 'revoked-user' returns activeVersion: 2 in our mock, but this token has tokenVersion: 1
+        const staleToken = generateAccessToken({
+            userId: 'revoked-user',
+            email: 'revoked@example.com',
+            tokenVersion: 1,
+            isEmailVerified: true,
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/set-password')
+            .set('Authorization', `Bearer ${staleToken}`)
+            .send({ newPassword: 'NewPassword2' });
+
+        expect(res.status).toBe(401);
+        expect(res.body.code).toBe('session_revoked');
+    });
+
+    it('authMiddleware rejects tokens when isEmailVerified is false (Mandatory Email Verification)', async () => {
+        const unverifiedToken = generateAccessToken({
+            userId: 'user-uuid-1234',
+            email: 'test@example.com',
+            tokenVersion: 1,
+            isEmailVerified: false,
+        });
+
+        const res = await request(app)
+            .post('/api/v1/auth/set-password')
+            .set('Authorization', `Bearer ${unverifiedToken}`)
+            .send({ newPassword: 'NewPassword2' });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('email_verification_required');
     });
 
     afterAll(async () => {
