@@ -588,6 +588,52 @@ router.get('/suggested', authMiddleware, async (req: Request, res: Response, nex
 
 /**
  * @openapi
+ * /api/v1/users/me/blocks:
+ *   get:
+ *     tags: [User, Moderation]
+ *     summary: Get list of blocked user IDs for current user
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/me/blocks', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const blockerId = req.user!.userId;
+        const rawBlocks = await db
+            .select({
+                blockedId: blockedUsers.blockedId,
+                createdAt: blockedUsers.createdAt,
+                username: users.username,
+                displayName: users.displayName,
+                profilePictureUrl: users.profilePictureUrl,
+            })
+            .from(blockedUsers)
+            .leftJoin(users, eq(blockedUsers.blockedId, users.id))
+            .where(eq(blockedUsers.blockerId, blockerId));
+
+        const blocks = await Promise.all(
+            rawBlocks.map(async b => ({
+                blockedId: b.blockedId,
+                createdAt: b.createdAt,
+                user: {
+                    id: b.blockedId,
+                    username: b.username || 'user',
+                    displayName: b.displayName || b.username || 'Watcher',
+                    profilePictureUrl: await getAvatarUrl(b.profilePictureUrl),
+                },
+            }))
+        );
+
+        res.json({
+            blockedUserIds: blocks.map(b => b.blockedId),
+            blocks,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
  * /api/v1/users/{id}:
  *   get:
  *     tags: [User]
@@ -953,52 +999,6 @@ router.delete('/:id/block', authMiddleware, async (req: Request, res: Response, 
             success: true,
             message: 'User unblocked successfully.',
             unblockedUserId: targetUserId,
-        });
-    } catch (error) {
-        next(error);
-    }
-});
-
-/**
- * @openapi
- * /api/v1/users/me/blocks:
- *   get:
- *     tags: [User, Moderation]
- *     summary: Get list of blocked user IDs for current user
- *     security:
- *       - bearerAuth: []
- */
-router.get('/me/blocks', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const blockerId = req.user!.userId;
-        const rawBlocks = await db
-            .select({
-                blockedId: blockedUsers.blockedId,
-                createdAt: blockedUsers.createdAt,
-                username: users.username,
-                displayName: users.displayName,
-                profilePictureUrl: users.profilePictureUrl,
-            })
-            .from(blockedUsers)
-            .leftJoin(users, eq(blockedUsers.blockedId, users.id))
-            .where(eq(blockedUsers.blockerId, blockerId));
-
-        const blocks = await Promise.all(
-            rawBlocks.map(async b => ({
-                blockedId: b.blockedId,
-                createdAt: b.createdAt,
-                user: {
-                    id: b.blockedId,
-                    username: b.username || 'user',
-                    displayName: b.displayName || b.username || 'Watcher',
-                    profilePictureUrl: await getAvatarUrl(b.profilePictureUrl),
-                },
-            }))
-        );
-
-        res.json({
-            blockedUserIds: blocks.map(b => b.blockedId),
-            blocks,
         });
     } catch (error) {
         next(error);

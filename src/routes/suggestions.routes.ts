@@ -146,7 +146,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
  *     tags: [Suggestions]
  *     summary: Get suggestions sent to the current user
  */
-router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get(['/', '/me'], authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.user!.userId;
 

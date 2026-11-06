@@ -15,11 +15,13 @@ const isSslNeeded = connectionString.includes('supabase') ||
     connectionString.includes('railway.app');
 
 // postgres.js client is fully native and compatible with both Bun and Node
+// Note: prepare: false is required for PgBouncer / Supabase transaction pooler (port 6543)
 export const client = postgres(connectionString, {
     max: 10,
     idle_timeout: 30,
     connect_timeout: 30,
     ssl: isSslNeeded ? 'require' : false,
+    prepare: false,
 });
 
 export const db = drizzle(client, { schema });
