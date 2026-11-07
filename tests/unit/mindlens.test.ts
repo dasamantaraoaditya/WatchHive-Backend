@@ -98,4 +98,30 @@ describe('MindLens 2.0 Mathematical Models', () => {
             expect(stellarFriend.conversionRate).toBe(100);
         });
     });
+
+    describe('Date Parsing and Null Resilience', () => {
+        function parseEntryDateString(e: any): string {
+            const raw = e?.watchedAt || e?.createdAt;
+            if (!raw) return new Date().toISOString().split('T')[0];
+            const d = new Date(raw);
+            return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0];
+        }
+
+        it('should safely parse entries with null watchedAt and undefined createdAt without throwing', () => {
+            const entryWithNulls = { watchedAt: null };
+            expect(() => parseEntryDateString(entryWithNulls)).not.toThrow();
+            const dateStr = parseEntryDateString(entryWithNulls);
+            expect(dateStr).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+
+        it('should fallback to createdAt when watchedAt is null', () => {
+            const entry = { watchedAt: null, createdAt: '2026-05-15T12:00:00.000Z' };
+            expect(parseEntryDateString(entry)).toBe('2026-05-15');
+        });
+
+        it('should prefer watchedAt when both watchedAt and createdAt are present', () => {
+            const entry = { watchedAt: '2026-06-20T10:00:00.000Z', createdAt: '2026-05-15T12:00:00.000Z' };
+            expect(parseEntryDateString(entry)).toBe('2026-06-20');
+        });
+    });
 });
