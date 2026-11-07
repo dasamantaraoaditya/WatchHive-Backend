@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WatchersHive — Master Documentation & Engineering Blueprint</title>
+    <title>WatchersHive — Master Documentation & Knowledge Bank</title>
     <link rel="icon" type="image/png" href="/watchhive-logo.png">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-    <!-- Mermaid.js for Diagrams -->
+    <!-- Mermaid.js for Interactive Diagrams -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <script>
         mermaid.initialize({
@@ -40,7 +40,7 @@
             --border: #EAE5DE;
             --border-light: #F2EDE6;
             --code-bg: #1E1E24;
-            --sidebar-width: 300px;
+            --sidebar-width: 320px;
         }
 
         * {
@@ -66,7 +66,7 @@
             left: 0;
             right: 0;
             height: 64px;
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(255, 255, 255, 0.96);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--border);
             display: flex;
@@ -92,7 +92,7 @@
         }
 
         .brand-title {
-            font-size: 1.1rem;
+            font-size: 1.15rem;
             font-weight: 800;
             letter-spacing: -0.02em;
             color: var(--text-primary);
@@ -103,7 +103,7 @@
             color: #995C00;
             font-size: 0.7rem;
             font-weight: 800;
-            padding: 3px 8px;
+            padding: 3px 9px;
             border-radius: 20px;
             border: 1px solid rgba(255, 183, 0, 0.3);
             text-transform: uppercase;
@@ -112,7 +112,7 @@
 
         .search-container {
             position: relative;
-            width: 320px;
+            width: 340px;
         }
 
         .search-input {
@@ -181,7 +181,7 @@
             background: var(--primary-dark);
         }
 
-        /* Sidebar Navigation */
+        /* Sidebar Navigation with Collapsible Groups */
         aside.sidebar {
             width: var(--sidebar-width);
             background: var(--surface);
@@ -191,30 +191,96 @@
             bottom: 0;
             left: 0;
             overflow-y: auto;
-            padding: 24px 16px;
+            padding: 20px 14px 40px 14px;
             z-index: 90;
         }
 
-        .sidebar-section {
-            margin-bottom: 24px;
+        .sidebar-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 8px 12px 8px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .sidebar-controls-title {
+            font-size: 0.72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+        }
+
+        .toggle-all-btn {
+            background: none;
+            border: none;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #8C5300;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .toggle-all-btn:hover {
+            background: var(--primary-surface);
+        }
+
+        .sidebar-group {
+            margin-bottom: 8px;
         }
 
         .sidebar-heading {
-            font-size: 0.7rem;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            text-align: left;
+            font-size: 0.75rem;
             font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 0.1em;
+            letter-spacing: 0.08em;
+            color: var(--text-primary);
+            padding: 8px 10px;
+            border-radius: 8px;
+            transition: all 0.15s ease;
+        }
+
+        .sidebar-heading:hover {
+            background: var(--bg);
+            color: #8C5300;
+        }
+
+        .chevron {
+            font-size: 0.75rem;
             color: var(--text-muted);
-            padding: 6px 12px;
-            margin-bottom: 4px;
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+        }
+
+        .sidebar-group.collapsed .chevron {
+            transform: rotate(-90deg);
+        }
+
+        .sidebar-group.collapsed .sidebar-items {
+            display: none;
+        }
+
+        .sidebar-items {
+            padding-left: 6px;
+            margin-top: 2px;
+            margin-bottom: 6px;
         }
 
         .nav-item {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 12px;
-            font-size: 0.85rem;
+            padding: 7px 12px;
+            font-size: 0.82rem;
             font-weight: 600;
             color: var(--text-secondary);
             text-decoration: none;
@@ -240,7 +306,7 @@
             margin-left: var(--sidebar-width);
             margin-top: 64px;
             padding: 48px 64px;
-            max-width: 1040px;
+            max-width: 1060px;
             flex: 1;
         }
 
@@ -467,6 +533,65 @@
             color: var(--text-muted);
         }
 
+        /* Developer Card */
+        .dev-profile-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            margin: 24px 0;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+        }
+
+        .dev-avatar {
+            width: 88px;
+            height: 88px;
+            border-radius: 50%;
+            border: 3px solid var(--primary);
+            object-fit: cover;
+            background: var(--primary-surface);
+        }
+
+        .dev-info h3 {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .dev-role {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #8C5300;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+
+        .dev-bio {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .dev-badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .pill-badge {
+            font-size: 0.72rem;
+            font-weight: 700;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            padding: 3px 10px;
+            border-radius: 20px;
+            color: var(--text-secondary);
+        }
+
         /* Responsive */
         @media (max-width: 900px) {
             aside.sidebar {
@@ -483,6 +608,10 @@
             .search-container {
                 display: none;
             }
+            .dev-profile-card {
+                flex-direction: column;
+                text-align: center;
+            }
         }
     </style>
 </head>
@@ -493,12 +622,12 @@
         <a href="#" class="brand-container">
             <img src="/watchhive-logo.png" alt="WatchHive Logo" class="brand-logo">
             <span class="brand-title">WatchersHive</span>
-            <span class="brand-badge">Master Docs</span>
+            <span class="brand-badge">Knowledge Bank</span>
         </a>
 
         <div class="search-container">
             <span class="search-icon">🔍</span>
-            <input type="text" id="docSearch" class="search-input" placeholder="Search product, features, API, design...">
+            <input type="text" id="docSearch" class="search-input" placeholder="Search features, API, design, legal, dev info...">
         </div>
 
         <div class="header-links">
@@ -507,58 +636,131 @@
         </div>
     </header>
 
-    <!-- SIDEBAR NAVIGATION -->
+    <!-- SIDEBAR NAVIGATION WITH COLLAPSIBLE SECTIONS -->
     <aside class="sidebar">
-        <div class="sidebar-section">
-            <div class="sidebar-heading">🌟 Product Overview</div>
-            <a href="#philosophy" class="nav-item active">Product Manifesto & Vision</a>
-            <a href="#ecosystem" class="nav-item">3-Repo Ecosystem</a>
-            <a href="#environments" class="nav-item">Infrastructure & URLs</a>
+        <div class="sidebar-controls">
+            <span class="sidebar-controls-title">Table of Contents</span>
+            <button class="toggle-all-btn" id="toggleAllBtn" onclick="toggleAllGroups()">Collapse All</button>
         </div>
 
-        <div class="sidebar-section">
-            <div class="sidebar-heading">🎬 Features & Experience</div>
-            <a href="#feature-logging" class="nav-item">Watch Logging & Rewatches</a>
-            <a href="#feature-shelf" class="nav-item">Currently Watching Shelf</a>
-            <a href="#feature-episodes" class="nav-item">TV Seasons & Episodes</a>
-            <a href="#feature-stacks" class="nav-item">Ranked Stacks (Report Card)</a>
-            <a href="#feature-watchlists" class="nav-item">Attributed Watchlists</a>
-            <a href="#feature-suggestions" class="nav-item">Peer Suggestions & Gratitude</a>
-            <a href="#feature-smartsuggest" class="nav-item">SmartSuggest AI Engine</a>
-            <a href="#feature-mindlens" class="nav-item">MindLens 2.0 Telemetry</a>
-            <a href="#feature-feed" class="nav-item">Social Swarm Feed</a>
-            <a href="#feature-gamification" class="nav-item">XP, Streaks & Honey Badges</a>
-            <a href="#feature-qr" class="nav-item">QR Codes & Universal Links</a>
+        <!-- 1. PRODUCT OVERVIEW -->
+        <div class="sidebar-group" id="grp-product">
+            <button class="sidebar-heading" onclick="toggleGroup('grp-product')">
+                <span>🌟 1. Product Overview</span>
+                <span class="chevron">▾</span>
+            </button>
+            <div class="sidebar-items">
+                <a href="#philosophy" class="nav-item active">Manifesto & Philosophy</a>
+                <a href="#ecosystem" class="nav-item">3-Repo Ecosystem</a>
+                <a href="#environments" class="nav-item">Live Infrastructure & URLs</a>
+            </div>
         </div>
 
-        <div class="sidebar-section">
-            <div class="sidebar-heading">🎨 Design System</div>
-            <a href="#design-palette" class="nav-item">Warm Honey Palette</a>
-            <a href="#design-contrast" class="nav-item">The Golden Contrast Rule</a>
-            <a href="#design-loaders" class="nav-item">Loader Hierarchy</a>
-            <a href="#design-ratings" class="nav-item">10-Point Rating System</a>
+        <!-- 2. FEATURES -->
+        <div class="sidebar-group" id="grp-features">
+            <button class="sidebar-heading" onclick="toggleGroup('grp-features')">
+                <span>🎬 2. Features & Experience</span>
+                <span class="chevron">▾</span>
+            </button>
+            <div class="sidebar-items">
+                <a href="#feature-logging" class="nav-item">Watch Logging & Rewatches</a>
+                <a href="#feature-shelf" class="nav-item">Currently Watching Shelf</a>
+                <a href="#feature-episodes" class="nav-item">TV Seasons & Episode Catch-Up</a>
+                <a href="#feature-stacks" class="nav-item">Ranked Stacks (Report Card)</a>
+                <a href="#feature-watchlists" class="nav-item">Attributed Watchlists</a>
+                <a href="#feature-suggestions" class="nav-item">Peer Suggestions & Gratitude</a>
+                <a href="#feature-smartsuggest" class="nav-item">SmartSuggest AI Engine</a>
+                <a href="#feature-mindlens" class="nav-item">MindLens 2.0 Telemetry</a>
+                <a href="#feature-feed" class="nav-item">Social Swarm Feed</a>
+                <a href="#feature-compare" class="nav-item">Social Taste Compare</a>
+                <a href="#feature-preferences" class="nav-item">Unified Watch Preferences</a>
+                <a href="#feature-gamification" class="nav-item">XP, Streaks & Badges</a>
+                <a href="#feature-qr" class="nav-item">QR Codes & Universal Links</a>
+            </div>
         </div>
 
-        <div class="sidebar-section">
-            <div class="sidebar-heading">🔐 Auth & Security</div>
-            <a href="#auth-passwordless" class="nav-item">Passwordless 6-Digit OTP</a>
-            <a href="#auth-sso" class="nav-item">Google & Apple Sign-In</a>
-            <a href="#auth-jwt" class="nav-item">Stateless JWT Lifecycle</a>
+        <!-- 3. DESIGN SYSTEM -->
+        <div class="sidebar-group" id="grp-design">
+            <button class="sidebar-heading" onclick="toggleGroup('grp-design')">
+                <span>🎨 3. Master Design System</span>
+                <span class="chevron">▾</span>
+            </button>
+            <div class="sidebar-items">
+                <a href="#design-palette" class="nav-item">Warm Honey Palette Tokens</a>
+                <a href="#design-contrast" class="nav-item">The Golden Contrast Rule</a>
+                <a href="#design-loaders" class="nav-item">Loader Hierarchy</a>
+                <a href="#design-ratings" class="nav-item">10-Point Rating Scale</a>
+            </div>
         </div>
 
-        <div class="sidebar-section">
-            <div class="sidebar-heading">⚙️ Technical Architecture</div>
-            <a href="#tech-backend" class="nav-item">Backend & Database</a>
-            <a href="#tech-caching" class="nav-item">TMDb SWR & In-Memory Cache</a>
-            <a href="#tech-mobile" class="nav-item">Flutter Mobile Architecture</a>
-            <a href="#tech-web" class="nav-item">React 18 PWA Architecture</a>
-            <a href="#tech-api" class="nav-item">Core API Endpoint Contracts</a>
+        <!-- 4. AUTH & SECURITY -->
+        <div class="sidebar-group" id="grp-auth">
+            <button class="sidebar-heading" onclick="toggleGroup('grp-auth')">
+                <span>🔐 4. Auth & Security</span>
+                <span class="chevron">▾</span>
+            </button>
+            <div class="sidebar-items">
+                <a href="#auth-passwordless" class="nav-item">100% Passwordless Architecture</a>
+                <a href="#auth-sso" class="nav-item">Google & Apple Sign-In</a>
+                <a href="#auth-jwt" class="nav-item">Stateless JWT Lifecycle</a>
+            </div>
         </div>
 
-        <div class="sidebar-section">
-            <div class="sidebar-heading">🚀 Operations & DevOps</div>
-            <a href="#devops-workflow" class="nav-item">Cross-Repo Change Guide</a>
-            <a href="#devops-deploy" class="nav-item">Deployment Pipelines</a>
+        <!-- 5. TECHNICAL ARCHITECTURE -->
+        <div class="sidebar-group" id="grp-tech">
+            <button class="sidebar-heading" onclick="toggleGroup('grp-tech')">
+                <span>⚙️ 5. Technical Architecture</span>
+                <span class="chevron">▾</span>
+            </button>
+            <div class="sidebar-items">
+                <a href="#tech-backend" class="nav-item">Backend & Database (PostgreSQL)</a>
+                <a href="#tech-caching" class="nav-item">TMDb SWR & In-Memory Cache</a>
+                <a href="#tech-mobile" class="nav-item">Flutter Mobile Architecture</a>
+                <a href="#tech-web" class="nav-item">React 18 PWA Architecture</a>
+                <a href="#tech-api" class="nav-item">Core API Endpoint Contracts</a>
+            </div>
+        </div>
+
+        <!-- 6. LEGAL & PRIVACY -->
+        <div class="sidebar-group" id="grp-legal">
+            <button class="sidebar-heading" onclick="toggleGroup('grp-legal')">
+                <span>⚖️ 6. Legal & Compliance</span>
+                <span class="chevron">▾</span>
+            </button>
+            <div class="sidebar-items">
+                <a href="#legal-fan" class="nav-item">Non-Commercial Fan Operation</a>
+                <a href="#legal-terms" class="nav-item">Terms of Service Summary</a>
+                <a href="#legal-privacy" class="nav-item">Privacy Policy & Telemetry</a>
+                <a href="#legal-gdpr" class="nav-item">GDPR & CCPA Rights</a>
+                <a href="#legal-attributions" class="nav-item">TMDb & Third-Party Disclosures</a>
+                <a href="#legal-community" class="nav-item">Community Standards & Spoilers</a>
+            </div>
+        </div>
+
+        <!-- 7. DEVELOPER & TEAM -->
+        <div class="sidebar-group" id="grp-team">
+            <button class="sidebar-heading" onclick="toggleGroup('grp-team')">
+                <span>👨‍💻 7. Developer & Team</span>
+                <span class="chevron">▾</span>
+            </button>
+            <div class="sidebar-items">
+                <a href="#team-lead" class="nav-item">Creator & Lead Architect</a>
+                <a href="#team-repos" class="nav-item">Official Repositories</a>
+                <a href="#team-security" class="nav-item">Security Disclosures</a>
+                <a href="#team-support" class="nav-item">Support & Bug Reports</a>
+            </div>
+        </div>
+
+        <!-- 8. DEVOPS & OPERATIONS -->
+        <div class="sidebar-group" id="grp-devops">
+            <button class="sidebar-heading" onclick="toggleGroup('grp-devops')">
+                <span>🚀 8. DevOps & Releases</span>
+                <span class="chevron">▾</span>
+            </button>
+            <div class="sidebar-items">
+                <a href="#devops-workflow" class="nav-item">Cross-Repo Release Guide</a>
+                <a href="#devops-deploy" class="nav-item">Railway & Vercel Pipelines</a>
+            </div>
         </div>
     </aside>
 
@@ -567,15 +769,15 @@
 
         <!-- HEADER HERO -->
         <section class="doc-section">
-            <h1 class="page-title">WatchersHive Master Documentation</h1>
+            <h1 class="page-title">WatchersHive Knowledge Bank</h1>
             <p class="lead">
-                The single authoritative source of truth for WatchersHive — detailing product philosophy, every user feature, our master design system, and multi-platform technical architecture across Backend, Web PWA, and Flutter Mobile.
+                The centralized master documentation, engineering blueprint, and legal repository for WatchersHive — spanning product philosophy, user features, design tokens, multi-platform codebases, security architecture, and regulatory compliance.
             </p>
 
             <div class="alert">
-                <div class="alert-title">🐝 For Team Members & Stakeholders</div>
+                <div class="alert-title">🐝 The Single Source of Truth for the Whole Team</div>
                 <div class="alert-body">
-                    This documentation is shared across product managers, designers, frontend developers, mobile engineers, and backend teams. It replaces fragmented repo readmes and ensures zero drift across platforms.
+                    Engineers, designers, product managers, QA testers, and community stakeholders can reference this document for any detail about WatchersHive. It unifies the three repositories with zero information drift.
                 </div>
             </div>
         </section>
@@ -584,10 +786,10 @@
         <section id="philosophy" class="doc-section">
             <h2 class="section-title">🌟 1. Product Manifesto & Core Philosophy</h2>
             <p>
-                <strong>WatchersHive (brand: WatchHive)</strong> is a community-driven cinematic tracking network created for movie lovers, series bingers, anime fans, and K-drama enthusiasts.
+                <strong>WatchersHive (brand: WatchHive)</strong> is a warm, social movie and TV show tracking network designed for people who truly care about cinema and shared entertainment.
             </p>
             <p>
-                Unlike commercial streaming conglomerates that isolate users or text-heavy legacy databases like IMDb and Letterboxd that focus strictly on solitary reviews, WatchersHive is built around four fundamental pillars:
+                Unlike corporate streaming platforms that isolate viewers or text-heavy legacy databases (Letterboxd, IMDb) that focus on solitary reviewing, WatchersHive combines four foundational pillars:
             </p>
 
             <div class="features-grid">
@@ -806,14 +1008,26 @@ flowchart TD
                 Chronological community activity feed with cursor pagination, nested comments, likes, and smart "Who to Follow" recommendations based on shared genres and mutual friends.
             </p>
 
-            <!-- 4.10 GAMIFICATION -->
-            <h3 id="feature-gamification" class="subsection-title">4.10 Cinephile XP, Streaks & Honey Badges</h3>
+            <!-- 4.10 TASTE COMPARE -->
+            <h3 id="feature-compare" class="subsection-title">4.10 Social Taste Compare</h3>
+            <p>
+                Compare your cinematic footprint with any other user on the platform: Venn overlap of mutually watched films, rating correlation delta, and shared favorites.
+            </p>
+
+            <!-- 4.11 PREFERENCES -->
+            <h3 id="feature-preferences" class="subsection-title">4.11 Unified Watch Preferences Survey</h3>
+            <p>
+                A single, non-repeating onboarding survey that gathers preferred genres, cinematic eras, mood inclinations, and active streaming subscriptions. Powering immediate cold-start personalization.
+            </p>
+
+            <!-- 4.12 GAMIFICATION -->
+            <h3 id="feature-gamification" class="subsection-title">4.12 Cinephile XP, Streaks & Honey Badges</h3>
             <p>
                 Constructive gamification: +20 XP for logging, +30 XP for thoughtful reviews (100+ chars), +50 XP for stacks, and +75 XP when friends watch your suggestions. Unlocks 8 collectible Honey Badges.
             </p>
 
-            <!-- 4.11 QR & DEEP LINKS -->
-            <h3 id="feature-qr" class="subsection-title">4.11 QR Codes & Universal Deep Links</h3>
+            <!-- 4.13 QR & DEEP LINKS -->
+            <h3 id="feature-qr" class="subsection-title">4.13 QR Codes & Universal Deep Links</h3>
             <p>
                 Custom scheme <code>watchhive://</code> and Universal Links (<code>https://watchershive.com/</code>) with native fallback. Scanning a QR code opens the exact profile, movie, or stack natively in the app, or surfaces an "Open in App" smart web banner.
             </p>
@@ -1008,9 +1222,147 @@ flowchart TD
             </div>
         </section>
 
-        <!-- 8. DEVOPS & WORKFLOWS -->
+        <!-- 8. LEGAL, PRIVACY & COMPLIANCE -->
+        <section id="legal-fan" class="doc-section">
+            <h2 class="section-title">⚖️ 8. Legal, Privacy & Compliance</h2>
+
+            <div class="alert" style="border-left-color: #0284C7; background: #F0F9FF;">
+                <div class="alert-title" style="color: #0369A1;">ℹ️ Non-Commercial & Fan-Made Operation Disclosure</div>
+                <div class="alert-body">
+                    WatchersHive is an independent, non-commercial, fan-made social movie and TV tracking community application built strictly for educational, personal cataloging, critique, and commentary purposes. WatchersHive generates <strong>zero revenue</strong>, displays <strong>zero commercial advertisements</strong>, sells no user data or merchandise, and charges no fees or subscriptions.
+                </div>
+            </div>
+
+            <h3 id="legal-terms" class="subsection-title">Terms of Service Summary</h3>
+            <p>
+                By using WatchersHive, users agree to the Terms of Service:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Eligibility:</strong> Users must be at least 13 years of age (16 years in the EEA/UK).</li>
+                <li><strong>Content Ownership:</strong> Users retain ownership of reviews, ratings, and stacks they author, granting WatchersHive a non-exclusive license to display this content on the Hive feed.</li>
+                <li><strong>Fair Use & Commentary:</strong> All discussions, ratings, and reviews represent fair-use personal opinions under copyright laws.</li>
+            </ul>
+
+            <h3 id="legal-privacy" class="subsection-title">Privacy Policy & Telemetry</h3>
+            <p>
+                WatchersHive is committed to data minimization:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Data Collected:</strong> Email address (for authentication), username, display name, watch logs, ratings, reviews, and custom stacks.</li>
+                <li><strong>Telemetry:</strong> MindLens analytics (Shannon Entropy, mood distribution) are computed solely to reflect taste back to the user and are never commercialized or shared with third parties.</li>
+                <li><strong>Cookies & Storage:</strong> Minimal essential cookies/storage (access token, refresh token) required for session persistence. No tracking cookies or advertising pixels.</li>
+            </ul>
+
+            <h3 id="legal-gdpr" class="subsection-title">GDPR & CCPA Rights</h3>
+            <p>
+                Under the European GDPR and California CCPA:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Right to Access & Portability:</strong> Users can export their full watch history and reviews as JSON/CSV.</li>
+                <li><strong>Right to Erasure ("Right to be Forgotten"):</strong> Users can permanently delete their account and all associated entries, ratings, and comments at any time via Profile Settings.</li>
+            </ul>
+
+            <h3 id="legal-attributions" class="subsection-title">Third-Party Attributions</h3>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Partner / Service</th>
+                            <th>Attribution & Disclaimer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>TMDb (The Movie Database)</strong></td>
+                            <td>This product uses the TMDb API but is not endorsed or certified by TMDb. All movie metadata, backdrops, and posters are property of their respective copyright holders.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Google Play / OAuth</strong></td>
+                            <td>Google Sign-In is a registered trademark of Google LLC. Follows Google API Services User Data Policy.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Apple Sign-In</strong></td>
+                            <td>Sign in with Apple is a trademark of Apple Inc., registered in the U.S. and other countries.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 id="legal-community" class="subsection-title">Community Standards & Spoilers</h3>
+            <p>
+                WatchersHive enforces a zero-tolerance policy against hate speech, harassment, impersonation, and abusive spam. To protect the community experience, any review discussing pivotal plot twists must have the <strong>Spoiler Flag</strong> checked.
+            </p>
+        </section>
+
+        <!-- 9. DEVELOPER & TEAM -->
+        <section id="team-lead" class="doc-section">
+            <h2 class="section-title">👨‍💻 9. Developer & Team Information</h2>
+
+            <div class="dev-profile-card">
+                <img src="/watchhive-logo.png" alt="Developer Avatar" class="dev-avatar">
+                <div class="dev-info">
+                    <h3>Aditya Dasamantharao</h3>
+                    <span class="dev-role">Creator, Lead Architect & Full-Stack Engineer</span>
+                    <p class="dev-bio">
+                        Architected and engineered the WatchersHive ecosystem — including the Express/Bun backend, React 18 PWA frontend, Flutter mobile application, MindLens 2.0 telemetry algorithms, and SmartSuggest recommendation engine.
+                    </p>
+                    <div class="dev-badges">
+                        <span class="pill-badge">Node.js / Bun</span>
+                        <span class="pill-badge">Flutter / Dart</span>
+                        <span class="pill-badge">React 18 / Vite</span>
+                        <span class="pill-badge">PostgreSQL & Drizzle</span>
+                        <span class="pill-badge">Railway & Vercel</span>
+                    </div>
+                </div>
+            </div>
+
+            <h3 id="team-repos" class="subsection-title">Official GitHub Repositories</h3>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Repository</th>
+                            <th>Link</th>
+                            <th>Access</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Backend Engine</strong></td>
+                            <td><a href="https://github.com/dasamantaraoaditya/WatchHive-Backend" target="_blank" style="color: #B45309; font-weight: 700;">dasamantaraoaditya/WatchHive-Backend</a></td>
+                            <td>Core API & database migrations</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Web Client (PWA)</strong></td>
+                            <td><a href="https://github.com/dasamantaraoaditya/WatchHive-Frontend" target="_blank" style="color: #B45309; font-weight: 700;">dasamantaraoaditya/WatchHive-Frontend</a></td>
+                            <td>Vite React web application</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Mobile App (Flutter)</strong></td>
+                            <td><a href="https://github.com/dasamantaraoaditya/WatchHive-Mobile" target="_blank" style="color: #B45309; font-weight: 700;">dasamantaraoaditya/WatchHive-Mobile</a></td>
+                            <td>iOS & Android cross-platform client</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 id="team-security" class="subsection-title">Security & Responsible Disclosure</h3>
+            <p>
+                If you discover a security vulnerability or session integrity issue within WatchersHive, please disclose it directly via email rather than opening a public issue:
+            </p>
+            <p>
+                📧 <strong>Direct Email:</strong> <a href="mailto:dasamantarao.aditya@gmail.com" style="color: #B45309; font-weight: 700;">dasamantarao.aditya@gmail.com</a> / <a href="mailto:watchershive@gmail.com" style="color: #B45309; font-weight: 700;">watchershive@gmail.com</a>
+            </p>
+
+            <h3 id="team-support" class="subsection-title">Community Support & Bug Reports</h3>
+            <p>
+                For non-security bugs, feature proposals, or design suggestions, open an issue on the relevant GitHub repository or reach out through our community channels.
+            </p>
+        </section>
+
+        <!-- 10. DEVOPS & WORKFLOWS -->
         <section id="devops-workflow" class="doc-section">
-            <h2 class="section-title">🚀 8. DevOps & Cross-Repo Coordination</h2>
+            <h2 class="section-title">🚀 10. DevOps & Release Management</h2>
             <p>
                 When implementing cross-platform features, follow the <strong>3-Step Staging Pipeline</strong>:
             </p>
@@ -1033,8 +1385,40 @@ flowchart TD
 
     </main>
 
-    <!-- CLIENT-SIDE SEARCH SCRIPT -->
+    <!-- SCRIPTS: COLLAPSIBLE SIDEBAR & REAL-TIME SEARCH -->
     <script>
+        // Collapsible Sidebar Groups
+        function toggleGroup(groupId) {
+            const group = document.getElementById(groupId);
+            if (group) {
+                group.classList.toggle('collapsed');
+            }
+            updateToggleAllBtn();
+        }
+
+        function toggleAllGroups() {
+            const groups = document.querySelectorAll('.sidebar-group');
+            const allCollapsed = Array.from(groups).every(g => g.classList.contains('collapsed'));
+
+            groups.forEach(group => {
+                if (allCollapsed) {
+                    group.classList.remove('collapsed');
+                } else {
+                    group.classList.add('collapsed');
+                }
+            });
+            updateToggleAllBtn();
+        }
+
+        function updateToggleAllBtn() {
+            const groups = document.querySelectorAll('.sidebar-group');
+            const allCollapsed = Array.from(groups).every(g => g.classList.contains('collapsed'));
+            const btn = document.getElementById('toggleAllBtn');
+            if (btn) {
+                btn.innerText = allCollapsed ? 'Expand All' : 'Collapse All';
+            }
+        }
+
         // Real-time search filter
         const searchInput = document.getElementById('docSearch');
         const sections = document.querySelectorAll('.doc-section');
