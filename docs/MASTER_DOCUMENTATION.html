@@ -715,6 +715,7 @@
             <div class="sidebar-items">
                 <a href="#tech-backend" class="nav-item">Backend & Database (PostgreSQL)</a>
                 <a href="#tech-caching" class="nav-item">TMDb SWR & In-Memory Cache</a>
+                <a href="#tech-perf" class="nav-item">Performance Benchmarks (All Features)</a>
                 <a href="#tech-mobile" class="nav-item">Flutter Mobile Architecture</a>
                 <a href="#tech-web" class="nav-item">React 18 PWA Architecture</a>
                 <a href="#tech-api" class="nav-item">Core API Endpoint Contracts</a>
@@ -1150,6 +1151,295 @@ flowchart TD
                 <li><strong>Edge CDN Headers:</strong> Downstream proxies and CDNs cache responses with <code>stale-while-revalidate</code> headers for sub-30ms delivery.</li>
                 <li><strong>Multi-Tier In-Memory Caching:</strong> User profiles (30s), stats summaries (60s), and friend recommendations (60s) are cached with event-driven invalidation.</li>
             </ul>
+
+            <h3 id="tech-perf" class="subsection-title">Empirical Performance Benchmarks across All Platform Features</h3>
+            <p>
+                The live WatchHive production infrastructure (hosted on Railway and backed by Supabase PostgreSQL transaction pooling) is continuously benchmarked under concurrent authenticated load with JWT verification and multi-table relational joins.
+            </p>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Feature</th>
+                            <th>Endpoint</th>
+                            <th>Avg Latency</th>
+                            <th>p50</th>
+                            <th>p90</th>
+                            <th>p99</th>
+                            <th>Throughput</th>
+                            <th>Success</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>1. Core Infrastructure</strong></td>
+                            <td>Health Probe</td>
+                            <td><code>/health</code></td>
+                            <td><strong>447 ms</strong></td>
+                            <td>361 ms</td>
+                            <td>516 ms</td>
+                            <td>1,476 ms</td>
+                            <td>17 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>1. Core Infrastructure</strong></td>
+                            <td>App Version Check</td>
+                            <td><code>/api/v1/app/version</code></td>
+                            <td><strong>263 ms</strong></td>
+                            <td>243 ms</td>
+                            <td>297 ms</td>
+                            <td>449 ms</td>
+                            <td>30 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>2. TMDb Media Catalog</strong></td>
+                            <td>Movie Details (Fight Club)</td>
+                            <td><code>/api/v1/tmdb/movie/550</code></td>
+                            <td><strong>427 ms</strong></td>
+                            <td>310 ms</td>
+                            <td>802 ms</td>
+                            <td>1,313 ms</td>
+                            <td>18 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>2. TMDb Media Catalog</strong></td>
+                            <td>TV Show Details (GoT)</td>
+                            <td><code>/api/v1/tmdb/tv/1399</code></td>
+                            <td><strong>434 ms</strong></td>
+                            <td>313 ms</td>
+                            <td>659 ms</td>
+                            <td>1,779 ms</td>
+                            <td>17 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>2. TMDb Media Catalog</strong></td>
+                            <td>TV Season 1 Details</td>
+                            <td><code>/api/v1/tmdb/tv/1399/season/1</code></td>
+                            <td><strong>592 ms</strong></td>
+                            <td>500 ms</td>
+                            <td>821 ms</td>
+                            <td>1,574 ms</td>
+                            <td>13 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>2. TMDb Media Catalog</strong></td>
+                            <td>Movie Recommendations</td>
+                            <td><code>/api/v1/tmdb/movie/550/recommendations</code></td>
+                            <td><strong>306 ms</strong></td>
+                            <td>253 ms</td>
+                            <td>396 ms</td>
+                            <td>984 ms</td>
+                            <td>26 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>2. TMDb Media Catalog</strong></td>
+                            <td>TV Recommendations</td>
+                            <td><code>/api/v1/tmdb/tv/1399/recommendations</code></td>
+                            <td><strong>339 ms</strong></td>
+                            <td>254 ms</td>
+                            <td>499 ms</td>
+                            <td>1,371 ms</td>
+                            <td>23 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>2. TMDb Media Catalog</strong></td>
+                            <td>Multi-Search (Inception)</td>
+                            <td><code>/api/v1/tmdb/search/multi</code></td>
+                            <td><strong>263 ms</strong></td>
+                            <td>245 ms</td>
+                            <td>294 ms</td>
+                            <td>582 ms</td>
+                            <td>30 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>2. TMDb Media Catalog</strong></td>
+                            <td>Popular Movies</td>
+                            <td><code>/api/v1/tmdb/popular</code></td>
+                            <td><strong>251 ms</strong></td>
+                            <td>243 ms</td>
+                            <td>255 ms</td>
+                            <td>367 ms</td>
+                            <td>30 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>2. TMDb Media Catalog</strong></td>
+                            <td>Trending All Media</td>
+                            <td><code>/api/v1/tmdb/trending</code></td>
+                            <td><strong>501 ms</strong></td>
+                            <td>353 ms</td>
+                            <td>1,155 ms</td>
+                            <td>1,558 ms</td>
+                            <td>15 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>3. TV Episode Tracking</strong></td>
+                            <td>Show Progress Calculation</td>
+                            <td><code>/api/v1/shows/1399/progress</code></td>
+                            <td><strong>644 ms</strong></td>
+                            <td>522 ms</td>
+                            <td>761 ms</td>
+                            <td>1,764 ms</td>
+                            <td>12 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>3. TV Episode Tracking</strong></td>
+                            <td>Friends Progress Sync</td>
+                            <td><code>/api/v1/shows/1399/friends-progress</code></td>
+                            <td><strong>548 ms</strong></td>
+                            <td>524 ms</td>
+                            <td>709 ms</td>
+                            <td>711 ms</td>
+                            <td>14 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>4. Social Activity Feed</strong></td>
+                            <td>Swarm Activity Feed (Page 1)</td>
+                            <td><code>/api/v1/feed</code></td>
+                            <td><strong>1,381 ms</strong></td>
+                            <td>1,324 ms</td>
+                            <td>1,565 ms</td>
+                            <td>1,567 ms</td>
+                            <td>5 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>4. Social Activity Feed</strong></td>
+                            <td>Trending Activity Feed</td>
+                            <td><code>/api/v1/feed/trending</code></td>
+                            <td><strong>496 ms</strong></td>
+                            <td>498 ms</td>
+                            <td>608 ms</td>
+                            <td>918 ms</td>
+                            <td>15 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>4. Social Activity Feed</strong></td>
+                            <td>Who to Follow (Suggested)</td>
+                            <td><code>/api/v1/users/suggested</code></td>
+                            <td><strong>268 ms</strong></td>
+                            <td>251 ms</td>
+                            <td>292 ms</td>
+                            <td>360 ms</td>
+                            <td>29 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>5. AI Recommendations</strong></td>
+                            <td>SmartSuggest Engine</td>
+                            <td><code>/api/v1/suggestions/smart-suggest</code></td>
+                            <td><strong>1,064 ms</strong></td>
+                            <td>1,062 ms</td>
+                            <td>1,139 ms</td>
+                            <td>1,468 ms</td>
+                            <td>7 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>6. Behavioral Telemetry</strong></td>
+                            <td>MindLens Insights</td>
+                            <td><code>/api/v1/mindlens/insights</code></td>
+                            <td><strong>262 ms</strong></td>
+                            <td>245 ms</td>
+                            <td>290 ms</td>
+                            <td>431 ms</td>
+                            <td>30 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>7. Watch Tracking Catalog</strong></td>
+                            <td>User Watch Entries</td>
+                            <td><code>/api/v1/entries</code></td>
+                            <td><strong>559 ms</strong></td>
+                            <td>530 ms</td>
+                            <td>609 ms</td>
+                            <td>1,054 ms</td>
+                            <td>13 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>7. Watch Tracking Catalog</strong></td>
+                            <td>Catalog Stats Summary</td>
+                            <td><code>/api/v1/entries/stats/summary</code></td>
+                            <td><strong>262 ms</strong></td>
+                            <td>242 ms</td>
+                            <td>297 ms</td>
+                            <td>382 ms</td>
+                            <td>30 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>7. Watch Tracking Catalog</strong></td>
+                            <td>Detailed Viewing Analytics</td>
+                            <td><code>/api/v1/stats/detailed</code></td>
+                            <td><strong>563 ms</strong></td>
+                            <td>528 ms</td>
+                            <td>619 ms</td>
+                            <td>941 ms</td>
+                            <td>13 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>8. Cinephile Stacks</strong></td>
+                            <td>User Lists & Stacks</td>
+                            <td><code>/api/v1/lists</code></td>
+                            <td><strong>530 ms</strong></td>
+                            <td>504 ms</td>
+                            <td>612 ms</td>
+                            <td>754 ms</td>
+                            <td>14 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>9. Peer Suggestions Loop</strong></td>
+                            <td>Received Suggestions</td>
+                            <td><code>/api/v1/suggestions</code></td>
+                            <td><strong>521 ms</strong></td>
+                            <td>502 ms</td>
+                            <td>646 ms</td>
+                            <td>647 ms</td>
+                            <td>14 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>9. Peer Suggestions Loop</strong></td>
+                            <td>Sent Suggestions</td>
+                            <td><code>/api/v1/suggestions/sent</code></td>
+                            <td><strong>525 ms</strong></td>
+                            <td>504 ms</td>
+                            <td>609 ms</td>
+                            <td>643 ms</td>
+                            <td>14 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>10. User Profile</strong></td>
+                            <td>Full Profile (/me with cache)</td>
+                            <td><code>/api/v1/users/me</code></td>
+                            <td><strong>269 ms</strong></td>
+                            <td>244 ms</td>
+                            <td>297 ms</td>
+                            <td>430 ms</td>
+                            <td>29 req/s</td>
+                            <td><span class="badge" style="background: #E8F5E9; color: #2E7D32;">100.0%</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
 
             <h3 id="tech-api" class="subsection-title">Core API Contract Specification</h3>
             <div class="table-wrapper">
