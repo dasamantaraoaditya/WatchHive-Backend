@@ -3,7 +3,7 @@ import multer from 'multer';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
-import { users, follows, entries, lists, listItems, followRequests, blockedUsers } from '../db/schema.js';
+import { users, follows, entries, lists, listItems, followRequests, blockedUsers, episodeWatches, comments } from '../db/schema.js';
 import { eq, or, and, ilike, not, count, exists, desc, sql } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 import { friendRecommendationService } from '../services/friend-recommendation.service.js';
@@ -436,10 +436,110 @@ router.delete('/me', authMiddleware, async (req: Request, res: Response, next: N
         // 2. Delete user row from database (cascades to entries, lists, follows, likes, comments, tokens)
         await db.delete(users).where(eq(users.id, userId));
 
+        // 3. Purge in-memory and Redis caches for this user
+        invalidateUserCaches(userId);
+
         res.json({
             success: true,
             message: 'Your account and all associated data have been permanently deleted.',
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /api/v1/users/me/export:
+ *   get:
+ *     tags: [User]
+ *     summary: Export all personal user data (GDPR Article 20 - Data Portability)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Full JSON archive of user account, entries, episode history, lists, and comments
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/me/export', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.user!.userId;
+
+        // Fetch user profile (excluding sensitive password hashes or token versions)
+        const [userRecord] = await db
+            .select({
+                id: users.id,
+                username: users.username,
+                email: users.email,
+                displayName: users.displayName,
+                bio: users.bio,
+                location: users.location,
+                profilePictureUrl: users.profilePictureUrl,
+                privacyLevel: users.privacyLevel,
+                isPrivate: users.isPrivate,
+                xp: users.xp,
+                level: users.level,
+                watchStreak: users.watchStreak,
+                preferences: users.preferences,
+                createdAt: users.createdAt,
+            })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+
+        if (!userRecord) {
+            throw new AppError('User not found', 404);
+        }
+
+        // Fetch entries (movie/tv watches, ratings, reviews, rewatches)
+        const userEntries = await db
+            .select()
+            .from(entries)
+            .where(eq(entries.userId, userId))
+            .orderBy(desc(entries.createdAt));
+
+        // Fetch episode watches
+        const userEpisodeWatches = await db
+            .select()
+            .from(episodeWatches)
+            .where(eq(episodeWatches.userId, userId))
+            .orderBy(desc(episodeWatches.watchedAt));
+
+        // Fetch custom lists & items
+        const userLists = await db
+            .select()
+            .from(lists)
+            .where(eq(lists.userId, userId));
+
+        // Fetch comments
+        const userComments = await db
+            .select()
+            .from(comments)
+            .where(eq(comments.userId, userId));
+
+        const exportPayload = {
+            exportMetadata: {
+                appName: 'WatchersHive',
+                exportDate: new Date().toISOString(),
+                version: '1.0',
+                legalBasis: 'GDPR Article 20 (Right to Data Portability) & CCPA Access Request',
+                dataSubject: userRecord.email,
+            },
+            profile: userRecord,
+            entriesCount: userEntries.length,
+            entries: userEntries,
+            episodeWatchesCount: userEpisodeWatches.length,
+            episodeWatches: userEpisodeWatches,
+            listsCount: userLists.length,
+            lists: userLists,
+            commentsCount: userComments.length,
+            comments: userComments,
+        };
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="watchhive-data-export-${userRecord.username}-${Date.now()}.json"`);
+        res.json(exportPayload);
     } catch (error) {
         next(error);
     }

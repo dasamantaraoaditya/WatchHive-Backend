@@ -1,0 +1,11 @@
+{
+  "quality-gate": {
+    "enabled": true,
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "echo '{\"injectSteps\": [{\"ephemeralMessage\": \"WatchHive Backend active. Remember to invalidate caches on data writes and use .js extensions in ESM imports.\"}]}'"
+      }
+    ]
+  }
+}
