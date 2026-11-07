@@ -15,7 +15,7 @@ const router = Router();
  */
 router.post('/shows/:tmdbId/episodes/watch', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.userId || (req as any).user?.id;
         const tmdbId = parseInt(req.params.tmdbId, 10);
         const {
             seasonNumber,
@@ -68,7 +68,7 @@ router.post('/shows/:tmdbId/episodes/watch', authMiddleware, async (req: Request
  */
 router.post('/shows/:tmdbId/episodes/batch-catch-up', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.userId || (req as any).user?.id;
         const tmdbId = parseInt(req.params.tmdbId, 10);
         const { upToSeason, upToEpisode } = req.body;
 
@@ -106,7 +106,7 @@ router.post('/shows/:tmdbId/episodes/batch-catch-up', authMiddleware, async (req
  */
 router.get('/shows/:tmdbId/progress', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.userId || (req as any).user?.id;
         const tmdbId = parseInt(req.params.tmdbId, 10);
 
         if (isNaN(tmdbId)) {
@@ -133,7 +133,7 @@ router.get('/shows/:tmdbId/progress', authMiddleware, async (req: Request, res: 
  */
 router.get('/users/me/continue-watching', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.userId || (req as any).user?.id;
         const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 15;
 
         const items = await episodeTrackingService.getContinueWatching(userId, limit);
@@ -155,7 +155,7 @@ router.get('/users/me/continue-watching', authMiddleware, async (req: Request, r
  */
 router.get('/shows/:tmdbId/friends-progress', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.userId || (req as any).user?.id;
         const tmdbId = parseInt(req.params.tmdbId, 10);
 
         if (isNaN(tmdbId)) {

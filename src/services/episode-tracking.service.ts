@@ -2,6 +2,8 @@ import { db } from '../db/index.js';
 import { entries, episodeWatches, follows, users } from '../db/schema.js';
 import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 import tmdbService from './tmdb.service.js';
+import { invalidateUserCaches } from '../utils/cache.util.js';
+import { resolveAvatarUrl } from '../utils/avatar.util.js';
 
 export interface WatchEpisodeParams {
     userId: string;
@@ -128,6 +130,9 @@ export class EpisodeTrackingService {
         // Synchronize and update user's Entry for this TV show
         await this.syncShowEntryProgress(userId, tmdbId);
 
+        // Invalidate cached user stats and feeds
+        invalidateUserCaches(userId);
+
         return this.getShowProgress(userId, tmdbId);
     }
 
@@ -181,6 +186,9 @@ export class EpisodeTrackingService {
         }
 
         await this.syncShowEntryProgress(userId, tmdbId, tvDetails);
+
+        // Invalidate cached user stats and feeds
+        invalidateUserCaches(userId);
 
         return this.getShowProgress(userId, tmdbId);
     }
@@ -424,8 +432,15 @@ export class EpisodeTrackingService {
 
         return friendEntries.map(fe => {
             const friend = followedUsers.find(f => f.id === fe.userId);
+            const resolvedAvatar = resolveAvatarUrl(friend?.avatarUrl);
             return {
-                user: friend,
+                user: friend ? {
+                    id: friend.id,
+                    username: friend.username,
+                    displayName: friend.displayName,
+                    avatarUrl: resolvedAvatar,
+                    profilePictureUrl: resolvedAvatar,
+                } : null,
                 currentSeason: fe.currentSeason,
                 currentEpisode: fe.currentEpisode,
                 totalEpisodesWatched: fe.totalEpisodesWatched,

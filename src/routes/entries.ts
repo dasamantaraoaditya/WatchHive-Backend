@@ -598,6 +598,10 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                 updatedAt: entries.updatedAt,
                 posterPath: entries.posterPath,
                 backdropPath: entries.backdropPath,
+                currentSeason: entries.currentSeason,
+                currentEpisode: entries.currentEpisode,
+                totalEpisodesWatched: entries.totalEpisodesWatched,
+                totalEpisodesCount: entries.totalEpisodesCount,
                 user: {
                     id: users.id,
                     username: users.username,
