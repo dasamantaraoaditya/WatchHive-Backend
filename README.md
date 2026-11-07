@@ -252,3 +252,17 @@ For an exhaustive, chapter-by-chapter walkthrough of all product capabilities, s
 14. **Mobile-Responsive UX & Touch Ergonomics**: API payloads, low-latency queries, safe payloads.
 
 > 💡 **Developer Note:** All documentation files reside within `docs/` and are strictly excluded from client JS/CSS bundles and native mobile binaries, adding **0 bytes** to production release artifacts.
+
+---
+
+## 🤖 7. Agentic AI & Developer Optimizations (`.agents/`)
+
+This repository is optimized for AI pair programming with Antigravity:
+- **Project Context (`.agents/AGENTS.md`)**: Automatically supplies the agent with Express layer topology, Drizzle schema, cache invalidation rules, and auth conventions without re-reading source files.
+- **Workflow Skills (`.agents/skills/`)**:
+  - `deploy`: Deployment procedures to Railway Staging and Production.
+  - `test`: Unit and E2E testing commands with Jest/Bun.
+  - `debug-api`: Runbook for CORS, rate limiting, and cache troubleshooting.
+  - `db-migration`: Safe Drizzle ORM migration generation and idempotent runtime guards.
+- **Quality Hooks (`.agents/hooks.json`)**: Automatic session validation.
+
