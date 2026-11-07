@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WatchersHive — Master Documentation & Engineering Blueprint</title>
+    <link rel="icon" type="image/png" href="/watchhive-logo.png">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <!-- Mermaid.js for Diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'neutral',
+            themeVariables: {
+                primaryColor: '#FFF3D6',
+                primaryTextColor: '#2D2926',
+                primaryBorderColor: '#FFB700',
+                lineColor: '#FFB700',
+                secondaryColor: '#FFF9F0',
+                tertiaryColor: '#FFFFFF'
+            }
+        });
+    </script>
+    <style>
+        :root {
+            --primary: #FFB700;
+            --primary-light: #FFDA40;
+            --primary-dark: #E59700;
+            --primary-surface: #FFF9E6;
+            --bg: #FFF9F0;
+            --surface: #FFFFFF;
+            --surface-elevated: #FFF3E0;
+            --text-primary: #2D2926;
+            --text-secondary: #525252;
+            --text-muted: #737373;
+            --border: #EAE5DE;
+            --border-light: #F2EDE6;
+            --code-bg: #1E1E24;
+            --sidebar-width: 300px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-primary);
+            line-height: 1.6;
+            display: flex;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Top Header */
+        header.top-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+
+        .brand-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .brand-logo {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .brand-title {
+            font-size: 1.1rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+        }
+
+        .brand-badge {
+            background: var(--primary-surface);
+            color: #995C00;
+            font-size: 0.7rem;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 183, 0, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .search-container {
+            position: relative;
+            width: 320px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 8px 14px 8px 36px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            color: var(--text-primary);
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(255, 183, 0, 0.15);
+            background: #fff;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            pointer-events: none;
+        }
+
+        .header-links {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-btn {
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 7px 14px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .header-btn-secondary {
+            background: var(--bg);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+        .header-btn-secondary:hover {
+            background: #f0ebe4;
+            color: var(--text-primary);
+        }
+
+        .header-btn-primary {
+            background: var(--primary);
+            color: var(--text-primary);
+            box-shadow: 0 2px 8px rgba(255, 183, 0, 0.3);
+        }
+        .header-btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        /* Sidebar Navigation */
+        aside.sidebar {
+            width: var(--sidebar-width);
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            position: fixed;
+            top: 64px;
+            bottom: 0;
+            left: 0;
+            overflow-y: auto;
+            padding: 24px 16px;
+            z-index: 90;
+        }
+
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+
+        .sidebar-heading {
+            font-size: 0.7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            padding: 6px 12px;
+            margin-bottom: 4px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.15s ease;
+            margin-bottom: 2px;
+        }
+
+        .nav-item:hover {
+            background: var(--bg);
+            color: var(--text-primary);
+        }
+
+        .nav-item.active {
+            background: var(--primary-surface);
+            color: #8C5300;
+            font-weight: 700;
+            border-left: 3px solid var(--primary);
+        }
+
+        /* Main Content */
+        main.content {
+            margin-left: var(--sidebar-width);
+            margin-top: 64px;
+            padding: 48px 64px;
+            max-width: 1040px;
+            flex: 1;
+        }
+
+        /* Typography & Content Sections */
+        .doc-section {
+            margin-bottom: 64px;
+            scroll-margin-top: 88px;
+        }
+
+        h1.page-title {
+            font-size: 2.5rem;
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        p.lead {
+            font-size: 1.15rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+
+        h2.section-title {
+            font-size: 1.75rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-top: 48px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--border-light);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h3.subsection-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        p {
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+        }
+
+        /* Feature Cards Grid */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin: 24px 0;
+        }
+
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            transition: all 0.2s ease;
+        }
+
+        .feature-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 16px rgba(255, 183, 0, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .feature-icon {
+            font-size: 1.8rem;
+            margin-bottom: 12px;
+            display: inline-block;
+        }
+
+        .feature-card h4 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+
+        .feature-card p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        /* Callout Alerts */
+        .alert {
+            background: var(--surface);
+            border-left: 4px solid var(--primary);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 24px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--primary);
+        }
+
+        .alert-title {
+            font-weight: 800;
+            font-size: 0.9rem;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+        }
+
+        .alert-body {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        /* Tables */
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 24px 0;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        th {
+            background: var(--bg);
+            color: var(--text-primary);
+            font-weight: 700;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-light);
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 183, 0, 0.04);
+        }
+
+        /* Code Blocks */
+        pre {
+            background: var(--code-bg);
+            color: #ECEFF4;
+            padding: 16px 20px;
+            border-radius: 12px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin: 20px 0;
+            position: relative;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            background: rgba(0, 0, 0, 0.06);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #B45309;
+        }
+
+        pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+        }
+
+        /* Color Swatches for Design Tokens */
+        .token-swatches {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin: 20px 0;
+        }
+
+        .swatch-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            padding: 8px;
+        }
+
+        .swatch-color {
+            height: 48px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .swatch-name {
+            font-weight: 700;
+            font-size: 0.8rem;
+            color: var(--text-primary);
+        }
+
+        .swatch-hex {
+            font-size: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-muted);
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            aside.sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+            aside.sidebar.open {
+                transform: translateX(0);
+            }
+            main.content {
+                margin-left: 0;
+                padding: 32px 20px;
+            }
+            .search-container {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOP BAR -->
+    <header class="top-bar">
+        <a href="#" class="brand-container">
+            <img src="/watchhive-logo.png" alt="WatchHive Logo" class="brand-logo">
+            <span class="brand-title">WatchersHive</span>
+            <span class="brand-badge">Master Docs</span>
+        </a>
+
+        <div class="search-container">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="docSearch" class="search-input" placeholder="Search product, features, API, design...">
+        </div>
+
+        <div class="header-links">
+            <a href="https://github.com/dasamantaraoaditya" target="_blank" class="header-btn header-btn-secondary">GitHub</a>
+            <a href="https://watchershive.com" target="_blank" class="header-btn header-btn-primary">Open Web App ↗</a>
+        </div>
+    </header>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <aside class="sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-heading">🌟 Product Overview</div>
+            <a href="#philosophy" class="nav-item active">Product Manifesto & Vision</a>
+            <a href="#ecosystem" class="nav-item">3-Repo Ecosystem</a>
+            <a href="#environments" class="nav-item">Infrastructure & URLs</a>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-heading">🎬 Features & Experience</div>
+            <a href="#feature-logging" class="nav-item">Watch Logging & Rewatches</a>
+            <a href="#feature-shelf" class="nav-item">Currently Watching Shelf</a>
+            <a href="#feature-episodes" class="nav-item">TV Seasons & Episodes</a>
+            <a href="#feature-stacks" class="nav-item">Ranked Stacks (Report Card)</a>
+            <a href="#feature-watchlists" class="nav-item">Attributed Watchlists</a>
+            <a href="#feature-suggestions" class="nav-item">Peer Suggestions & Gratitude</a>
+            <a href="#feature-smartsuggest" class="nav-item">SmartSuggest AI Engine</a>
+            <a href="#feature-mindlens" class="nav-item">MindLens 2.0 Telemetry</a>
+            <a href="#feature-feed" class="nav-item">Social Swarm Feed</a>
+            <a href="#feature-gamification" class="nav-item">XP, Streaks & Honey Badges</a>
+            <a href="#feature-qr" class="nav-item">QR Codes & Universal Links</a>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-heading">🎨 Design System</div>
+            <a href="#design-palette" class="nav-item">Warm Honey Palette</a>
+            <a href="#design-contrast" class="nav-item">The Golden Contrast Rule</a>
+            <a href="#design-loaders" class="nav-item">Loader Hierarchy</a>
+            <a href="#design-ratings" class="nav-item">10-Point Rating System</a>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-heading">🔐 Auth & Security</div>
+            <a href="#auth-passwordless" class="nav-item">Passwordless 6-Digit OTP</a>
+            <a href="#auth-sso" class="nav-item">Google & Apple Sign-In</a>
+            <a href="#auth-jwt" class="nav-item">Stateless JWT Lifecycle</a>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-heading">⚙️ Technical Architecture</div>
+            <a href="#tech-backend" class="nav-item">Backend & Database</a>
+            <a href="#tech-caching" class="nav-item">TMDb SWR & In-Memory Cache</a>
+            <a href="#tech-mobile" class="nav-item">Flutter Mobile Architecture</a>
+            <a href="#tech-web" class="nav-item">React 18 PWA Architecture</a>
+            <a href="#tech-api" class="nav-item">Core API Endpoint Contracts</a>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-heading">🚀 Operations & DevOps</div>
+            <a href="#devops-workflow" class="nav-item">Cross-Repo Change Guide</a>
+            <a href="#devops-deploy" class="nav-item">Deployment Pipelines</a>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="content">
+
+        <!-- HEADER HERO -->
+        <section class="doc-section">
+            <h1 class="page-title">WatchersHive Master Documentation</h1>
+            <p class="lead">
+                The single authoritative source of truth for WatchersHive — detailing product philosophy, every user feature, our master design system, and multi-platform technical architecture across Backend, Web PWA, and Flutter Mobile.
+            </p>
+
+            <div class="alert">
+                <div class="alert-title">🐝 For Team Members & Stakeholders</div>
+                <div class="alert-body">
+                    This documentation is shared across product managers, designers, frontend developers, mobile engineers, and backend teams. It replaces fragmented repo readmes and ensures zero drift across platforms.
+                </div>
+            </div>
+        </section>
+
+        <!-- 1. PRODUCT MANIFESTO & PHILOSOPHY -->
+        <section id="philosophy" class="doc-section">
+            <h2 class="section-title">🌟 1. Product Manifesto & Core Philosophy</h2>
+            <p>
+                <strong>WatchersHive (brand: WatchHive)</strong> is a community-driven cinematic tracking network created for movie lovers, series bingers, anime fans, and K-drama enthusiasts.
+            </p>
+            <p>
+                Unlike commercial streaming conglomerates that isolate users or text-heavy legacy databases like IMDb and Letterboxd that focus strictly on solitary reviews, WatchersHive is built around four fundamental pillars:
+            </p>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <span class="feature-icon">⚡</span>
+                    <h4>Frictionless Action</h4>
+                    <p>Logging finished watches or tracking active episodes takes under 3 seconds with instant optimistic UI response.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">🤝</span>
+                    <h4>Anti-Algorithm Social</h4>
+                    <p>Real recommendations from people whose taste you actually trust, attributed permanently with a closed gratitude feedback loop.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">🏆</span>
+                    <h4>Cinephile Stacks</h4>
+                    <p>Dynamic, reorderable ranked collections that act as your living cinematic report card rather than forgotten static playlists.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">🧠</span>
+                    <h4>MindLens Intelligence</h4>
+                    <p>Mathematical reflections of your cognitive viewing patterns (Shannon Information Theory and Affective Valence) without horoscopes.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. ECOSYSTEM ARCHITECTURE -->
+        <section id="ecosystem" class="doc-section">
+            <h2 class="section-title">🏗️ 2. The 3-Repository Ecosystem</h2>
+            <p>
+                The platform is architected across three repositories operating with unified design tokens, shared API contracts, and synchronized authentication states:
+            </p>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Repository</th>
+                            <th>Primary Stack</th>
+                            <th>Role & Responsibilities</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>WatchHive-Backend</strong></td>
+                            <td>Node.js / Bun + Express + Drizzle ORM + PostgreSQL + Redis</td>
+                            <td>Central REST API, TMDb proxy, passwordless auth, social graph, MindLens math engine, FCM notifications.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>WatchHive-Frontend</strong></td>
+                            <td>React 18 + Vite 5 + TypeScript + Tailwind + PWA</td>
+                            <td>Responsive desktop & mobile web client, offline service worker caching, instant installation as PWA.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>watchhive_mobile</strong></td>
+                            <td>Flutter 3.x + Riverpod 2.6 + GoRouter 14 + Dio 5.11 + SQLite</td>
+                            <td>Native iOS & Android apps, hardware Keychain storage, offline SQLite database, tactile haptics.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mermaid">
+flowchart TD
+    subgraph Clients["Clients (Warm Honey UI)"]
+        Web["Web PWA (React 18 / Vite)"]
+        iOS["iOS App (Flutter Native)"]
+        Android["Android App (Flutter Native)"]
+    end
+
+    subgraph Edge["Edge Infrastructure"]
+        VercelCDN["Vercel Edge Network (Web PWA)"]
+        RailwayLB["Railway Edge Proxy (Backend API)"]
+    end
+
+    subgraph Core["WatchHive Core Services"]
+        Express["Express Server (Bun 1.1)"]
+        AuthSvc["Passwordless Auth Engine"]
+        CacheSvc["SWR Deduplicating In-Memory Cache"]
+        SmartSuggest["SmartSuggest AI Engine"]
+        MindLensEngine["MindLens Telemetry Engine"]
+    end
+
+    subgraph Persistence["Storage & Third-Party APIs"]
+        Postgres[("Supabase PostgreSQL (Drizzle ORM)")]
+        TMDb[("The Movie Database (TMDb v3)")]
+        FCM["Firebase Cloud Messaging (FCM)"]
+        SMTP["Email OTP Transporter (SMTP / Resend)"]
+    end
+
+    Web --> VercelCDN
+    iOS & Android & VercelCDN --> RailwayLB
+    RailwayLB --> Express
+    Express --> AuthSvc & CacheSvc & SmartSuggest & MindLensEngine
+    AuthSvc --> SMTP
+    CacheSvc --> TMDb
+    Express --> Postgres
+    Express --> FCM
+            </div>
+        </section>
+
+        <!-- 3. ENVIRONMENTS & URLS -->
+        <section id="environments" class="doc-section">
+            <h2 class="section-title">🌐 3. Infrastructure & Live Endpoints</h2>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Environment</th>
+                            <th>URL</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Production Web PWA</strong></td>
+                            <td><code>https://watchershive.com</code></td>
+                            <td>Hosted on Vercel with automatic deployments on <code>main</code> branch.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Production API</strong></td>
+                            <td><code>https://watchhive-api-production.up.railway.app/api/v1</code></td>
+                            <td>Hosted on Railway with automatic deployments on <code>main</code> branch.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Staging API</strong></td>
+                            <td><code>https://watchhive-api-staging.up.railway.app/api/v1</code></td>
+                            <td>Hosted on Railway with automatic deployments on <code>staging</code> branch.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Interactive Swagger Docs</strong></td>
+                            <td><code>https://watchhive-api-production.up.railway.app/api/docs</code></td>
+                            <td>Interactive OpenAPI testing playground.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 4. MASTER FEATURES -->
+        <section id="feature-logging" class="doc-section">
+            <h2 class="section-title">🎬 4. Complete Feature Catalog & User Flows</h2>
+
+            <!-- 4.1 LOGGING -->
+            <h3 class="subsection-title">4.1 Watch Tracking & Rewatch Engine</h3>
+            <p>
+                The watch logger is the central heart of WatchersHive. It captures completed viewings with fine-grained context:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Dual Watch Modes:</strong> Finished (<code>WATCHED</code>) vs Currently Watching (<code>WATCHING</code>).</li>
+                <li><strong>10-Point Rating Parity:</strong> 0.5 to 10.0 scale, mapped to 5 honey stars with half-star increments.</li>
+                <li><strong>Viewing Context Tags:</strong> Cinema, Home, Netflix, Prime Video, Disney+ Hotstar, Apple TV+, etc.</li>
+                <li><strong>Spoiler Masking:</strong> User reviews flagged with spoilers are blurred by default with explicit click-to-reveal.</li>
+                <li><strong>Duplicate Watch Detection:</strong> Automatically identifies repeat viewings, prompting between logging a fresh <strong>Rewatch</strong> or modifying the earlier log.</li>
+            </ul>
+
+            <!-- 4.2 SHELF -->
+            <h3 id="feature-shelf" class="subsection-title">4.2 Currently Watching Shelf</h3>
+            <p>
+                Surfaced prominently at the top of user profiles and library screens. Features an atomic <strong>Move-to-Watched</strong> action that pre-fills viewing start time, sets completion timestamp, and opens rating without re-entering details.
+            </p>
+
+            <!-- 4.3 EPISODES -->
+            <h3 id="feature-episodes" class="subsection-title">4.3 Granular TV Season & Episode Tracking</h3>
+            <p>
+                A complete series tracking subsystem supporting multi-season shows:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Episode Checklist:</strong> Expandable seasons listing every episode with thumbnail, overview, and instant check-off toggle.</li>
+                <li><strong>One-Tap Batch Catch-Up:</strong> Catching up on season 3? Tap one button to mark all prior episodes (S01E01 to S03E05) as watched simultaneously.</li>
+                <li><strong>Continue Watching Tray:</strong> Dynamically displays in-progress shows with the exact next unwatched episode card for single-tap playback resumption.</li>
+                <li><strong>Social Friends Progress:</strong> View which friends are currently watching the show and where they are (e.g. <em>"@alex is on S02E08"</em>), avoiding spoilers while coordinating watch parties.</li>
+            </ul>
+
+            <!-- 4.4 STACKS -->
+            <h3 id="feature-stacks" class="subsection-title">4.4 Ranked Stacks (The Cinephile Report Card)</h3>
+            <p>
+                Numbered, curated collections (e.g., <em>"Top 10 Mind-Benders of All Time"</em>, <em>"Favorite Nolan Films"</em>). Includes tactile drag-and-drop reordering with single-transaction backend synchronization. Stacks can be exported as 9:16 social cards and scanned via QR codes.
+            </p>
+
+            <!-- 4.5 WATCHLISTS -->
+            <h3 id="feature-watchlists" class="subsection-title">4.5 Attributed Watchlists</h3>
+            <p>
+                When a user adds a film recommended by a friend or scanned from a QR code, the recommender's identity is permanently attached. When the film is finally logged, the original recommender receives recognition and an impact score boost.
+            </p>
+
+            <!-- 4.6 SUGGESTIONS -->
+            <h3 id="feature-suggestions" class="subsection-title">4.6 Peer Suggestions & Gratitude Loop</h3>
+            <p>
+                Send movies or shows directly to friends with a heartfelt note. Grouped inbox clusters recommendations by movie. When watched, the app prompts: <em>"Send a note of thanks to @sarah?"</em>, closing the social gratitude loop.
+            </p>
+
+            <!-- 4.7 SMARTSUGGEST -->
+            <h3 id="feature-smartsuggest" class="subsection-title">4.7 SmartSuggest AI Engine</h3>
+            <p>
+                Proprietary recommendation algorithm balancing social influence, consensus acclaim, personal taste profile, and binge fatigue avoidance:
+            </p>
+            <pre><code>Score (S) = (w_friend * F) + (w_critic * C) + (w_taste * T) + B_diversity - P_fatigue</code></pre>
+            <p>
+                <strong>3 Modes:</strong> Hive Mind (Friend focus), Certified Gold (Critic consensus), and Palate Cleanser (Diversity focus).
+            </p>
+
+            <!-- 4.8 MINDLENS -->
+            <h3 id="feature-mindlens" class="subsection-title">4.8 MindLens 2.0 Behavioral Telemetry</h3>
+            <p>
+                Measures cinematic taste breadth using <strong>Shannon Information Entropy</strong>:
+            </p>
+            <pre><code>H(G) = - Σ [ p(g_i) * log2(p(g_i)) ]</code></pre>
+            <p>
+                Classifies viewers across 6 cognitive archetypes (Cinema Polymath, Deep Diver, Adrenaline Seeker, Comfort Voyager, Cerebral Analyst, Contrarian Explorer) and maps mood onto Russell's Circumplex Affect Plane.
+            </p>
+
+            <!-- 4.9 FEED -->
+            <h3 id="feature-feed" class="subsection-title">4.9 Social Swarm Feed</h3>
+            <p>
+                Chronological community activity feed with cursor pagination, nested comments, likes, and smart "Who to Follow" recommendations based on shared genres and mutual friends.
+            </p>
+
+            <!-- 4.10 GAMIFICATION -->
+            <h3 id="feature-gamification" class="subsection-title">4.10 Cinephile XP, Streaks & Honey Badges</h3>
+            <p>
+                Constructive gamification: +20 XP for logging, +30 XP for thoughtful reviews (100+ chars), +50 XP for stacks, and +75 XP when friends watch your suggestions. Unlocks 8 collectible Honey Badges.
+            </p>
+
+            <!-- 4.11 QR & DEEP LINKS -->
+            <h3 id="feature-qr" class="subsection-title">4.11 QR Codes & Universal Deep Links</h3>
+            <p>
+                Custom scheme <code>watchhive://</code> and Universal Links (<code>https://watchershive.com/</code>) with native fallback. Scanning a QR code opens the exact profile, movie, or stack natively in the app, or surfaces an "Open in App" smart web banner.
+            </p>
+        </section>
+
+        <!-- 5. DESIGN SYSTEM -->
+        <section id="design-palette" class="doc-section">
+            <h2 class="section-title">🎨 5. Master Design System & UI/UX Standards</h2>
+
+            <div class="token-swatches">
+                <div class="swatch-card">
+                    <div class="swatch-color" style="background: #FFB700;"></div>
+                    <div class="swatch-name">Honey Gold (Primary)</div>
+                    <div class="swatch-hex">#FFB700</div>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch-color" style="background: #FFDA40;"></div>
+                    <div class="swatch-name">Honey Gold Light</div>
+                    <div class="swatch-hex">#FFDA40</div>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch-color" style="background: #E59700;"></div>
+                    <div class="swatch-name">Honey Gold Dark</div>
+                    <div class="swatch-hex">#E59700</div>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch-color" style="background: #FFF9F0; border: 1px solid #EAE5DE;"></div>
+                    <div class="swatch-name">Warm Cream (Canvas)</div>
+                    <div class="swatch-hex">#FFF9F0</div>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch-color" style="background: #FFFFFF; border: 1px solid #EAE5DE;"></div>
+                    <div class="swatch-name">Pure White (Surface)</div>
+                    <div class="swatch-hex">#FFFFFF</div>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch-color" style="background: #2D2926;"></div>
+                    <div class="swatch-name">Charcoal (Text Primary)</div>
+                    <div class="swatch-hex">#2D2926</div>
+                </div>
+            </div>
+
+            <!-- CONTRAST RULE -->
+            <div id="design-contrast" class="alert">
+                <div class="alert-title">⚠️ The Golden Contrast Rule (Mandatory Across All Platforms)</div>
+                <div class="alert-body">
+                    All text and icons rendered on Honey Gold (<code>#FFB700</code>), Cream (<code>#FFF9F0</code>), or White (<code>#FFFFFF</code>) surfaces <strong>MUST be Charcoal Black (<code>#2D2926</code>)</strong>. NEVER render white text on gold or cream surfaces.
+                </div>
+            </div>
+
+            <!-- LOADERS -->
+            <h3 id="design-loaders" class="subsection-title">Loader Hierarchy</h3>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Primary: Skeleton Loaders (<code>WHSkeletonBox</code>):</strong> Mandatory everywhere while fetching data (cards, carousels, lists, feed). Preserves layout stability and prevents content shifting.</li>
+                <li><strong>Secondary: Animated Bee Loader (<code>BeeLoader</code>):</strong> Used ONLY for cold app boot, splash screen, or modal submit operations where skeletons cannot fit.</li>
+            </ul>
+
+            <!-- RATINGS -->
+            <h3 id="design-ratings" class="subsection-title">Rating Scale</h3>
+            <p>
+                Strict 10-point scale (0.5 to 10.0), visualized as 5 dual-halved honey stars. Strictly identical across picker, cards, and profile stats.
+            </p>
+        </section>
+
+        <!-- 6. AUTHENTICATION & SECURITY -->
+        <section id="auth-passwordless" class="doc-section">
+            <h2 class="section-title">🔐 6. Authentication & Session Security</h2>
+
+            <p>
+                WatchersHive is <strong>100% Passwordless</strong>. Traditional passwords have been phased out completely to eliminate phishing, credential stuffing, and forgotten password frustration.
+            </p>
+
+            <h3 class="subsection-title">Authentication Methods</h3>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Method</th>
+                            <th>Flow</th>
+                            <th>Security Characteristics</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>6-Digit Email OTP</strong></td>
+                            <td>User enters email $\rightarrow$ 6-digit code sent $\rightarrow$ User submits code.</td>
+                            <td>Cryptographically random OTP, 10-minute expiry, hashed in PostgreSQL, automatic verification.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Google OAuth 2.0</strong></td>
+                            <td>Google One Tap / Native Google Sign-In SDK.</td>
+                            <td>ID token verified on backend via Google tokeninfo and official library.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Apple ID</strong></td>
+                            <td>Native Sign in with Apple SDK.</td>
+                            <td>Identity token validated via Apple public keys, captures name on initial authorization.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 id="auth-jwt" class="subsection-title">Stateless JWT Lifecycle</h3>
+            <p>
+                Access tokens (7 days) are verified <strong>statelessly without database lookups</strong> on routine requests, preventing API bottlenecks and eliminating random logouts. Refresh tokens (90 days) are rotated at <code>/api/v1/auth/refresh</code> where global session revocation (<code>tokenVersion</code>) is cleanly enforced.
+            </p>
+        </section>
+
+        <!-- 7. TECHNICAL ARCHITECTURE & API -->
+        <section id="tech-backend" class="doc-section">
+            <h2 class="section-title">⚙️ 7. Technical Architecture & Performance</h2>
+
+            <h3 id="tech-caching" class="subsection-title">TMDb SWR Caching & Single-Flight Deduplication</h3>
+            <p>
+                All TMDb endpoints (movies, TV, recommendations, trending, search) are protected by a high-performance caching layer:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Public Access:</strong> Media routes use <code>optionalAuthMiddleware</code>, enabling instant guest browsing and eliminating 401 barriers.</li>
+                <li><strong>Single-Flight Deduplication:</strong> Identical concurrent requests are batched into a single outbound TMDb call, eliminating duplicate external requests.</li>
+                <li><strong>Edge CDN Headers:</strong> Downstream proxies and CDNs cache responses with <code>stale-while-revalidate</code> headers for sub-30ms delivery.</li>
+                <li><strong>Multi-Tier In-Memory Caching:</strong> User profiles (30s), stats summaries (60s), and friend recommendations (60s) are cached with event-driven invalidation.</li>
+            </ul>
+
+            <h3 id="tech-api" class="subsection-title">Core API Contract Specification</h3>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Endpoint</th>
+                            <th>Method</th>
+                            <th>Auth</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>/api/v1/tmdb/movie/:id</code></td>
+                            <td>GET</td>
+                            <td>Public (Optional)</td>
+                            <td>Get movie details, credits, cast, and runtime.</td>
+                        </tr>
+                        <tr>
+                            <td><code>/api/v1/tmdb/tv/:id</code></td>
+                            <td>GET</td>
+                            <td>Public (Optional)</td>
+                            <td>Get TV show details, seasons, and episodes.</td>
+                        </tr>
+                        <tr>
+                            <td><code>/api/v1/tmdb/movie/:id/recommendations</code></td>
+                            <td>GET</td>
+                            <td>Public (Optional)</td>
+                            <td>Get TMDb algorithmic movie recommendations.</td>
+                        </tr>
+                        <tr>
+                            <td><code>/api/v1/shows/:tmdbId/progress</code></td>
+                            <td>GET</td>
+                            <td>Authenticated</td>
+                            <td>Get user's season/episode progress for a TV show.</td>
+                        </tr>
+                        <tr>
+                            <td><code>/api/v1/shows/:tmdbId/episodes/watch</code></td>
+                            <td>POST</td>
+                            <td>Authenticated</td>
+                            <td>Toggle individual episode watched state.</td>
+                        </tr>
+                        <tr>
+                            <td><code>/api/v1/shows/:tmdbId/episodes/batch-catch-up</code></td>
+                            <td>POST</td>
+                            <td>Authenticated</td>
+                            <td>Batch-mark all prior episodes as watched.</td>
+                        </tr>
+                        <tr>
+                            <td><code>/api/v1/shows/:tmdbId/friends-progress</code></td>
+                            <td>GET</td>
+                            <td>Authenticated</td>
+                            <td>See which friends are watching and their current episode.</td>
+                        </tr>
+                        <tr>
+                            <td><code>/api/v1/suggestions/smart-suggest</code></td>
+                            <td>GET</td>
+                            <td>Authenticated</td>
+                            <td>SmartSuggest recommendations (modes: social, critic, explore).</td>
+                        </tr>
+                        <tr>
+                            <td><code>/api/v1/mindlens/insights</code></td>
+                            <td>GET</td>
+                            <td>Authenticated</td>
+                            <td>MindLens Shannon entropy and Russell affective state.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 8. DEVOPS & WORKFLOWS -->
+        <section id="devops-workflow" class="doc-section">
+            <h2 class="section-title">🚀 8. DevOps & Cross-Repo Coordination</h2>
+            <p>
+                When implementing cross-platform features, follow the <strong>3-Step Staging Pipeline</strong>:
+            </p>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <h4>1. Backend First</h4>
+                    <p>Update <code>schema.ts</code>, create service/controller, run <code>npm test</code>, merge staging PR to trigger Railway deployment.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>2. Web Frontend Second</h4>
+                    <p>Update TypeScript types, add service call, build skeleton UI, test build with <code>npm run build</code>, merge PR to trigger Vercel deploy.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>3. Mobile Third</h4>
+                    <p>Update Dart models, add API endpoint constant, update Riverpod notifier, test with <code>flutter analyze</code> and build APK/iOS.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- CLIENT-SIDE SEARCH SCRIPT -->
+    <script>
+        // Real-time search filter
+        const searchInput = document.getElementById('docSearch');
+        const sections = document.querySelectorAll('.doc-section');
+        const navItems = document.querySelectorAll('.nav-item');
+
+        searchInput.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase().trim();
+            if (!term) {
+                sections.forEach(s => s.style.display = 'block');
+                return;
+            }
+
+            sections.forEach(section => {
+                const text = section.innerText.toLowerCase();
+                if (text.includes(term)) {
+                    section.style.display = 'block';
+                } else {
+                    section.style.display = 'none';
+                }
+            });
+        });
+
+        // Active sidebar link on scroll
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop - 120;
+                if (scrollY >= sectionTop) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navItems.forEach(item => {
+                item.classList.remove('active');
+                if (item.getAttribute('href') === '#' + current) {
+                    item.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
