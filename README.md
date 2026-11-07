@@ -178,7 +178,40 @@ The WatchHive API is continuously benchmarked under concurrent traffic and profi
 
 The following metrics reflect our live **Railway Production & Staging Environments** under authenticated load, real Supabase PostgreSQL pooler transactions, JWT verification, and multi-table aggregations.
 
-#### Production Benchmark: Before vs. After Optimization
+### Comprehensive Live Production Benchmark (Every Feature & Subsystem)
+
+The table below details real-world load benchmark results executed against the live **Railway Production API** (`https://watchhive-api-production.up.railway.app`) under concurrent authenticated traffic with JWT verification, PostgreSQL transaction pooling, and multi-table joins:
+
+| Category | Feature | Endpoint | Avg Latency | p50 | p90 | p99 | Throughput | Success Rate |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. Core Infrastructure** | Health Probe | `/health` | **447 ms** | 361 ms | 516 ms | 1,476 ms | 17 req/s | 100.0% |
+| **1. Core Infrastructure** | App Version Check | `/api/v1/app/version` | **263 ms** | 243 ms | 297 ms | 449 ms | 30 req/s | 100.0% |
+| **2. TMDb Media Catalog** | Movie Details (Fight Club) | `/api/v1/tmdb/movie/550` | **427 ms** | 310 ms | 802 ms | 1,313 ms | 18 req/s | 100.0% |
+| **2. TMDb Media Catalog** | TV Show Details (GoT) | `/api/v1/tmdb/tv/1399` | **434 ms** | 313 ms | 659 ms | 1,779 ms | 17 req/s | 100.0% |
+| **2. TMDb Media Catalog** | TV Season 1 Details | `/api/v1/tmdb/tv/1399/season/1` | **592 ms** | 500 ms | 821 ms | 1,574 ms | 13 req/s | 100.0% |
+| **2. TMDb Media Catalog** | Movie Recommendations | `/api/v1/tmdb/movie/550/recommendations` | **306 ms** | 253 ms | 396 ms | 984 ms | 26 req/s | 100.0% |
+| **2. TMDb Media Catalog** | TV Recommendations | `/api/v1/tmdb/tv/1399/recommendations` | **339 ms** | 254 ms | 499 ms | 1,371 ms | 23 req/s | 100.0% |
+| **2. TMDb Media Catalog** | Multi-Search (Inception) | `/api/v1/tmdb/search/multi` | **263 ms** | 245 ms | 294 ms | 582 ms | 30 req/s | 100.0% |
+| **2. TMDb Media Catalog** | Popular Movies | `/api/v1/tmdb/popular` | **251 ms** | 243 ms | 255 ms | 367 ms | 30 req/s | 100.0% |
+| **2. TMDb Media Catalog** | Trending All Media | `/api/v1/tmdb/trending` | **501 ms** | 353 ms | 1,155 ms | 1,558 ms | 15 req/s | 100.0% |
+| **3. TV Episode Tracking** | Show Progress Calculation | `/api/v1/shows/1399/progress` | **644 ms** | 522 ms | 761 ms | 1,764 ms | 12 req/s | 100.0% |
+| **3. TV Episode Tracking** | Friends Progress Sync | `/api/v1/shows/1399/friends-progress` | **548 ms** | 524 ms | 709 ms | 711 ms | 14 req/s | 100.0% |
+| **4. Social Activity Feed** | Swarm Activity Feed (Page 1) | `/api/v1/feed` | **1,381 ms** | 1,324 ms | 1,565 ms | 1,567 ms | 5 req/s | 100.0% |
+| **4. Social Activity Feed** | Trending Activity Feed | `/api/v1/feed/trending` | **496 ms** | 498 ms | 608 ms | 918 ms | 15 req/s | 100.0% |
+| **4. Social Activity Feed** | Who to Follow (Suggested Users) | `/api/v1/users/suggested` | **268 ms** | 251 ms | 292 ms | 360 ms | 29 req/s | 100.0% |
+| **5. AI Recommendations** | SmartSuggest Engine | `/api/v1/suggestions/smart-suggest` | **1,064 ms** | 1,062 ms | 1,139 ms | 1,468 ms | 7 req/s | 100.0% |
+| **6. Behavioral Telemetry** | MindLens Insights (Entropy/Affect) | `/api/v1/mindlens/insights` | **262 ms** | 245 ms | 290 ms | 431 ms | 30 req/s | 100.0% |
+| **7. Watch Tracking Catalog** | User Watch Entries | `/api/v1/entries` | **559 ms** | 530 ms | 609 ms | 1,054 ms | 13 req/s | 100.0% |
+| **7. Watch Tracking Catalog** | Catalog Stats Summary | `/api/v1/entries/stats/summary` | **262 ms** | 242 ms | 297 ms | 382 ms | 30 req/s | 100.0% |
+| **7. Watch Tracking Catalog** | Detailed Viewing Analytics | `/api/v1/stats/detailed` | **563 ms** | 528 ms | 619 ms | 941 ms | 13 req/s | 100.0% |
+| **8. Cinephile Stacks** | User Lists & Stacks | `/api/v1/lists` | **530 ms** | 504 ms | 612 ms | 754 ms | 14 req/s | 100.0% |
+| **9. Peer Suggestions Loop** | Received Suggestions | `/api/v1/suggestions` | **521 ms** | 502 ms | 646 ms | 647 ms | 14 req/s | 100.0% |
+| **9. Peer Suggestions Loop** | Sent Suggestions | `/api/v1/suggestions/sent` | **525 ms** | 504 ms | 609 ms | 643 ms | 14 req/s | 100.0% |
+| **10. User Profile** | Full Profile (/me with cache) | `/api/v1/users/me` | **269 ms** | 244 ms | 297 ms | 430 ms | 29 req/s | 100.0% |
+
+---
+
+#### Historical Optimization Delta (Before vs. After Optimization)
 
 | Endpoint | Method | Pre-Optimization Avg | Post-Optimization Avg | Peak (Min) | Latency Reduction |
 | :--- | :--- | :--- | :--- | :--- | :--- |

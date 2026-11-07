@@ -38,20 +38,31 @@
 
 ## 2. User Authentication & Session Management
 
-### 2.1 Multi-Platform JWT Architecture
-- **Stateless Tokens**: The backend issues a short-lived **Access Token** (7 days default) and a long-lived **Refresh Token** (90 days).
-- **Web Storage**: Access tokens are kept in memory/session with refresh tokens persisted in HTTP-only, secure, same-site cookies to defend against XSS.
-- **Mobile Storage**: Mobile clients store tokens in encrypted hardware keystores (`flutter_secure_storage` using iOS Keychain and Android AES KeyStore).
-- **Silent Refresh**: HTTP interceptors (`Axios` on Web, `Dio` on Mobile) detect `401 Unauthorized` responses and initiate a single-flight token refresh before retrying queued requests transparently.
+WatchersHive utilizes a **100% Passwordless Authentication Architecture**. Passwords have been completely eliminated to protect users against credential stuffing, phishing, and password fatigue, while eliminating forgotten password flows.
 
-### 2.2 Third-Party Identity Providers
-- **Google Sign-In**: OAuth 2.0 ID Token verification on the backend (`google-auth-library`), verifying audience, issuer, and email verification flags.
-- **Apple Sign-In**: Validates Apple identity tokens, extracting user names on first authentication and persisting unique `sub` identifiers.
+### 2.1 Passwordless 6-Digit Email OTP
+- **Frictionless Entry**: The user simply enters their email address.
+- **OTP Generation & Security**: The backend generates a cryptographically random 6-digit numeric code with a 10-minute expiry window, hashed in PostgreSQL (`email_verification_codes` table).
+- **Delivery**: The code is dispatched instantly via SMTP/Resend.
+- **Unified Sign-in & Registration**: Entering the correct 6-digit code automatically provisions a new account if the user is first-time, or logs them straight into their existing profile.
+- **Inherent Email Verification**: Because logging in requires inbox access, every user is verified by definition (`isEmailVerified = true`), satisfying strict security requirements with zero extra friction.
 
-### 2.3 Initial Loading & Logo Splash
+### 2.2 Third-Party Identity Providers (SSO)
+- **Google Sign-In**: Multi-platform OAuth 2.0 verification supporting Web, Android, and iOS client IDs. Verifies ID tokens via `google-auth-library` with automated fallback to Google's tokeninfo endpoint.
+- **Apple Sign-In**: Cryptographic validation of Apple identity tokens (`sub` identity claims), capturing the user's name on initial authorization.
+
+### 2.3 Multi-Platform JWT Architecture & Session Lifecycle
+- **Stateless Tokens**: The backend issues a short-lived **Access Token** (7 days) and a long-lived **Refresh Token** (90 days).
+- **Zero-DB Micro-Request Overhead**: Access tokens are verified purely statelessly via HMAC-SHA256 signature and expiration checks. No database query occurs on routine requests, preventing API bottlenecks and eliminating unwanted session drops.
+- **Web Storage**: Access tokens are kept in client storage with refresh tokens persisted in HTTP-only, secure, SameSite cookies to defend against XSS.
+- **Mobile Storage**: Mobile clients persist tokens in encrypted hardware keystores (`flutter_secure_storage` utilizing iOS Keychain and Android AES KeyStore).
+- **Silent Refresh**: HTTP interceptors (`Axios` on Web, `Dio` on Mobile) intercept `401 Unauthorized` responses and initiate single-flight token renewal before seamlessly replaying pending requests without disturbing the user.
+- **Global Session Revocation**: Enforced at the `/api/v1/auth/refresh` boundary using database `tokenVersion`. When a user requests a global logout or security reset, outdated refresh tokens are immediately blocked from generating new access tokens.
+
+### 2.4 Initial Loading & Logo Splash
 - During authentication resolution, both web and mobile clients display a centered, pulsing brand logo (`WHAppLogoLoader`) preventing flashes of unauthenticated landing pages or abrupt layout shifts.
 
-### 2.4 Force & Soft App Updates
+### 2.5 Force & Soft App Updates
 - The `/api/v1/app-version` route checks client semantic versions against required minimum versions.
 - If a client version falls below minimum requirements, a non-dismissible `AppUpdateDialog` directs the user to the Google Play Store, Apple App Store, or web app reload.
 
@@ -61,10 +72,12 @@
 
 The entry engine represents the central data capture mechanism of the platform.
 
-### 3.1 Metadata Resolution Pipeline
+### 3.1 Metadata Resolution & High-Performance TMDb SWR Caching
 - TMDb (The Movie Database) serves as the primary metadata provider.
-- **Single-Flight Deduplication**: The backend prevents duplicate outbound requests to TMDb by deduplicating concurrent lookups for the same media ID.
-- **Resilient Fallback**: If TMDb is temporarily unreachable, local SQLite or cached Postgres details are used to ensure the UI never renders blank or "Untitled" placeholders.
+- **Zero-Barrier Public Catalog**: Catalog endpoints (`/movie/:id`, `/tv/:id`, `/popular`, `/trending`, `/recommendations`, `/search/*`) use `optionalAuthMiddleware`. Public browsing never fails or prompts for logins, while authenticated user context is preserved when available.
+- **Single-Flight Deduplication**: The backend prevents duplicate outbound requests to TMDb by deduplicating concurrent lookups for the same media ID in flight.
+- **Stale-While-Revalidate (SWR) Caching**: Media responses are cached downstream and at the edge (`Cache-Control: public, max-age=86400, s-maxage=86400, stale-while-revalidate=43200`) providing millisecond page loads.
+- **Resilient Fallback**: If TMDb is temporarily unreachable, in-memory caches and fallback providers ensure the UI never renders blank or "Untitled" placeholders.
 
 ### 3.2 Dual-Mode Watch Statuses
 - **FINISHED (`WATCHED`)**: Represents completed watches. Requires a watched date.
@@ -92,6 +105,13 @@ The entry engine represents the central data capture mechanism of the platform.
 ### 4.2 Move to Watched Transition
 - Users can tap a quick-action button on any currently watching card to open the "Finish Watch" modal.
 - The modal automatically pre-fills the `startedAt` date and sets `watchedAt` to the current moment, streamlining the rating and review completion flow.
+
+### 4.3 Episode & TV Season Tracking Engine
+- **Granular Episode Checklist**: For any TV show, users can drill down into individual seasons and check off specific episodes as watched (`POST /api/v1/shows/:tmdbId/episodes/watch`).
+- **One-Tap Batch Catch-Up**: Users can instantly mark all prior episodes up to a specific season/episode as watched in one action (`POST /api/v1/shows/:tmdbId/episodes/batch-catch-up`), eliminating tedious manual checking for multi-season series.
+- **Show Progress Tracking**: Computes live completion metrics: total episodes, watched episodes, percentage completed, and current season progress (`GET /api/v1/shows/:tmdbId/progress`).
+- **Continue Watching Tray**: Surfaces all in-progress series with a dynamic "Next Up: S{x}E{y}" card, enabling single-tap resumption directly from the feed.
+- **Social Friends Progress**: Users can see exactly which episode their friends are currently on (e.g. *"@sarah is watching S02E05"*, *"@mike completed Season 3"*), fostering spoiler-safe discussions and watch-party synchronization (`GET /api/v1/shows/:tmdbId/friends-progress`).
 
 ---
 
