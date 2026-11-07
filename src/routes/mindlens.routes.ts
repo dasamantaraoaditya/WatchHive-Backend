@@ -713,6 +713,13 @@ function computeBehavioralTrails(allEntries: any[]) {
     ];
 }
 
+function parseEntryDateString(e: any): string {
+    const raw = e?.watchedAt || e?.createdAt;
+    if (!raw) return new Date().toISOString().split('T')[0];
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0];
+}
+
 /**
  * Dynamic Achievement Badges Evaluator
  */
@@ -720,7 +727,9 @@ function evaluateUserBadges(allEntries: any[]) {
     const total = allEntries.length;
     const nightOwlCount = allEntries.filter(e => {
         if (!e.watchedAt) return false;
-        const h = new Date(e.watchedAt).getHours();
+        const d = new Date(e.watchedAt);
+        if (isNaN(d.getTime())) return false;
+        const h = d.getHours();
         return h >= 22 || h < 4;
     }).length;
 
@@ -729,7 +738,7 @@ function evaluateUserBadges(allEntries: any[]) {
 
     const dateCounts: Record<string, number> = {};
     allEntries.forEach(e => {
-        const d = (e.watchedAt ? new Date(e.watchedAt) : new Date(e.createdAt)).toISOString().split('T')[0];
+        const d = parseEntryDateString(e);
         dateCounts[d] = (dateCounts[d] || 0) + 1;
     });
 
@@ -849,7 +858,7 @@ function computeDailyTimeSeries(allEntries: any[]) {
         const dateStr = d.toISOString().split('T')[0];
 
         const dayEntries = allEntries.filter(e => {
-            const entryDate = (e.watchedAt ? new Date(e.watchedAt) : new Date(e.createdAt)).toISOString().split('T')[0];
+            const entryDate = parseEntryDateString(e);
             return entryDate === dateStr;
         });
 
@@ -890,6 +899,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
                     title: entries.title,
                     type: entries.type,
                     watchedAt: entries.watchedAt,
+                    createdAt: entries.createdAt,
                     tags: entries.tags,
                     rating: entries.rating,
                     review: entries.review,
@@ -929,21 +939,63 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
         // 4. Cognitive Archetype Selection
         const selectedArchetype = determineCognitiveArchetype(userEntries, tasteBreadth, criticalRigor, suggestionAnalytics);
 
-        // 6. Time of Day Distribution
+        // 5. Time of Day Distribution
         const timeOfDay = { morning: 0, afternoon: 0, evening: 0, night: 0 };
         userEntries.forEach(entry => {
             if (!entry.watchedAt) return;
-            const hour = new Date(entry.watchedAt).getHours();
+            const d = new Date(entry.watchedAt);
+            if (isNaN(d.getTime())) return;
+            const hour = d.getHours();
             if (hour >= 5 && hour < 12) timeOfDay.morning++;
             else if (hour >= 12 && hour < 17) timeOfDay.afternoon++;
             else if (hour >= 17 && hour < 22) timeOfDay.evening++;
             else timeOfDay.night++;
         });
 
-        // 7. Behavioral Trails, Badges, and Time Series
+        // 6. Behavioral Trails, Badges, and Time Series
         const behavioralTrails = computeBehavioralTrails(userEntries);
         const badges = evaluateUserBadges(userEntries);
         const dailyTimeSeries = computeDailyTimeSeries(userEntries);
+
+        // 7. Aesthetic Profile Mapping
+        const AESTHETIC_GENRES: Record<string, string[]> = {
+            'Noir': ['Crime', 'Thriller', 'Mystery'],
+            'Amber': ['History', 'Romance', 'Drama'],
+            'Concrete': ['Documentary', 'War'],
+            'Forest': ['Adventure', 'Fantasy', 'Family'],
+            'Grit': ['Action', 'Horror'],
+            'Void': ['Science Fiction', 'Sci-Fi'],
+            'Neon': ['Animation', 'Music'],
+            'Pastel': ['Comedy', 'TV Movie']
+        };
+
+        const aestheticCounts: Record<string, number> = {};
+        Object.keys(AESTHETIC_GENRES).forEach(k => aestheticCounts[k] = 0);
+
+        userEntries.forEach(entry => {
+            if (entry.tags && Array.isArray(entry.tags)) {
+                entry.tags.forEach((tag: string) => {
+                    const normTag = tag.trim().toLowerCase();
+                    for (const [aesthetic, genres] of Object.entries(AESTHETIC_GENRES)) {
+                        if (genres.some(g => normTag.includes(g.toLowerCase()))) {
+                            aestheticCounts[aesthetic]++;
+                        }
+                    }
+                });
+            }
+        });
+
+        let topAesthetics = Object.entries(aestheticCounts)
+            .filter(a => a[1] > 0)
+            .sort((a, b) => b[1] - a[1])
+            .map(a => a[0]);
+
+        const allAesthetics = Object.keys(AESTHETIC_GENRES);
+        while (topAesthetics.length < 6) {
+            const randomAes = allAesthetics[Math.floor(Math.random() * allAesthetics.length)];
+            if (!topAesthetics.includes(randomAes)) topAesthetics.push(randomAes);
+        }
+        topAesthetics = topAesthetics.slice(0, 6);
 
         // 8. Generate Observational Insights (Epistemic Humility)
         const insights: string[] = [];
@@ -1003,6 +1055,7 @@ router.get('/insights', authMiddleware, async (req: Request, res: Response): Pro
             themes: tasteBreadth.genreDistribution.map(g => ({ name: g.genre, score: g.weight })),
             timeDistribution: timeOfDay,
             insights,
+            aesthetics: topAesthetics,
             generatedAt: new Date(),
         };
 
