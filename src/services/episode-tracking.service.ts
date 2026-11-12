@@ -128,7 +128,11 @@ export class EpisodeTrackingService {
         }
 
         // Synchronize and update user's Entry for this TV show
-        await this.syncShowEntryProgress(userId, tmdbId);
+        await this.syncShowEntryProgress(userId, tmdbId, undefined, {
+            rating: rating !== undefined ? Number(rating) : undefined,
+            review,
+            postToFeed: Boolean(postToFeed),
+        });
 
         // Invalidate cached user stats and feeds
         invalidateUserCaches(userId);
@@ -196,7 +200,12 @@ export class EpisodeTrackingService {
     /**
      * Synchronize the entry record for this TV show with aggregate episode stats
      */
-    private async syncShowEntryProgress(userId: string, tmdbId: number, cachedDetails?: any) {
+    private async syncShowEntryProgress(
+        userId: string,
+        tmdbId: number,
+        cachedDetails?: any,
+        extra?: { rating?: number; review?: string; postToFeed?: boolean }
+    ) {
         // Query all watched episodes for this show
         const watched = await db.select().from(episodeWatches)
             .where(and(eq(episodeWatches.userId, userId), eq(episodeWatches.tmdbId, tmdbId)))
@@ -231,9 +240,14 @@ export class EpisodeTrackingService {
         const existingEntries = await db.select().from(entries)
             .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)));
 
+        const now = new Date();
+
         if (existingEntries.length > 0) {
             const entry = existingEntries[0];
-            const isCompleted = totalEpisodesCount && totalWatched >= totalEpisodesCount;
+            const isCompleted = Boolean(totalEpisodesCount && totalWatched >= totalEpisodesCount);
+
+            const completionTime = isCompleted ? (entry.completedAt || now) : null;
+            const watchTime = isCompleted ? (entry.completedAt || now) : (entry.watchedAt || now);
 
             await db.update(entries)
                 .set({
@@ -242,26 +256,35 @@ export class EpisodeTrackingService {
                     totalEpisodesWatched: totalWatched,
                     totalEpisodesCount: totalEpisodesCount ?? entry.totalEpisodesCount,
                     isWatching: !isCompleted && totalWatched > 0,
-                    completedAt: isCompleted ? (entry.completedAt || new Date()) : null,
-                    updatedAt: new Date(),
+                    completedAt: completionTime,
+                    watchedAt: watchTime,
+                    ...(extra?.rating !== undefined && extra.rating > 0 ? { rating: extra.rating.toString() } : {}),
+                    ...(extra?.review !== undefined && extra.review.trim().length > 0 ? { review: extra.review.trim() } : {}),
+                    ...(extra?.postToFeed !== undefined ? { postToFeed: extra.postToFeed } : {}),
+                    updatedAt: now,
                 })
                 .where(eq(entries.id, entry.id));
         } else if (totalWatched > 0) {
-            // Create a new in-progress entry
+            const isCompleted = Boolean(totalEpisodesCount && totalWatched >= totalEpisodesCount);
+            // Create a new in-progress or completed entry
             await db.insert(entries).values({
                 userId,
                 tmdbId,
                 title,
                 type: 'TV_SHOW',
-                isWatching: true,
-                startedAt: new Date(),
+                isWatching: !isCompleted,
+                startedAt: now,
+                completedAt: isCompleted ? now : null,
+                watchedAt: isCompleted ? now : null,
                 posterPath,
                 backdropPath,
                 currentSeason: latestSeason,
                 currentEpisode: latestEpisode,
                 totalEpisodesWatched: totalWatched,
                 totalEpisodesCount,
-                postToFeed: false,
+                rating: extra?.rating !== undefined && extra.rating > 0 ? extra.rating.toString() : null,
+                review: extra?.review !== undefined && extra.review.trim().length > 0 ? extra.review.trim() : null,
+                postToFeed: extra?.postToFeed !== undefined ? extra.postToFeed : false,
             });
         }
     }

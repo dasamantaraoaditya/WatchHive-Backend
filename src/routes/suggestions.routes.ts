@@ -255,21 +255,58 @@ router.get('/sent', authMiddleware, async (req: Request, res: Response): Promise
  *         name: mode
  *         schema:
  *           type: string
- *           enum: [social, critic, explore]
+ *           enum: [social, watchlist, explore, critic]
  *           default: social
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
+ *       - in: query
+ *         name: excludeIds
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: seed
+ *         schema:
+ *           type: integer
  */
 router.get('/smart-suggest', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.user!.userId;
-        const mode = (req.query.mode === 'critic' || req.query.mode === 'explore') ? req.query.mode : 'social';
-        const limit = Math.min(20, Math.max(1, parseInt(req.query.limit as string) || 10));
+        const rawMode = String(req.query.mode || 'social');
+        const mode = (rawMode === 'watchlist' || rawMode === 'critic' || rawMode === 'explore')
+            ? rawMode
+            : 'social';
+        const limit = Math.min(25, Math.max(10, parseInt(req.query.limit as string) || 10));
 
-        const result = await smartSuggestService.getSmartSuggestions(userId, mode, limit);
+        const excludeIds = typeof req.query.excludeIds === 'string' && req.query.excludeIds.trim()
+            ? req.query.excludeIds
+                .split(',')
+                .map((id) => Number(id.trim()))
+                .filter((id) => Number.isFinite(id) && id > 0)
+            : undefined;
+
+        const seed = req.query.seed !== undefined && req.query.seed !== ''
+            ? parseInt(String(req.query.seed), 10)
+            : undefined;
+
+        const languages = typeof req.query.languages === 'string' && req.query.languages.trim()
+            ? req.query.languages.split(',').map((s) => s.trim()).filter(Boolean)
+            : undefined;
+
+        const genres = typeof req.query.genres === 'string' && req.query.genres.trim()
+            ? req.query.genres.split(',').map((s) => s.trim()).filter(Boolean)
+            : undefined;
+
+        const result = await smartSuggestService.getSmartSuggestions(userId, {
+            mode,
+            limit,
+            excludeIds,
+            seed: Number.isFinite(seed) ? seed : undefined,
+            languages,
+            genres,
+        });
         res.json(result);
     } catch (error) {
         console.error('[Suggestions] Error getting smart suggestions:', error);
