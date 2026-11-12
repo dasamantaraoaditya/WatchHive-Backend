@@ -1128,8 +1128,8 @@ router.put(
         body('tags').optional().isArray().withMessage('Tags must be an array'),
         body('isRewatch').optional().isBoolean().withMessage('isRewatch must be boolean'),
         body('isWatching').optional().isBoolean().withMessage('isWatching must be boolean'),
-        body('startedAt').optional().isISO8601().withMessage('Invalid date format'),
-        body('completedAt').optional().isISO8601().withMessage('Invalid date format'),
+        body('startedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
+        body('completedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
         body('watchLocation').optional().trim(),
         body('postToFeed').optional().isBoolean().withMessage('postToFeed must be boolean'),
     ],
@@ -1160,14 +1160,17 @@ router.put(
             const now = new Date();
             if (existingEntry.isWatching && (updateData.isWatching === false || updateData.rating || updateData.review)) {
                 updateData.isWatching = false;
-                updateData.completedAt = now;
-                if (!updateData.watchedAt) updateData.watchedAt = now;
+                if (!existingEntry.startedAt && !updateData.startedAt) {
+                    updateData.startedAt = existingEntry.watchedAt || existingEntry.createdAt;
+                }
+                if (!updateData.completedAt) updateData.completedAt = updateData.watchedAt || now;
+                if (!updateData.watchedAt) updateData.watchedAt = updateData.completedAt;
             }
             if (existingEntry.tmdbId && updateData.isWatching === false) {
                 // Clear any other active currently-watching sessions for this title
                 await db
                     .update(entries)
-                    .set({ isWatching: false, completedAt: now, updatedAt: now })
+                    .set({ isWatching: false, completedAt: updateData.completedAt || now, watchedAt: updateData.watchedAt || updateData.completedAt || now, updatedAt: now })
                     .where(and(eq(entries.userId, userId), eq(entries.tmdbId, existingEntry.tmdbId), eq(entries.isWatching, true)));
             }
             if (req.body.watchedAt === null || req.body.watchedAt === '' || req.body.unspecifiedDate === true) {
@@ -1177,6 +1180,13 @@ router.put(
             }
             if (updateData.startedAt) updateData.startedAt = resolveValidDate(updateData.startedAt, null);
             if (updateData.completedAt) updateData.completedAt = resolveValidDate(updateData.completedAt, null);
+            if (updateData.isWatching === false) {
+                if (updateData.completedAt && !updateData.watchedAt && req.body.unspecifiedDate !== true) {
+                    updateData.watchedAt = updateData.completedAt;
+                } else if (updateData.watchedAt && !updateData.completedAt) {
+                    updateData.completedAt = updateData.watchedAt;
+                }
+            }
             if (updateData.rating) updateData.rating = updateData.rating.toString();
             if (updateData.postToFeed !== undefined) updateData.postToFeed = Boolean(updateData.postToFeed);
 
