@@ -3,7 +3,7 @@ import { body, param, validationResult } from 'express-validator';
 import { db } from '../db/index.js';
 import { users, entries, follows, likes, comments, followRequests, suggestions, blockedUsers } from '../db/schema.js';
 import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg, aliasedTable, inArray } from 'drizzle-orm';
-import { authMiddleware } from '../middleware/auth.middleware.js';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { xpService, XpAction } from '../services/xp.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
@@ -516,9 +516,9 @@ router.post(
  *       403:
  *         description: Account is private
  */
-router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any> => {
+router.get('/', optionalAuthMiddleware, async (req: Request, res: Response): Promise<any> => {
     try {
-        const currentUserId = (req as any).user.userId;
+        const currentUserId = (req as any).user?.userId;
         const {
             type,
             rating,
@@ -533,24 +533,40 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
             tmdbId: queryTmdbId,
         } = req.query;
 
+        if (!queryUserId && !currentUserId) {
+            const authHeader = req.headers.authorization;
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                return res.status(401).json({ error: 'Invalid or expired token' });
+            }
+            return res.status(401).json({ error: 'No token provided' });
+        }
+
         let targetUserId = currentUserId;
 
-        // If querying another user, check privacy permissions
+        // If querying another user or unauthenticated viewer querying a user
         if (queryUserId && queryUserId !== currentUserId) {
-            targetUserId = queryUserId as string;
+            const targetIdentifier = queryUserId as string;
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetIdentifier);
 
             const [targetUser] = await db
                 .select({ 
-                    isPrivate: users.isPrivate,
+                    id: users.id,
+                    isPrivate: users.isPrivate, 
                     privacyLevel: users.privacyLevel 
                 })
                 .from(users)
-                .where(eq(users.id, targetUserId))
+                .where(
+                    isUuid
+                        ? or(eq(users.id, targetIdentifier), sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`)
+                        : sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`
+                )
                 .limit(1);
 
             if (!targetUser) {
                 return res.status(404).json({ error: 'User not found' });
             }
+
+            targetUserId = targetUser.id;
 
             // New Tiered Privacy Logic
             if (targetUser.privacyLevel === 'PRIVATE') {
@@ -558,21 +574,26 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
             }
 
             // Check if there is a pending follow request
-            const [pendingRequest] = await db
-                .select()
-                .from(followRequests)
-                .where(and(
-                    eq(followRequests.senderId, currentUserId),
-                    eq(followRequests.recipientId, targetUserId),
-                    eq(followRequests.status, 'pending')
-                ))
-                .limit(1);
+            if (currentUserId) {
+                const [pendingRequest] = await db
+                    .select()
+                    .from(followRequests)
+                    .where(and(
+                        eq(followRequests.senderId, currentUserId),
+                        eq(followRequests.recipientId, targetUserId),
+                        eq(followRequests.status, 'pending')
+                    ))
+                    .limit(1);
 
-            if (pendingRequest) {
-                return res.status(403).json({ error: 'Follow request is pending. Cannot view entries.' });
+                if (pendingRequest) {
+                    return res.status(403).json({ error: 'Follow request is pending. Cannot view entries.' });
+                }
             }
 
             if (targetUser.privacyLevel === 'FOLLOWERS_ONLY' || targetUser.isPrivate) {
+                if (!currentUserId) {
+                    return res.status(403).json({ error: 'This account is private. Sign in and follow to see entries.' });
+                }
                 const [isFollowing] = await db
                     .select()
                     .from(follows)
