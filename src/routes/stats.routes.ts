@@ -3,8 +3,13 @@ import { db } from '../db/index.js';
 import { entries } from '../db/schema.js';
 import { eq, and, desc, sql, isNotNull } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
+import tmdbService from '../services/tmdb.service.js';
+import { TOP_GENRES, TopGenre, mapToTopGenres } from '../utils/genres.util.js';
 
 const router = Router();
+
+// In-memory process cache of `${type}-${tmdbId}` -> TopGenre[]
+const tmdbGenreCache = new Map<string, TopGenre[]>();
 
 /**
  * @openapi
@@ -55,6 +60,39 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
 
         const whereClause = and(...conditions);
 
+        // Helper to resolve canonical TMDb genres for an entry
+        const resolveGenresForEntry = async (item: { tmdbId?: number | null; type?: string; tags?: string[] | null }): Promise<TopGenre[]> => {
+            const fromTags = mapToTopGenres(item.tags);
+            if (fromTags.length > 0) {
+                return fromTags;
+            }
+
+            if (item.tmdbId) {
+                const cacheKey = `${item.type || 'MOVIE'}-${item.tmdbId}`;
+                if (tmdbGenreCache.has(cacheKey)) {
+                    return tmdbGenreCache.get(cacheKey)!;
+                }
+
+                try {
+                    let rawGenres: string[] = [];
+                    if (item.type === 'TV_SHOW' || item.type === 'EPISODE') {
+                        const tv = await tmdbService.getTVShowDetails(item.tmdbId);
+                        rawGenres = (tv.genres || []).map((g: any) => g.name);
+                    } else {
+                        const movie = await tmdbService.getMovieDetails(item.tmdbId);
+                        rawGenres = (movie.genres || []).map((g: any) => g.name);
+                    }
+                    const mapped = mapToTopGenres(rawGenres);
+                    tmdbGenreCache.set(cacheKey, mapped);
+                    return mapped;
+                } catch {
+                    tmdbGenreCache.set(cacheKey, []);
+                }
+            }
+
+            return [];
+        };
+
         // 2. Fetch Data for Aggregation (concurrent)
         const [userEntries, allUserEntries] = await Promise.all([
             db.select({
@@ -65,27 +103,50 @@ router.get('/detailed', authMiddleware, async (req: Request, res: Response): Pro
                 createdAt: entries.createdAt,
                 tags: entries.tags,
                 rating: entries.rating,
+                tmdbId: entries.tmdbId,
             })
                 .from(entries)
                 .where(whereClause)
                 .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`)),
-            db.select({ tags: entries.tags }).from(entries).where(eq(entries.userId, userId))
+            db.select({
+                tags: entries.tags,
+                tmdbId: entries.tmdbId,
+                type: entries.type,
+            }).from(entries).where(eq(entries.userId, userId))
         ]);
 
-        const genreMap = new Map<string, number>();
-        allUserEntries.forEach(e => {
-            if (e.tags && Array.isArray(e.tags)) {
-                e.tags.forEach(tag => genreMap.set(tag, (genreMap.get(tag) || 0) + 1));
-            }
-        });
-        const availableGenres = Array.from(genreMap.entries())
-            .sort((a, b) => b[1] - a[1])
-            .map(([name]) => name);
+        // Resolve TMDb genres for user entries
+        const userEntriesWithGenres = await Promise.all(
+            userEntries.map(async (e) => ({
+                ...e,
+                resolvedGenres: await resolveGenresForEntry(e),
+            }))
+        );
 
-        // Filter by genre in memory if tag filter is provided
+        // Resolve genres for all user entries to calculate frequency
+        const allUserEntriesGenres = await Promise.all(
+            allUserEntries.map(async (e) => resolveGenresForEntry(e))
+        );
+
+        const genreFrequencyMap = new Map<TopGenre, number>();
+        for (const g of TOP_GENRES) {
+            genreFrequencyMap.set(g, 0);
+        }
+        allUserEntriesGenres.forEach(genresList => {
+            genresList.forEach(g => {
+                genreFrequencyMap.set(g, (genreFrequencyMap.get(g) || 0) + 1);
+            });
+        });
+
+        // Top genres that user has watched, ordered by frequency, followed by remaining TOP_GENRES
+        const userWatchedTopGenres = TOP_GENRES.filter(g => (genreFrequencyMap.get(g) || 0) > 0)
+            .sort((a, b) => (genreFrequencyMap.get(b) || 0) - (genreFrequencyMap.get(a) || 0));
+        const availableGenres = Array.from(new Set([...userWatchedTopGenres, ...TOP_GENRES]));
+
+        // Filter by genre using resolved canonical TMDb top genres
         const filteredEntries = genreFilter 
-            ? userEntries.filter(e => e.tags && Array.isArray(e.tags) && e.tags.some(t => t.toLowerCase() === genreFilter.toLowerCase()))
-            : userEntries;
+            ? userEntriesWithGenres.filter(e => e.resolvedGenres.includes(genreFilter as TopGenre))
+            : userEntriesWithGenres;
 
         // 3. Aggregate Time Series (Daily counts + Item lists)
         const timeSeriesMap = new Map<string, { count: number, items: any[] }>();

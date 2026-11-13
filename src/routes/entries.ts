@@ -90,6 +90,7 @@ const validateEntry = [
     body('watchLocation').optional({ nullable: true }).trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
     body('postToFeed').optional({ nullable: true }).isBoolean().withMessage('postToFeed must be boolean'),
     body('currentSeason').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentSeason must be a positive integer'),
+    body('seasons').optional({ nullable: true }).isArray().withMessage('seasons must be an array of integers'),
     body('currentEpisode').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentEpisode must be a positive integer'),
 ];
 
@@ -188,10 +189,16 @@ router.post(
                 backdropPath,
                 postToFeed,
                 currentSeason,
+                seasons,
                 currentEpisode,
             } = req.body;
 
-            const resolvedCurrentSeason = currentSeason !== undefined && currentSeason !== null ? Number(currentSeason) : null;
+            const resolvedSeasons = Array.isArray(seasons)
+                ? seasons.map((s: any) => Number(s)).filter((n: number) => !isNaN(n) && n > 0)
+                : null;
+            const resolvedCurrentSeason = currentSeason !== undefined && currentSeason !== null
+                ? Number(currentSeason)
+                : (resolvedSeasons && resolvedSeasons.length > 0 ? resolvedSeasons[resolvedSeasons.length - 1] : null);
             const resolvedCurrentEpisode = currentEpisode !== undefined && currentEpisode !== null ? Number(currentEpisode) : null;
 
             const isEntryPostedToFeed = postToFeed !== undefined ? Boolean(postToFeed) : true;
@@ -329,6 +336,7 @@ router.post(
                             backdropPath: backdropPath || tmdbBackdrop || targetExisting.backdropPath,
                             postToFeed: postToFeed !== undefined ? Boolean(postToFeed) : targetExisting.postToFeed,
                             currentSeason: resolvedCurrentSeason !== null ? resolvedCurrentSeason : targetExisting.currentSeason,
+                            seasons: resolvedSeasons !== null ? resolvedSeasons : targetExisting.seasons,
                             currentEpisode: resolvedCurrentEpisode !== null ? resolvedCurrentEpisode : targetExisting.currentEpisode,
                             updatedAt: now,
                         })
@@ -370,6 +378,7 @@ router.post(
                     backdropPath: backdropPath || tmdbBackdrop || null,
                     postToFeed: isEntryPostedToFeed,
                     currentSeason: resolvedCurrentSeason,
+                    seasons: resolvedSeasons,
                     currentEpisode: resolvedCurrentEpisode,
                 }).returning();
                 targetEntryId = newEntry.id;
@@ -639,6 +648,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
                 posterPath: entries.posterPath,
                 backdropPath: entries.backdropPath,
                 currentSeason: entries.currentSeason,
+                seasons: entries.seasons,
                 currentEpisode: entries.currentEpisode,
                 totalEpisodesWatched: entries.totalEpisodesWatched,
                 totalEpisodesCount: entries.totalEpisodesCount,
@@ -764,10 +774,18 @@ router.get(
                 .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)))
                 .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`), desc(entries.createdAt));
 
-            const seasonQuery = req.query.season !== undefined ? parseInt(req.query.season as string, 10) : null;
+            const seasonsQueryRaw = (req.query.seasons as string) || (req.query.season as string);
+            let targetSeasons: number[] | null = null;
+            if (seasonsQueryRaw !== undefined && seasonsQueryRaw !== null && String(seasonsQueryRaw).trim().length > 0) {
+                const parsed = String(seasonsQueryRaw).split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+                if (parsed.length > 0) targetSeasons = parsed;
+            }
+
             const completed = existingEntries.filter(
                 e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null) &&
-                     (seasonQuery === null || isNaN(seasonQuery) || e.currentSeason === seasonQuery)
+                     (targetSeasons === null ||
+                      (e.currentSeason !== null && targetSeasons.includes(e.currentSeason)) ||
+                      (Array.isArray(e.seasons) && e.seasons.some((s: number) => targetSeasons!.includes(s))))
             );
 
             if (completed.length > 0) {
@@ -848,6 +866,7 @@ router.get(
                 posterPath: entries.posterPath,
                 backdropPath: entries.backdropPath,
                 currentSeason: entries.currentSeason,
+                seasons: entries.seasons,
                 currentEpisode: entries.currentEpisode,
                 totalEpisodesWatched: entries.totalEpisodesWatched,
                 totalEpisodesCount: entries.totalEpisodesCount,
@@ -940,6 +959,7 @@ router.get(
                     posterPath: entries.posterPath,
                     backdropPath: entries.backdropPath,
                     currentSeason: entries.currentSeason,
+                    seasons: entries.seasons,
                     currentEpisode: entries.currentEpisode,
                     totalEpisodesWatched: entries.totalEpisodesWatched,
                     totalEpisodesCount: entries.totalEpisodesCount,
@@ -1382,6 +1402,7 @@ router.put(
         body('watchLocation').optional().trim(),
         body('postToFeed').optional().isBoolean().withMessage('postToFeed must be boolean'),
         body('currentSeason').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentSeason must be a positive integer'),
+        body('seasons').optional({ nullable: true }).isArray().withMessage('seasons must be an array of integers'),
         body('currentEpisode').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentEpisode must be a positive integer'),
     ],
     async (req: Request, res: Response): Promise<any> => {
@@ -1442,6 +1463,16 @@ router.put(
             if (updateData.postToFeed !== undefined) updateData.postToFeed = Boolean(updateData.postToFeed);
             if (updateData.currentSeason !== undefined) {
                 updateData.currentSeason = updateData.currentSeason !== null ? Number(updateData.currentSeason) : null;
+            }
+            if (updateData.seasons !== undefined) {
+                if (Array.isArray(updateData.seasons)) {
+                    updateData.seasons = updateData.seasons.map((s: any) => Number(s)).filter((s: number) => !isNaN(s));
+                    if (updateData.currentSeason === undefined && updateData.seasons.length > 0) {
+                        updateData.currentSeason = updateData.seasons[updateData.seasons.length - 1];
+                    }
+                } else if (updateData.seasons === null) {
+                    updateData.seasons = null;
+                }
             }
             if (updateData.currentEpisode !== undefined) {
                 updateData.currentEpisode = updateData.currentEpisode !== null ? Number(updateData.currentEpisode) : null;

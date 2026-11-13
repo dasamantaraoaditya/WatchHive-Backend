@@ -91,6 +91,7 @@ export const entries = pgTable('entries', {
     backdropPath: text('backdrop_path'),
     postToFeed: boolean('post_to_feed').default(true).notNull(),
     currentSeason: integer('current_season'),
+    seasons: integer('seasons').array(),
     currentEpisode: integer('current_episode'),
     totalEpisodesWatched: integer('total_episodes_watched').default(0).notNull(),
     totalEpisodesCount: integer('total_episodes_count'),
