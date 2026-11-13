@@ -56,6 +56,7 @@ export const userProfileCache = new MemoryCache<any>(3000);
 export const statsSummaryCache = new MemoryCache<any>(3000);
 export const mindlensCache = new MemoryCache<any>(2000);
 export const feedSuggestionsCache = new MemoryCache<any>(2000);
+export const smartSuggestContextCache = new MemoryCache<any>(2000);
 export const tokenVersionCache = new MemoryCache<number>(5000);
 
 /**
@@ -66,5 +67,6 @@ export function invalidateUserCaches(userId: string): void {
     statsSummaryCache.delete(userId);
     mindlensCache.delete(userId);
     feedSuggestionsCache.delete(userId);
+    smartSuggestContextCache.delete(userId);
     tokenVersionCache.delete(userId);
 }

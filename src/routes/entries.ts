@@ -89,6 +89,8 @@ const validateEntry = [
     body('completedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
     body('watchLocation').optional({ nullable: true }).trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
     body('postToFeed').optional({ nullable: true }).isBoolean().withMessage('postToFeed must be boolean'),
+    body('currentSeason').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentSeason must be a positive integer'),
+    body('currentEpisode').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentEpisode must be a positive integer'),
 ];
 
 /**
@@ -185,7 +187,12 @@ router.post(
                 posterPath,
                 backdropPath,
                 postToFeed,
+                currentSeason,
+                currentEpisode,
             } = req.body;
+
+            const resolvedCurrentSeason = currentSeason !== undefined && currentSeason !== null ? Number(currentSeason) : null;
+            const resolvedCurrentEpisode = currentEpisode !== undefined && currentEpisode !== null ? Number(currentEpisode) : null;
 
             const isEntryPostedToFeed = postToFeed !== undefined ? Boolean(postToFeed) : true;
 
@@ -255,20 +262,41 @@ router.post(
                     .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)));
 
                 // Prefer updating an active currently-watching entry or an unrated placeholder
-                const activeWatchingEntry = existingEntriesList.find(e => e.isWatching);
-                const placeholderEntry = existingEntriesList.find(e => e.rating === null && !e.review);
+                const activeWatchingEntry = existingEntriesList.find(e => {
+                    if (!e.isWatching) return false;
+                    if (type === 'TV_SHOW' && resolvedCurrentSeason !== null) {
+                        return e.currentSeason === resolvedCurrentSeason || e.currentSeason === null;
+                    }
+                    return true;
+                });
+                const placeholderEntry = existingEntriesList.find(e => {
+                    if (e.rating !== null || e.review) return false;
+                    if (type === 'TV_SHOW' && resolvedCurrentSeason !== null) {
+                        return e.currentSeason === resolvedCurrentSeason || e.currentSeason === null;
+                    }
+                    return true;
+                });
                 const targetExisting = activeWatchingEntry || placeholderEntry;
 
-                // Check if user already has a completed watch entry for this title
-                const completedWatch = existingEntriesList.find(
-                    e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null)
-                );
+                // Check if user already has a completed watch entry for this title (or season)
+                const completedWatch = existingEntriesList.find(e => {
+                    if (e.isWatching || (e.rating === null && e.review === null && e.completedAt === null)) {
+                        return false;
+                    }
+                    if (type === 'TV_SHOW' && resolvedCurrentSeason !== null) {
+                        // Season-aware: only treat as duplicate if the exact same season was already completed
+                        return e.currentSeason === resolvedCurrentSeason;
+                    }
+                    return true;
+                });
 
                 // If user has already watched this title, and this submission is a completed entry without isRewatch,
                 // do not allow standard duplicate logging
                 if (completedWatch && !targetExisting && !isWatching && !isRewatch) {
                     res.status(400).json({
-                        error: 'You have already watched this title. Rewatch must be enabled to log a duplicate entry.',
+                        error: type === 'TV_SHOW' && resolvedCurrentSeason !== null
+                            ? `You have already watched Season ${resolvedCurrentSeason}. Rewatch must be enabled to log a duplicate entry.`
+                            : 'You have already watched this title. Rewatch must be enabled to log a duplicate entry.',
                         code: 'ALREADY_WATCHED',
                         existingEntry: {
                             ...completedWatch,
@@ -300,15 +328,18 @@ router.post(
                             posterPath: posterPath || tmdbPoster || targetExisting.posterPath,
                             backdropPath: backdropPath || tmdbBackdrop || targetExisting.backdropPath,
                             postToFeed: postToFeed !== undefined ? Boolean(postToFeed) : targetExisting.postToFeed,
+                            currentSeason: resolvedCurrentSeason !== null ? resolvedCurrentSeason : targetExisting.currentSeason,
+                            currentEpisode: resolvedCurrentEpisode !== null ? resolvedCurrentEpisode : targetExisting.currentEpisode,
                             updatedAt: now,
                         })
                         .where(eq(entries.id, targetExisting.id));
 
                     targetEntryId = targetExisting.id;
 
-                    // Clean up any remaining duplicate empty/watching placeholder entries for this title
+                    // Clean up any remaining duplicate empty/watching placeholder entries for this title/season
                     for (const dup of existingEntriesList) {
-                        if (dup.id !== targetExisting.id && (dup.isWatching || (dup.rating === null && !dup.review))) {
+                        const isSameScope = type !== 'TV_SHOW' || resolvedCurrentSeason === null || dup.currentSeason === resolvedCurrentSeason || dup.currentSeason === null;
+                        if (dup.id !== targetExisting.id && isSameScope && (dup.isWatching || (dup.rating === null && !dup.review))) {
                             await db.delete(entries).where(eq(entries.id, dup.id));
                         }
                     }
@@ -338,6 +369,8 @@ router.post(
                     posterPath: posterPath || tmdbPoster || null,
                     backdropPath: backdropPath || tmdbBackdrop || null,
                     postToFeed: isEntryPostedToFeed,
+                    currentSeason: resolvedCurrentSeason,
+                    currentEpisode: resolvedCurrentEpisode,
                 }).returning();
                 targetEntryId = newEntry.id;
             }
@@ -724,8 +757,10 @@ router.get(
                 .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)))
                 .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`), desc(entries.createdAt));
 
+            const seasonQuery = req.query.season !== undefined ? parseInt(req.query.season as string, 10) : null;
             const completed = existingEntries.filter(
-                e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null)
+                e => !e.isWatching && (e.rating !== null || e.review !== null || e.completedAt !== null) &&
+                     (seasonQuery === null || isNaN(seasonQuery) || e.currentSeason === seasonQuery)
             );
 
             if (completed.length > 0) {
@@ -1132,6 +1167,8 @@ router.put(
         body('completedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
         body('watchLocation').optional().trim(),
         body('postToFeed').optional().isBoolean().withMessage('postToFeed must be boolean'),
+        body('currentSeason').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentSeason must be a positive integer'),
+        body('currentEpisode').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentEpisode must be a positive integer'),
     ],
     async (req: Request, res: Response): Promise<any> => {
         try {
@@ -1189,6 +1226,12 @@ router.put(
             }
             if (updateData.rating) updateData.rating = updateData.rating.toString();
             if (updateData.postToFeed !== undefined) updateData.postToFeed = Boolean(updateData.postToFeed);
+            if (updateData.currentSeason !== undefined) {
+                updateData.currentSeason = updateData.currentSeason !== null ? Number(updateData.currentSeason) : null;
+            }
+            if (updateData.currentEpisode !== undefined) {
+                updateData.currentEpisode = updateData.currentEpisode !== null ? Number(updateData.currentEpisode) : null;
+            }
 
             await db
                 .update(entries)

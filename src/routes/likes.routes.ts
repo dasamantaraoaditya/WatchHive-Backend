@@ -210,6 +210,10 @@ router.delete('/:entryId', authMiddleware, async (req: Request, res: Response): 
  *         name: limit
  *         schema:
  *           type: integer
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
  *     responses:
  *       200:
  *         description: Likes list
@@ -217,9 +221,11 @@ router.delete('/:entryId', authMiddleware, async (req: Request, res: Response): 
 router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
         const entryId = req.params.entryId;
-        const page = parseInt(req.query.page as string, 10) || 1;
-        const limit = parseInt(req.query.limit as string, 10) || 20;
-        const offset = (page - 1) * limit;
+        const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
+        const offset = req.query.offset !== undefined
+            ? Math.max(0, parseInt(req.query.offset as string, 10) || 0)
+            : (page - 1) * limit;
 
         // Get likes
         const [likesList, [{ total }]] = await Promise.all([
@@ -228,6 +234,7 @@ router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Pro
                 username: users.username,
                 displayName: users.displayName,
                 profilePictureUrl: users.profilePictureUrl,
+                likedAt: likes.createdAt,
             })
                 .from(likes)
                 .innerJoin(users, eq(likes.userId, users.id))
@@ -243,8 +250,10 @@ router.get('/:entryId', authMiddleware, async (req: Request, res: Response): Pro
             pagination: {
                 page,
                 limit,
+                offset,
                 total,
                 totalPages: Math.ceil(total / limit),
+                hasMore: offset + likesList.length < total,
             },
         });
     } catch (error) {

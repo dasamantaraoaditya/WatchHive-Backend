@@ -460,6 +460,25 @@ class TMDbService {
   }
 
   /**
+   * Get globally top-rated movies or TV shows
+   */
+  async getTopRated(mediaType: 'movie' | 'tv' = 'movie', page: number = 1): Promise<TMDbSearchResult> {
+    try {
+      const res = await this.requestWithRetry<TMDbSearchResult>({
+        url: `/${mediaType}/top_rated`,
+        params: { page },
+      });
+      return {
+        ...res,
+        results: (res.results || []).map((r: any) => ({ ...r, media_type: mediaType })),
+      };
+    } catch (error) {
+      console.error(`Error getting top rated ${mediaType}:`, error);
+      throw new Error(`Failed to get top rated ${mediaType} from TMDb`);
+    }
+  }
+
+  /**
    * Get movie recommendations based on a specific movie
    */
   async getMovieRecommendations(movieId: number, page: number = 1): Promise<TMDbSearchResult> {
@@ -516,6 +535,7 @@ class TMDbService {
     withWatchProviders?: string | number;
     watchRegion?: string;
     sortBy?: string;
+    voteCountGte?: number;
     page?: number;
     query?: string;
   }): Promise<TMDbSearchResult> {
@@ -528,6 +548,7 @@ class TMDbService {
       withWatchProviders,
       watchRegion,
       sortBy = 'popularity.desc',
+      voteCountGte = 5,
       page = 1,
       query,
     } = options;
@@ -590,7 +611,7 @@ class TMDbService {
           page,
           sort_by: sortBy === 'release_date.desc' ? 'primary_release_date.desc' : sortBy,
           include_adult: false,
-          'vote_count.gte': 5,
+          'vote_count.gte': voteCountGte,
         };
         if (year) params.primary_release_year = year;
         if (genreId && genreId > 0) params.with_genres = genreId;
@@ -616,12 +637,12 @@ class TMDbService {
         totalPages = Math.max(totalPages, res.total_pages || 1);
       }
 
-      if (mediaType === 'tv') {
+      if (mediaType === 'tv' || mediaType === 'all') {
         const params: Record<string, any> = {
           page,
           sort_by: sortBy === 'release_date.desc' ? 'first_air_date.desc' : sortBy,
           include_adult: false,
-          'vote_count.gte': 5,
+          'vote_count.gte': voteCountGte,
         };
         if (year) params.first_air_date_year = year;
         if (genreId && genreId > 0) params.with_genres = genreId;
