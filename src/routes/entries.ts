@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { db } from '../db/index.js';
-import { users, entries, follows, likes, comments, followRequests, suggestions } from '../db/schema.js';
-import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg, aliasedTable } from 'drizzle-orm';
+import { users, entries, follows, likes, comments, followRequests, suggestions, blockedUsers } from '../db/schema.js';
+import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg, aliasedTable, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { xpService, XpAction } from '../services/xp.service.js';
@@ -521,6 +521,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
             order = 'desc',
             isWatching: queryIsWatching,
             userId: queryUserId,
+            tmdbId: queryTmdbId,
         } = req.query;
 
         let targetUserId = currentUserId;
@@ -583,6 +584,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<any
         if (tag) conditions.push(arrayContains(entries.tags, [tag as string]));
         if (queryIsWatching !== undefined) {
             conditions.push(eq(entries.isWatching, queryIsWatching === 'true'));
+        }
+        if (queryTmdbId !== undefined) {
+            const parsedTmdbId = parseInt(queryTmdbId as string, 10);
+            if (!isNaN(parsedTmdbId)) {
+                conditions.push(eq(entries.tmdbId, parsedTmdbId));
+            }
         }
         if (search) {
             conditions.push(or(
@@ -784,6 +791,213 @@ router.get(
         } catch (error) {
             console.error('Failed to check existing entry:', error);
             res.status(500).json({ error: 'Failed to check entry' });
+        }
+    }
+);
+
+/**
+ * @openapi
+ * /api/v1/entries/media/{tmdbId}/social:
+ *   get:
+ *     tags: [Entries]
+ *     summary: Get current user entry and followed friends reviews for a specific movie or show
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tmdbId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Social entries including userEntry and friendsEntries
+ */
+router.get(
+    '/media/:tmdbId/social',
+    authMiddleware,
+    async (req: Request, res: Response): Promise<any> => {
+        try {
+            const currentUserId = (req as any).user.userId || (req as any).user.id;
+            const tmdbId = parseInt(req.params.tmdbId, 10);
+            if (isNaN(tmdbId)) {
+                return res.status(400).json({ error: 'Invalid TMDb ID' });
+            }
+
+            const suggestor = aliasedTable(users, 'suggestor');
+
+            // 1. Fetch current user's entry (or entries) for this tmdbId
+            const userEntriesList = await db.select({
+                id: entries.id,
+                userId: entries.userId,
+                suggestedByUserId: entries.suggestedByUserId,
+                tmdbId: entries.tmdbId,
+                title: entries.title,
+                type: entries.type,
+                watchedAt: entries.watchedAt,
+                rating: entries.rating,
+                review: entries.review,
+                tags: entries.tags,
+                isRewatch: entries.isRewatch,
+                isWatching: entries.isWatching,
+                startedAt: entries.startedAt,
+                completedAt: entries.completedAt,
+                watchLocation: entries.watchLocation,
+                createdAt: entries.createdAt,
+                updatedAt: entries.updatedAt,
+                posterPath: entries.posterPath,
+                backdropPath: entries.backdropPath,
+                currentSeason: entries.currentSeason,
+                currentEpisode: entries.currentEpisode,
+                totalEpisodesWatched: entries.totalEpisodesWatched,
+                totalEpisodesCount: entries.totalEpisodesCount,
+                user: {
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl
+                },
+                suggestedByUser: {
+                    id: suggestor.id,
+                    username: suggestor.username,
+                    displayName: suggestor.displayName,
+                    profilePictureUrl: suggestor.profilePictureUrl
+                },
+                likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
+                commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number)
+            })
+            .from(entries)
+            .innerJoin(users, eq(entries.userId, users.id))
+            .leftJoin(suggestor, eq(entries.suggestedByUserId, suggestor.id))
+            .where(and(eq(entries.userId, currentUserId), eq(entries.tmdbId, tmdbId)))
+            .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`), desc(entries.createdAt));
+
+            let userEntry: any = null;
+            const typedUserEntries = userEntriesList as any[];
+            if (typedUserEntries.length > 0) {
+                const completed = typedUserEntries.find(e => !e.isWatching && (e.rating !== null || e.review !== null));
+                const rawEntry = completed || typedUserEntries[0];
+                userEntry = {
+                    ...rawEntry,
+                    rating: rawEntry.rating ? parseFloat(rawEntry.rating) : null,
+                    user: rawEntry.user ? formatUserWithAvatar(rawEntry.user) : rawEntry.user,
+                    suggestedByUser: rawEntry.suggestedByUser && rawEntry.suggestedByUser.id ? formatUserWithAvatar(rawEntry.suggestedByUser) : null,
+                    _count: {
+                        likes: rawEntry.likesCount,
+                        comments: rawEntry.commentsCount
+                    }
+                };
+            }
+
+            // 2. Fetch friends (followed users)
+            const [followList, blocks] = await Promise.all([
+                db.select({ followingId: follows.followingId })
+                    .from(follows)
+                    .where(eq(follows.followerId, currentUserId)),
+                db.select({
+                    blockerId: blockedUsers.blockerId,
+                    blockedId: blockedUsers.blockedId,
+                })
+                .from(blockedUsers)
+                .where(
+                    or(
+                        eq(blockedUsers.blockerId, currentUserId),
+                        eq(blockedUsers.blockedId, currentUserId)
+                    )
+                )
+            ]);
+
+            const blockedSet = new Set<string>();
+            blocks.forEach(b => {
+                if (b.blockerId === currentUserId) blockedSet.add(b.blockedId);
+                if (b.blockedId === currentUserId) blockedSet.add(b.blockerId);
+            });
+
+            const followedIds = followList
+                .map(f => f.followingId)
+                .filter(id => !blockedSet.has(id));
+
+            const friendsEntries: any[] = [];
+            if (followedIds.length > 0) {
+                const rawFriendsEntries = await db.select({
+                    id: entries.id,
+                    userId: entries.userId,
+                    suggestedByUserId: entries.suggestedByUserId,
+                    tmdbId: entries.tmdbId,
+                    title: entries.title,
+                    type: entries.type,
+                    watchedAt: entries.watchedAt,
+                    rating: entries.rating,
+                    review: entries.review,
+                    tags: entries.tags,
+                    isRewatch: entries.isRewatch,
+                    isWatching: entries.isWatching,
+                    startedAt: entries.startedAt,
+                    completedAt: entries.completedAt,
+                    watchLocation: entries.watchLocation,
+                    createdAt: entries.createdAt,
+                    updatedAt: entries.updatedAt,
+                    posterPath: entries.posterPath,
+                    backdropPath: entries.backdropPath,
+                    currentSeason: entries.currentSeason,
+                    currentEpisode: entries.currentEpisode,
+                    totalEpisodesWatched: entries.totalEpisodesWatched,
+                    totalEpisodesCount: entries.totalEpisodesCount,
+                    user: {
+                        id: users.id,
+                        username: users.username,
+                        displayName: users.displayName,
+                        profilePictureUrl: users.profilePictureUrl,
+                        privacyLevel: users.privacyLevel,
+                        isPrivate: users.isPrivate,
+                    },
+                    suggestedByUser: {
+                        id: suggestor.id,
+                        username: suggestor.username,
+                        displayName: suggestor.displayName,
+                        profilePictureUrl: suggestor.profilePictureUrl
+                    },
+                    likesCount: sql<number>`(SELECT count(*) FROM likes WHERE likes.entry_id = ${entries.id})`.mapWith(Number),
+                    commentsCount: sql<number>`(SELECT count(*) FROM comments WHERE comments.entry_id = ${entries.id})`.mapWith(Number),
+                    isLiked: sql<boolean>`EXISTS (SELECT 1 FROM likes WHERE likes.entry_id = ${entries.id} AND likes.user_id = ${currentUserId})`.mapWith(Boolean)
+                })
+                .from(entries)
+                .innerJoin(users, eq(entries.userId, users.id))
+                .leftJoin(suggestor, eq(entries.suggestedByUserId, suggestor.id))
+                .where(and(
+                    inArray(entries.userId, followedIds),
+                    eq(entries.tmdbId, tmdbId)
+                ))
+                .orderBy(desc(sql`COALESCE(${entries.watchedAt}, ${entries.createdAt})`), desc(entries.createdAt));
+
+                const seenFriendIds = new Set<string>();
+                const typedFriendsEntries = rawFriendsEntries as any[];
+                for (const item of typedFriendsEntries) {
+                    if (item.user.privacyLevel === 'PRIVATE') continue;
+                    if (seenFriendIds.has(item.userId)) continue;
+                    seenFriendIds.add(item.userId);
+
+                    friendsEntries.push({
+                        ...item,
+                        rating: item.rating ? parseFloat(item.rating) : null,
+                        user: formatUserWithAvatar(item.user),
+                        suggestedByUser: item.suggestedByUser && item.suggestedByUser.id ? formatUserWithAvatar(item.suggestedByUser) : null,
+                        isLiked: item.isLiked,
+                        _count: {
+                            likes: item.likesCount,
+                            comments: item.commentsCount
+                        }
+                    });
+                }
+            }
+
+            res.json({
+                userEntry,
+                friendsEntries
+            });
+        } catch (error) {
+            console.error('Failed to get media social entries:', error);
+            res.status(500).json({ error: 'Failed to fetch media social entries' });
         }
     }
 );
