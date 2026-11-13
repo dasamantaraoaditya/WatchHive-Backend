@@ -241,20 +241,23 @@ export class EpisodeTrackingService {
             .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)));
 
         const now = new Date();
+        const isCompleted = Boolean(totalEpisodesCount && totalWatched >= totalEpisodesCount);
 
-        if (existingEntries.length > 0) {
-            const entry = existingEntries[0];
-            const isCompleted = Boolean(totalEpisodesCount && totalWatched >= totalEpisodesCount);
+        // Prefer updating an active watching entry or unrated placeholder so completed reviews are never clobbered
+        const activeWatchingEntry = existingEntries.find(e => e.isWatching);
+        const placeholderEntry = existingEntries.find(e => !e.isWatching && e.rating === null && !e.review);
+        const targetEntry = activeWatchingEntry || placeholderEntry;
 
-            const completionTime = isCompleted ? (entry.completedAt || now) : null;
-            const watchTime = isCompleted ? (entry.completedAt || now) : (entry.watchedAt || now);
+        if (targetEntry) {
+            const completionTime = isCompleted ? (targetEntry.completedAt || now) : null;
+            const watchTime = isCompleted ? (targetEntry.completedAt || now) : (targetEntry.watchedAt || now);
 
             await db.update(entries)
                 .set({
                     currentSeason: latestSeason,
                     currentEpisode: latestEpisode,
                     totalEpisodesWatched: totalWatched,
-                    totalEpisodesCount: totalEpisodesCount ?? entry.totalEpisodesCount,
+                    totalEpisodesCount: totalEpisodesCount ?? targetEntry.totalEpisodesCount,
                     isWatching: !isCompleted && totalWatched > 0,
                     completedAt: completionTime,
                     watchedAt: watchTime,
@@ -263,9 +266,8 @@ export class EpisodeTrackingService {
                     ...(extra?.postToFeed !== undefined ? { postToFeed: extra.postToFeed } : {}),
                     updatedAt: now,
                 })
-                .where(eq(entries.id, entry.id));
+                .where(eq(entries.id, targetEntry.id));
         } else if (totalWatched > 0) {
-            const isCompleted = Boolean(totalEpisodesCount && totalWatched >= totalEpisodesCount);
             // Create a new in-progress or completed entry
             await db.insert(entries).values({
                 userId,
