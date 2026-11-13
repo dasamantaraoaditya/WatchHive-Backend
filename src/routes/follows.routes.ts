@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { authMiddleware } from '../middleware/auth.middleware.js';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware.js';
 import { db } from '../db/index.js';
 import { users, follows, followRequests, notifications } from '../db/schema.js';
-import { eq, and, or, desc, count, ilike } from 'drizzle-orm';
+import { eq, and, or, desc, count, ilike, sql } from 'drizzle-orm';
 import notificationService from '../services/notification.service.js';
 import { friendRecommendationService } from '../services/friend-recommendation.service.js';
 import { formatUserWithAvatar, formatUsersWithAvatar } from '../utils/avatar.util.js';
@@ -698,19 +698,34 @@ router.get('/:userId/status', authMiddleware, async (req: Request, res: Response
  *       200:
  *         description: Follower/Following counts
  */
-router.get('/stats/:userId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/stats/:userId', optionalAuthMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = req.params.userId;
+        const targetIdentifier = req.params.userId;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetIdentifier);
+
+        let targetId = targetIdentifier;
+        if (!isUuid) {
+            const [u] = await db.select({ id: users.id }).from(users).where(sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`).limit(1);
+            if (!u) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+            targetId = u.id;
+        }
+
         const [
             [{ followersCount }],
             [{ followingCount }]
         ] = await Promise.all([
-            db.select({ followersCount: count() }).from(follows).where(eq(follows.followingId, userId)),
-            db.select({ followingCount: count() }).from(follows).where(eq(follows.followerId, userId)),
+            db.select({ followersCount: count() }).from(follows).where(eq(follows.followingId, targetId)),
+            db.select({ followingCount: count() }).from(follows).where(eq(follows.followerId, targetId)),
         ]);
-        res.json({ followersCount, followingCount });
+        res.json({
+            followersCount: Number(followersCount) || 0,
+            followingCount: Number(followingCount) || 0
+        });
     } catch (error) {
-        res.status(500).json({ error: 'Failed' });
+        res.status(500).json({ error: 'Failed to retrieve follow stats' });
     }
 });
 

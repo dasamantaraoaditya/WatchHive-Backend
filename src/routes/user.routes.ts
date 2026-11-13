@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
-import { authMiddleware } from '../middleware/auth.middleware.js';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
 import { users, follows, entries, lists, listItems, followRequests, blockedUsers, episodeWatches, comments } from '../db/schema.js';
@@ -757,12 +757,14 @@ router.get('/me/blocks', authMiddleware, async (req: Request, res: Response, nex
  *       404:
  *         description: User not found
  */
-router.get('/:id', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', optionalAuthMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const targetId = req.params.id;
-        const currentId = req.user!.userId;
+        const targetIdentifier = req.params.id;
+        const currentId = req.user?.userId;
 
-        // Fetch user basic info
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetIdentifier);
+
+        // Fetch user basic info by UUID or username
         const [user] = await db
             .select({
                 id: users.id,
@@ -787,56 +789,61 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
                 createdAt: users.createdAt,
             })
             .from(users)
-            .where(eq(users.id, targetId))
+            .where(
+                isUuid
+                    ? or(eq(users.id, targetIdentifier), sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`)
+                    : sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`
+            )
             .limit(1);
 
         if (!user) {
             throw new AppError('User not found', 404);
         }
 
-        const isOwner = targetId === currentId;
-        
-        // Fetch follow status first to check permissions if needed
-        const [followRows, followerRows] = await Promise.all([
-            db.select()
-                .from(follows)
-                .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
-                .limit(1),
-            db.select()
-                .from(follows)
-                .where(and(eq(follows.followerId, targetId), eq(follows.followingId, currentId)))
-                .limit(1),
-        ]);
+        const targetId = user.id;
+        const isOwner = Boolean(currentId && targetId === currentId);
 
-        const isFollowing = Array.isArray(followRows) && followRows.length > 0;
-        const isFollower = Array.isArray(followerRows) && followerRows.length > 0;
+        let isFollowing = false;
+        let isFollower = false;
+        let isRequested = false;
+        let isIncomingRequest = false;
+        let incomingRequestId: string | null = null;
 
-        // Fetch follow request status
-        const [followReq] = await db
-            .select()
-            .from(followRequests)
-            .where(and(
-                eq(followRequests.senderId, currentId),
-                eq(followRequests.recipientId, targetId),
-                eq(followRequests.status, 'pending')
-            ))
-            .limit(1);
+        if (currentId) {
+            // Fetch follow status first to check permissions if needed
+            const [followRows, followerRows, [followReq], [incomingReq]] = await Promise.all([
+                db.select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, currentId), eq(follows.followingId, targetId)))
+                    .limit(1),
+                db.select()
+                    .from(follows)
+                    .where(and(eq(follows.followerId, targetId), eq(follows.followingId, currentId)))
+                    .limit(1),
+                db.select()
+                    .from(followRequests)
+                    .where(and(
+                        eq(followRequests.senderId, currentId),
+                        eq(followRequests.recipientId, targetId),
+                        eq(followRequests.status, 'pending')
+                    ))
+                    .limit(1),
+                db.select()
+                    .from(followRequests)
+                    .where(and(
+                        eq(followRequests.senderId, targetId),
+                        eq(followRequests.recipientId, currentId),
+                        eq(followRequests.status, 'pending')
+                    ))
+                    .limit(1),
+            ]);
 
-        const isRequested = !!followReq;
-
-        // Fetch incoming follow request status
-        const [incomingReq] = await db
-            .select()
-            .from(followRequests)
-            .where(and(
-                eq(followRequests.senderId, targetId),
-                eq(followRequests.recipientId, currentId),
-                eq(followRequests.status, 'pending')
-            ))
-            .limit(1);
-
-        const isIncomingRequest = !!incomingReq;
-        const incomingRequestId = incomingReq ? incomingReq.id : null;
+            isFollowing = Array.isArray(followRows) && followRows.length > 0;
+            isFollower = Array.isArray(followerRows) && followerRows.length > 0;
+            isRequested = !!followReq;
+            isIncomingRequest = !!incomingReq;
+            incomingRequestId = incomingReq ? incomingReq.id : null;
+        }
 
         // Privacy determination
         const isPrivateAccount = user.privacyLevel === 'FOLLOWERS_ONLY' || 
@@ -953,41 +960,52 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
  *       200:
  *         description: User's watchlist with items
  */
-router.get('/:id/watchlist', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id/watchlist', optionalAuthMiddleware, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const targetId = req.params.id;
-        const currentId = req.user!.userId;
+        const targetIdentifier = req.params.id;
+        const currentId = req.user?.userId;
+
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetIdentifier);
 
         // Check privacy
         const [targetUser] = await db
             .select({ 
+                id: users.id,
                 isPrivate: users.isPrivate, 
                 privacyLevel: users.privacyLevel,
                 showWatchlist: users.showWatchlist 
             })
             .from(users)
-            .where(eq(users.id, targetId))
+            .where(
+                isUuid
+                    ? or(eq(users.id, targetIdentifier), sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`)
+                    : sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`
+            )
             .limit(1);
 
         if (!targetUser) {
             throw new AppError('User not found', 404);
         }
 
-        // Only enforce privacy if it's NOT the user themselves
-        if (targetId !== currentId) {
-            // Check if there is a pending follow request
-            const [pendingRequest] = await db
-                .select()
-                .from(followRequests)
-                .where(and(
-                    eq(followRequests.senderId, currentId),
-                    eq(followRequests.recipientId, targetId),
-                    eq(followRequests.status, 'pending')
-                ))
-                .limit(1);
+        const targetId = targetUser.id;
 
-            if (pendingRequest) {
-                throw new AppError('Follow request is pending. Cannot view watchlist.', 403);
+        // Only enforce privacy if it's NOT the user themselves
+        if (!currentId || targetId !== currentId) {
+            if (currentId) {
+                // Check if there is a pending follow request
+                const [pendingRequest] = await db
+                    .select()
+                    .from(followRequests)
+                    .where(and(
+                        eq(followRequests.senderId, currentId),
+                        eq(followRequests.recipientId, targetId),
+                        eq(followRequests.status, 'pending')
+                    ))
+                    .limit(1);
+
+                if (pendingRequest) {
+                    throw new AppError('Follow request is pending. Cannot view watchlist.', 403);
+                }
             }
 
             // New Tiered Privacy Logic
@@ -996,6 +1014,9 @@ router.get('/:id/watchlist', authMiddleware, async (req: Request, res: Response,
             }
 
             if (targetUser.privacyLevel === 'FOLLOWERS_ONLY' || targetUser.isPrivate) {
+                if (!currentId) {
+                    throw new AppError('This account is private. Sign in and follow to see their watchlist.', 403);
+                }
                 const [isFollowing] = await db
                     .select()
                     .from(follows)

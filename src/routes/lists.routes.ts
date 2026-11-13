@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { lists, listItems, entries, users, follows, suggestions } from '../db/schema.js';
-import { eq, and, desc, asc } from 'drizzle-orm';
-import { authMiddleware } from '../middleware/auth.middleware.js';
+import { eq, and, desc, asc, or, sql } from 'drizzle-orm';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
 import { formatUserWithAvatar } from '../utils/avatar.util.js';
 
@@ -83,24 +83,31 @@ router.get('/watchlist', authMiddleware, async (req: Request, res: Response): Pr
 });
 
 // Get public ranking stacks for a specific user (subject to profile privacy settings)
-router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/user/:userId/rankings', optionalAuthMiddleware, async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId } = req.params;
-        const currentUserId = req.user!.userId;
+        const { userId: targetIdentifier } = req.params;
+        const currentUserId = req.user?.userId;
+
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetIdentifier);
 
         const [targetUser] = await db.select({
             id: users.id,
             isPrivate: users.isPrivate,
             privacyLevel: users.privacyLevel,
             showRankings: users.showRankings,
-        }).from(users).where(eq(users.id, userId)).limit(1);
+        }).from(users).where(
+            isUuid
+                ? or(eq(users.id, targetIdentifier), sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`)
+                : sql`LOWER(${users.username}) = ${targetIdentifier.toLowerCase()}`
+        ).limit(1);
 
         if (!targetUser) {
             res.status(404).json({ error: 'User not found' });
             return;
         }
 
-        const isOwner = currentUserId === userId;
+        const targetId = targetUser.id;
+        const isOwner = Boolean(currentUserId && currentUserId === targetId);
 
         if (!isOwner && targetUser.showRankings === false) {
             res.json([]);
@@ -116,8 +123,12 @@ router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: R
             }
 
             if (privacyLevel === 'FOLLOWERS_ONLY') {
+                if (!currentUserId) {
+                    res.status(403).json({ error: 'This profile is private. Please sign in to view rankings.' });
+                    return;
+                }
                 const [follow] = await db.select().from(follows).where(
-                    and(eq(follows.followerId, currentUserId), eq(follows.followingId, userId))
+                    and(eq(follows.followerId, currentUserId), eq(follows.followingId, targetId))
                 ).limit(1);
 
                 if (!follow) {
@@ -129,7 +140,7 @@ router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: R
 
         const rankingLists = await db.query.lists.findMany({
             where: and(
-                eq(lists.userId, userId),
+                eq(lists.userId, targetId),
                 eq(lists.type, 'RANKING_STACK'),
                 ...(isOwner ? [] : [eq(lists.isPublic, true)])
             ),
@@ -158,7 +169,7 @@ router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: R
                             title: entries.title,
                             rating: entries.rating,
                         }).from(entries).where(
-                            and(eq(entries.userId, userId), eq(entries.tmdbId, item.tmdbId))
+                            and(eq(entries.userId, targetId), eq(entries.tmdbId, item.tmdbId))
                         ).orderBy(desc(entries.watchedAt)).limit(1);
 
                         let title = localEntry?.title || null;
