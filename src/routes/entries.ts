@@ -917,7 +917,7 @@ router.get(
                 .map(f => f.followingId)
                 .filter(id => !blockedSet.has(id));
 
-            let friendsEntries: any[] = [];
+            const friendsEntries: any[] = [];
             if (followedIds.length > 0) {
                 const rawFriendsEntries = await db.select({
                     id: entries.id,
