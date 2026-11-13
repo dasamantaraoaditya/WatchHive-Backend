@@ -3,8 +3,13 @@ import { db } from '../db/index.js';
 import { entries } from '../db/schema.js';
 import { eq, and, desc, sql, isNotNull } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
+import tmdbService from '../services/tmdb.service.js';
+import { TOP_GENRES, TopGenre, mapToTopGenres } from '../utils/genres.util.js';
 
 const router = Router();
+
+// In-memory process cache of `${type}-${tmdbId}` -> TopGenre[]
+const tmdbGenreCache = new Map<string, TopGenre[]>();
 
 /**
  * @openapi

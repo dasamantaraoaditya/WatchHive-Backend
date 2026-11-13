@@ -9,6 +9,15 @@ const router = Router();
 
 // ─── CSV Helpers ─────────────────────────────────────────────────────────────
 
+function toIsoSafe(val: unknown): string | null {
+    if (!val) return null;
+    if (val instanceof Date) {
+        return isNaN(val.getTime()) ? null : val.toISOString();
+    }
+    const d = new Date(val as any);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function escapeCsvField(value: unknown): string {
     if (value === null || value === undefined) return '';
     let str = Array.isArray(value) ? value.join('|') : String(value);
@@ -137,7 +146,10 @@ function normalizeImportEntry(rawItem: any): Record<string, any> {
 
 router.get('/export', authMiddleware, async (req: Request, res: Response): Promise<any> => {
     try {
-        const userId = (req as any).user.userId;
+        const userId = req.user?.userId || (req.user as any)?.id;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
         const format = ((req.query.format as string) || 'json').toLowerCase();
         const includeParam = (req.query.include as string) || 'entries,lists';
         const include = includeParam.split(',').map(s => s.trim());
@@ -168,18 +180,18 @@ router.get('/export', authMiddleware, async (req: Request, res: Response): Promi
                         tmdbId: e.tmdbId,
                         title: e.title,
                         type: e.type,
-                        watchedAt: e.watchedAt?.toISOString() ?? '',
+                        watchedAt: toIsoSafe(e.watchedAt) ?? '',
                         rating: e.rating ?? '',
                         review: e.review ?? '',
                         tags: e.tags ?? [],
                         isRewatch: e.isRewatch,
                         isWatching: e.isWatching,
-                        startedAt: e.startedAt?.toISOString() ?? '',
-                        completedAt: e.completedAt?.toISOString() ?? '',
+                        startedAt: toIsoSafe(e.startedAt) ?? '',
+                        completedAt: toIsoSafe(e.completedAt) ?? '',
                         watchLocation: e.watchLocation ?? '',
                         inWatchlist: watchlistIds.has(e.tmdbId),
-                        createdAt: e.createdAt?.toISOString() ?? '',
-                        updatedAt: e.updatedAt?.toISOString() ?? '',
+                        createdAt: toIsoSafe(e.createdAt) ?? '',
+                        updatedAt: toIsoSafe(e.updatedAt) ?? '',
                     }))
                 ];
                 sections.push(rows.join('\n'));
@@ -194,7 +206,7 @@ router.get('/export', authMiddleware, async (req: Request, res: Response): Promi
                         rows.push(rowToCsv({ listId: list.id, listName: list.name, listType: list.type, listDescription: list.description ?? '', isPublic: list.isPublic, tmdbId: '', mediaType: '', orderIndex: '', addedAt: '' }));
                     } else {
                         for (const item of list.items) {
-                            rows.push(rowToCsv({ listId: list.id, listName: list.name, listType: list.type, listDescription: list.description ?? '', isPublic: list.isPublic, tmdbId: item.tmdbId, mediaType: item.mediaType, orderIndex: item.orderIndex, addedAt: (item.addedAt as Date)?.toISOString() ?? '' }));
+                            rows.push(rowToCsv({ listId: list.id, listName: list.name, listType: list.type, listDescription: list.description ?? '', isPublic: list.isPublic, tmdbId: item.tmdbId, mediaType: item.mediaType, orderIndex: item.orderIndex, addedAt: toIsoSafe(item.addedAt) ?? '' }));
                         }
                     }
                 }
@@ -218,11 +230,11 @@ router.get('/export', authMiddleware, async (req: Request, res: Response): Promi
             payload.entries = userEntries.map(e => ({
                 ...e,
                 inWatchlist: watchlistIds.has(e.tmdbId),
-                watchedAt: e.watchedAt?.toISOString(),
-                startedAt: e.startedAt?.toISOString() ?? null,
-                completedAt: e.completedAt?.toISOString() ?? null,
-                createdAt: e.createdAt?.toISOString(),
-                updatedAt: e.updatedAt?.toISOString(),
+                watchedAt: toIsoSafe(e.watchedAt),
+                startedAt: toIsoSafe(e.startedAt),
+                completedAt: toIsoSafe(e.completedAt),
+                createdAt: toIsoSafe(e.createdAt),
+                updatedAt: toIsoSafe(e.updatedAt),
             }));
         }
 
@@ -234,13 +246,13 @@ router.get('/export', authMiddleware, async (req: Request, res: Response): Promi
                 description: l.description,
                 type: l.type,
                 isPublic: l.isPublic,
-                createdAt: (l.createdAt as Date)?.toISOString(),
-                updatedAt: (l.updatedAt as Date)?.toISOString(),
+                createdAt: toIsoSafe(l.createdAt),
+                updatedAt: toIsoSafe(l.updatedAt),
                 items: (l.items || []).map((item: any) => ({
                     tmdbId: item.tmdbId,
                     mediaType: item.mediaType,
                     orderIndex: item.orderIndex,
-                    addedAt: (item.addedAt as Date)?.toISOString(),
+                    addedAt: toIsoSafe(item.addedAt),
                 })),
             }));
         }

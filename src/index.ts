@@ -59,6 +59,7 @@ try {
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "backdrop_path" text;
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "post_to_feed" boolean DEFAULT true NOT NULL;
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "current_season" integer;
+        ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "seasons" integer[];
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "current_episode" integer;
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "total_episodes_watched" integer DEFAULT 0 NOT NULL;
         ALTER TABLE "entries" ADD COLUMN IF NOT EXISTS "total_episodes_count" integer;
