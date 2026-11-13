@@ -198,6 +198,7 @@ router.get('/user/:userId/rankings', authMiddleware, async (req: Request, res: R
                 return {
                     ...list,
                     items: enrichedItems,
+                    itemCount: enrichedItems.length,
                 };
             })
         );
@@ -215,9 +216,37 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         const userId = req.user!.userId;
         const userLists = await db.query.lists.findMany({
             where: eq(lists.userId, userId),
+            with: {
+                items: {
+                    columns: {
+                        id: true,
+                        tmdbId: true,
+                        orderIndex: true,
+                        mediaType: true,
+                        addedAt: true,
+                    },
+                    orderBy: asc(listItems.orderIndex),
+                },
+            },
             orderBy: desc(lists.updatedAt),
         });
-        res.json(userLists);
+
+        const enrichedLists = userLists.map((list) => {
+            const seen = new Set<number>();
+            const uniqueItems = (list.items || []).filter(item => {
+                if (seen.has(item.tmdbId)) return false;
+                seen.add(item.tmdbId);
+                return true;
+            });
+
+            return {
+                ...list,
+                items: uniqueItems,
+                itemCount: uniqueItems.length,
+            };
+        });
+
+        res.json(enrichedLists);
     } catch (error) {
         console.error('Error fetching lists:', error);
         res.status(500).json({ error: 'Failed to fetch lists' });
@@ -256,7 +285,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
             })
             .returning();
 
-        res.status(201).json(newList);
+        res.status(201).json({ ...newList, items: [], itemCount: 0 });
     } catch (error) {
         console.error('Error creating list:', error);
         res.status(500).json({ error: 'Failed to create list' });

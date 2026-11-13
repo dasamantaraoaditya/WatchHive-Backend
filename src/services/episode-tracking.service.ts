@@ -39,6 +39,7 @@ export interface ShowProgressResponse {
     tmdbId: number;
     title: string;
     posterPath: string | null;
+    backdropPath?: string | null;
     currentSeason: number | null;
     currentEpisode: number | null;
     totalEpisodesWatched: number;
@@ -360,6 +361,7 @@ export class EpisodeTrackingService {
             tmdbId,
             title: tvDetails?.name || 'TV Series',
             posterPath: tvDetails?.poster_path || null,
+            backdropPath: tvDetails?.backdrop_path || null,
             currentSeason,
             currentEpisode,
             totalEpisodesWatched,
@@ -398,15 +400,31 @@ export class EpisodeTrackingService {
 
         for (const entry of activeEntries) {
             const progress = await this.getShowProgress(userId, entry.tmdbId);
-            if (progress.currentSeason !== null && progress.currentEpisode !== null) {
+            const resolvedSeason = progress.currentSeason ?? entry.currentSeason;
+            const resolvedEpisode = progress.currentEpisode ?? entry.currentEpisode;
+
+            if (resolvedSeason !== null && resolvedEpisode !== null) {
+                const resolvedPoster = entry.posterPath || progress.posterPath || null;
+                const resolvedBackdrop = entry.backdropPath || progress.backdropPath || null;
+                const resolvedTitle = (entry.title && entry.title !== 'Untitled' && entry.title !== 'this TV show')
+                    ? entry.title
+                    : (progress.title || 'TV Series');
+
+                if (!entry.posterPath && resolvedPoster) {
+                    db.update(entries)
+                        .set({ posterPath: resolvedPoster, backdropPath: resolvedBackdrop })
+                        .where(eq(entries.id, entry.id))
+                        .catch(() => {});
+                }
+
                 items.push({
                     entryId: entry.id,
                     tmdbId: entry.tmdbId,
-                    title: entry.title,
-                    posterPath: entry.posterPath,
-                    backdropPath: entry.backdropPath,
-                    currentSeason: progress.currentSeason,
-                    currentEpisode: progress.currentEpisode,
+                    title: resolvedTitle,
+                    posterPath: resolvedPoster,
+                    backdropPath: resolvedBackdrop,
+                    currentSeason: resolvedSeason,
+                    currentEpisode: resolvedEpisode,
                     totalEpisodesWatched: progress.totalEpisodesWatched,
                     totalEpisodesCount: progress.totalEpisodesCount,
                     progressPercentage: progress.progressPercentage,

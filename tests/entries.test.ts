@@ -291,6 +291,24 @@ describe('DELETE /api/v1/entries/:id — param validation', () => {
 
         expect(res.status).toBe(400);
     });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/v1/entries/media/:tmdbId/social — validation & auth', () => {
+    it('401 — rejects unauthenticated request', async () => {
+        const res = await request(app).get('/api/v1/entries/media/550/social');
+        expect(res.status).toBe(401);
+    });
+
+    it('400 — rejects non-numeric tmdbId param', async () => {
+        const res = await request(app)
+            .get('/api/v1/entries/media/not-a-number/social')
+            .set('Authorization', authHeader);
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/Invalid TMDb ID/i);
+    });
 
     afterAll(async () => {
         if (process.versions.bun) {
