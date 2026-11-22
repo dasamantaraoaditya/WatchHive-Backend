@@ -2,7 +2,7 @@ import { db } from '../db/index.js';
 import { entries, follows, suggestions, lists, listItems, users } from '../db/schema.js';
 import { eq, desc, inArray, and } from 'drizzle-orm';
 import tmdbService from './tmdb.service.js';
-import { smartSuggestContextCache } from '../utils/cache.util.js';
+import { smartSuggestContextCache, smartSuggestResultCache } from '../utils/cache.util.js';
 
 export type SmartSuggestMode = 'social' | 'watchlist' | 'explore';
 
@@ -853,6 +853,16 @@ export class SmartSuggestService {
         const mode = this.normalizeMode(opts.mode);
         const limit = Math.min(25, Math.max(10, opts.limit || 10));
         const excludeSet = new Set<number>(opts.excludeIds || []);
+        const isStandardQuery = !opts.excludeIds?.length && !opts.seed && !opts.genres?.length && !opts.languages?.length;
+        const cacheKey = `${userId}:${mode}:${limit}`;
+
+        if (isStandardQuery) {
+            const cachedResult = smartSuggestResultCache.get(cacheKey) as SmartSuggestResponse | undefined;
+            if (cachedResult) {
+                return cachedResult;
+            }
+        }
+
         const seed = opts.seed && Number.isFinite(opts.seed) ? opts.seed : Math.floor(Date.now() / 1000);
 
         try {
@@ -907,12 +917,18 @@ export class SmartSuggestService {
                 seed
             );
 
-            return {
+            const response: SmartSuggestResponse = {
                 mode,
                 items,
                 lastWatchedTitle: lastWatchedEntry?.title || null,
                 lastWatchedGenre,
             };
+
+            if (isStandardQuery && items.length > 0) {
+                smartSuggestResultCache.set(cacheKey, response, 60 * 1000);
+            }
+
+            return response;
         } catch (error) {
             console.error('[SmartSuggest] Engine Error:', error);
             return {

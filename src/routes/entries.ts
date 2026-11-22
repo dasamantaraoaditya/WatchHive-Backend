@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { db } from '../db/index.js';
-import { users, entries, follows, likes, comments, followRequests, suggestions, blockedUsers } from '../db/schema.js';
+import { users, entries, follows, likes, comments, followRequests, suggestions, blockedUsers, entryWatchBuddies, notifications } from '../db/schema.js';
 import { eq, and, desc, asc, count, sql, ilike, or, arrayContains, avg, aliasedTable, inArray } from 'drizzle-orm';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
@@ -92,6 +92,7 @@ const validateEntry = [
     body('currentSeason').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentSeason must be a positive integer'),
     body('seasons').optional({ nullable: true }).isArray().withMessage('seasons must be an array of integers'),
     body('currentEpisode').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentEpisode must be a positive integer'),
+    body('watchBuddyIds').optional({ nullable: true }).isArray().withMessage('watchBuddyIds must be an array of user IDs'),
 ];
 
 /**
@@ -191,6 +192,7 @@ router.post(
                 currentSeason,
                 seasons,
                 currentEpisode,
+                watchBuddyIds,
             } = req.body;
 
             const resolvedSeasons = Array.isArray(seasons)
@@ -387,6 +389,62 @@ router.post(
                 targetEntryId = newEntry.id;
             }
 
+            // Save and sync Watch Buddies (Tagged Co-Watchers)
+            let savedWatchBuddies: Array<{ id: string; username: string; displayName: string | null; profilePictureUrl: string | null }> = [];
+            const rawBuddyIds = Array.isArray(watchBuddyIds) ? watchBuddyIds : [];
+            const validBuddyIds: string[] = Array.from(new Set(rawBuddyIds.filter((bId: any): bId is string => typeof bId === 'string' && bId.trim().length > 0 && bId !== userId)));
+
+            if (validBuddyIds.length > 0) {
+                await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, targetEntryId!));
+                await db.insert(entryWatchBuddies).values(
+                    validBuddyIds.map(bId => ({
+                        entryId: targetEntryId!,
+                        userId: bId,
+                    }))
+                ).onConflictDoNothing();
+
+                const buddyUsers = await db.select({
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl,
+                }).from(users).where(inArray(users.id, validBuddyIds));
+
+                savedWatchBuddies = buddyUsers.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+
+                const actorName = (req as any).user?.displayName || (req as any).user?.username || 'A friend';
+                for (const b of buddyUsers) {
+                    db.insert(notifications).values({
+                        userId: b.id,
+                        type: 'MENTION',
+                        content: {
+                            actorId: userId,
+                            actorName,
+                            actorAvatar: (req as any).user?.profilePictureUrl || null,
+                            entryId: targetEntryId,
+                            title: resolvedTitle,
+                            tmdbId: tmdbId,
+                            mediaType: type,
+                            isWatching: Boolean(isWatching),
+                            message: `tagged you in ${Boolean(isWatching) ? 'watching' : 'their watch of'} ${resolvedTitle}`
+                        }
+                    }).catch(notifErr => console.error('[Notification] Error creating watch buddy notification:', notifErr));
+                }
+            } else if (watchBuddyIds !== undefined) {
+                await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, targetEntryId!));
+            } else if (targetEntryId) {
+                const existingBuddies = await db.select({
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl,
+                })
+                .from(entryWatchBuddies)
+                .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
+                .where(eq(entryWatchBuddies.entryId, targetEntryId));
+                savedWatchBuddies = existingBuddies.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+            }
+
             // Fetch fully populated entry for response
             const entry = await db.query.entries.findFirst({
                 where: eq(entries.id, targetEntryId),
@@ -465,6 +523,7 @@ router.post(
                     ...entry,
                     user: entry?.user ? formatUserWithAvatar(entry.user) : entry?.user,
                     suggestedByUser: entry?.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
+                    watchBuddies: savedWatchBuddies,
                     _count: { likes: likesCount, comments: commentsCount }
                 },
             });
@@ -534,6 +593,7 @@ router.get('/', optionalAuthMiddleware, async (req: Request, res: Response): Pro
             isWatching: queryIsWatching,
             userId: queryUserId,
             tmdbId: queryTmdbId,
+            watchedWithUserId: queryWatchedWithUserId,
         } = req.query;
 
         if (!queryUserId && !currentUserId) {
@@ -624,6 +684,18 @@ router.get('/', optionalAuthMiddleware, async (req: Request, res: Response): Pro
                 conditions.push(eq(entries.tmdbId, parsedTmdbId));
             }
         }
+        if (queryWatchedWithUserId) {
+            const trimmedBuddyId = String(queryWatchedWithUserId).trim();
+            if (trimmedBuddyId) {
+                conditions.push(
+                    sql`EXISTS (
+                        SELECT 1 FROM ${entryWatchBuddies} 
+                        WHERE ${entryWatchBuddies.entryId} = ${entries.id} 
+                        AND ${entryWatchBuddies.userId} = ${trimmedBuddyId}
+                    )`
+                );
+            }
+        }
         if (search) {
             conditions.push(or(
                 ilike(entries.title, `%${search}%`),
@@ -701,6 +773,28 @@ router.get('/', optionalAuthMiddleware, async (req: Request, res: Response): Pro
             db.select({ total: count() }).from(entries).where(whereClause)
         ]);
 
+        const entryIds = (entriesList as any[]).map(e => e.id);
+        const watchBuddiesMap: Record<string, Array<{ id: string; username: string; displayName: string | null; profilePictureUrl: string | null }>> = {};
+        if (entryIds.length > 0) {
+            const buddies = await db.select({
+                entryId: entryWatchBuddies.entryId,
+                user: {
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl,
+                }
+            })
+            .from(entryWatchBuddies)
+            .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
+            .where(inArray(entryWatchBuddies.entryId, entryIds));
+
+            for (const b of buddies) {
+                if (!watchBuddiesMap[b.entryId]) watchBuddiesMap[b.entryId] = [];
+                const formatted = formatUserWithAvatar(b.user);
+                if (formatted) watchBuddiesMap[b.entryId].push(formatted);
+            }
+        }
 
         // Map Drizzle result to Prisma-like structure for frontend compatibility
         const formattedEntries = (entriesList as any[]).map(e => ({
@@ -708,6 +802,7 @@ router.get('/', optionalAuthMiddleware, async (req: Request, res: Response): Pro
             rating: e.rating ? parseFloat(e.rating) : null,
             user: e.user ? formatUserWithAvatar(e.user) : e.user,
             suggestedByUser: e.suggestedByUser && e.suggestedByUser.id ? formatUserWithAvatar(e.suggestedByUser) : null,
+            watchBuddies: watchBuddiesMap[e.id] || [],
             _count: {
                 likes: e.likesCount,
                 comments: e.commentsCount
@@ -1035,6 +1130,39 @@ router.get(
                 }
             }
 
+            const allSocialEntryIds = [
+                ...(userEntry ? [userEntry.id] : []),
+                ...friendsEntries.map(f => f.id)
+            ];
+            const socialBuddiesMap: Record<string, Array<{ id: string; username: string; displayName: string | null; profilePictureUrl: string | null }>> = {};
+            if (allSocialEntryIds.length > 0) {
+                const buddies = await db.select({
+                    entryId: entryWatchBuddies.entryId,
+                    user: {
+                        id: users.id,
+                        username: users.username,
+                        displayName: users.displayName,
+                        profilePictureUrl: users.profilePictureUrl,
+                    }
+                })
+                .from(entryWatchBuddies)
+                .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
+                .where(inArray(entryWatchBuddies.entryId, allSocialEntryIds));
+
+                for (const b of buddies) {
+                    if (!socialBuddiesMap[b.entryId]) socialBuddiesMap[b.entryId] = [];
+                    const formatted = formatUserWithAvatar(b.user);
+                    if (formatted) socialBuddiesMap[b.entryId].push(formatted);
+                }
+            }
+
+            if (userEntry) {
+                userEntry.watchBuddies = socialBuddiesMap[userEntry.id] || [];
+            }
+            for (const f of friendsEntries) {
+                f.watchBuddies = socialBuddiesMap[f.id] || [];
+            }
+
             res.json({
                 userEntry,
                 friendsEntries
@@ -1309,6 +1437,18 @@ router.get(
                                 }
                             }
                         }
+                    },
+                    watchBuddies: {
+                        with: {
+                            user: {
+                                columns: {
+                                    id: true,
+                                    username: true,
+                                    displayName: true,
+                                    profilePictureUrl: true,
+                                }
+                            }
+                        }
                     }
                 }
             });
@@ -1346,6 +1486,7 @@ router.get(
                     ...entry,
                     user: entry.user ? formatUserWithAvatar(entry.user) : entry.user,
                     suggestedByUser: entry.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
+                    watchBuddies: entry.watchBuddies?.map((wb: any) => formatUserWithAvatar(wb.user)) || [],
                     comments: entry.comments?.map((c: any) => ({
                         ...c,
                         user: c.user ? formatUserWithAvatar(c.user) : c.user,
@@ -1454,6 +1595,16 @@ router.put(
             // Update entry
             const updateData = { ...req.body };
             const now = new Date();
+
+            // 1. Normalize dates to Date objects FIRST before any db operations
+            if (req.body.watchedAt === null || req.body.watchedAt === '' || req.body.unspecifiedDate === true) {
+                updateData.watchedAt = null;
+            } else if (updateData.watchedAt) {
+                updateData.watchedAt = resolveValidDate(updateData.watchedAt, now);
+            }
+            if (updateData.startedAt) updateData.startedAt = resolveValidDate(updateData.startedAt, null);
+            if (updateData.completedAt) updateData.completedAt = resolveValidDate(updateData.completedAt, null);
+
             if (existingEntry.isWatching && (updateData.isWatching === false || updateData.rating || updateData.review)) {
                 updateData.isWatching = false;
                 if (!existingEntry.startedAt && !updateData.startedAt) {
@@ -1462,26 +1613,21 @@ router.put(
                 if (!updateData.completedAt) updateData.completedAt = updateData.watchedAt || now;
                 if (!updateData.watchedAt) updateData.watchedAt = updateData.completedAt;
             }
-            if (existingEntry.tmdbId && updateData.isWatching === false) {
-                // Clear any other active currently-watching sessions for this title
-                await db
-                    .update(entries)
-                    .set({ isWatching: false, completedAt: updateData.completedAt || now, watchedAt: updateData.watchedAt || updateData.completedAt || now, updatedAt: now })
-                    .where(and(eq(entries.userId, userId), eq(entries.tmdbId, existingEntry.tmdbId), eq(entries.isWatching, true)));
-            }
-            if (req.body.watchedAt === null || req.body.watchedAt === '' || req.body.unspecifiedDate === true) {
-                updateData.watchedAt = null;
-            } else if (updateData.watchedAt) {
-                updateData.watchedAt = resolveValidDate(updateData.watchedAt, now);
-            }
-            if (updateData.startedAt) updateData.startedAt = resolveValidDate(updateData.startedAt, null);
-            if (updateData.completedAt) updateData.completedAt = resolveValidDate(updateData.completedAt, null);
+
             if (updateData.isWatching === false) {
                 if (updateData.completedAt && !updateData.watchedAt && req.body.unspecifiedDate !== true) {
                     updateData.watchedAt = updateData.completedAt;
                 } else if (updateData.watchedAt && !updateData.completedAt) {
                     updateData.completedAt = updateData.watchedAt;
                 }
+            }
+
+            if (existingEntry.tmdbId && updateData.isWatching === false) {
+                // Clear any other active currently-watching sessions for this title
+                await db
+                    .update(entries)
+                    .set({ isWatching: false, completedAt: updateData.completedAt || now, watchedAt: updateData.watchedAt || updateData.completedAt || now, updatedAt: now })
+                    .where(and(eq(entries.userId, userId), eq(entries.tmdbId, existingEntry.tmdbId), eq(entries.isWatching, true)));
             }
             if (updateData.rating !== undefined) {
                 updateData.rating = updateData.rating !== null && Number(updateData.rating) > 0 ? updateData.rating.toString() : null;
@@ -1526,6 +1672,42 @@ router.put(
                 .update(entries)
                 .set(cleanUpdateData)
                 .where(eq(entries.id, id));
+
+            // Sync watch buddies if provided
+            let savedWatchBuddies: Array<{ id: string; username: string; displayName: string | null; profilePictureUrl: string | null }> = [];
+            if (req.body.watchBuddyIds !== undefined) {
+                const rawBuddyIds = Array.isArray(req.body.watchBuddyIds) ? req.body.watchBuddyIds : [];
+                const validBuddyIds: string[] = Array.from(new Set(rawBuddyIds.filter((bId: any): bId is string => typeof bId === 'string' && bId.trim().length > 0 && bId !== userId)));
+                await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, id));
+                if (validBuddyIds.length > 0) {
+                    await db.insert(entryWatchBuddies).values(
+                        validBuddyIds.map(bId => ({
+                            entryId: id,
+                            userId: bId,
+                        }))
+                    ).onConflictDoNothing();
+
+                    const buddyUsers = await db.select({
+                        id: users.id,
+                        username: users.username,
+                        displayName: users.displayName,
+                        profilePictureUrl: users.profilePictureUrl,
+                    }).from(users).where(inArray(users.id, validBuddyIds));
+
+                    savedWatchBuddies = buddyUsers.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+                }
+            } else {
+                const existingBuddies = await db.select({
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl,
+                })
+                .from(entryWatchBuddies)
+                .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
+                .where(eq(entryWatchBuddies.entryId, id));
+                savedWatchBuddies = existingBuddies.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+            }
 
             // Fetch fully populated updated entry
             const entry = await db.query.entries.findFirst({
@@ -1609,6 +1791,7 @@ router.put(
                     ...entry,
                     user: entry?.user ? formatUserWithAvatar(entry.user) : entry?.user,
                     suggestedByUser: entry?.suggestedByUser ? formatUserWithAvatar(entry.suggestedByUser) : null,
+                    watchBuddies: savedWatchBuddies,
                     _count: { likes: likesCount, comments: commentsCount }
                 },
             });

@@ -24,7 +24,24 @@ const mockTmdbTv = jest.fn();
 // ─── ESM module mocks ─────────────────────────────────────────────────────────
 
 await jest.unstable_mockModule('../src/db/index.js', () => ({
-    db: {},
+    db: {
+        select: jest.fn().mockReturnThis(),
+        from: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([]),
+        orderBy: jest.fn().mockReturnThis(),
+        offset: jest.fn().mockReturnThis(),
+        insert: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        onConflictDoNothing: jest.fn().mockResolvedValue([]),
+        returning: jest.fn().mockResolvedValue([{ id: 'mock-id' }]),
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        delete: jest.fn().mockReturnThis(),
+        query: { entries: { findFirst: jest.fn() } },
+    },
     checkDbHealth: mockCheckDb,
 }));
 
@@ -280,6 +297,22 @@ describe('PUT /api/v1/entries/:id — param & body validation', () => {
             .send({ watchedAt: null, rating: null, review: null, tags: null });
 
         // Status 404 means validation passed and handler proceeded to db lookup (mocked db has no entry)
+        expect(res.status).not.toBe(400);
+    });
+
+    it('accepts valid ISO date strings for watchedAt and completedAt on update without error', async () => {
+        const REAL_UUID = 'c7b5a886-3538-4e1b-b72e-d0a473216834';
+        const res = await request(app)
+            .put(`/api/v1/entries/${REAL_UUID}`)
+            .set('Authorization', authHeader)
+            .send({
+                watchedAt: '2026-11-22T17:27:11.258Z',
+                completedAt: '2026-11-22T17:27:11.258Z',
+                isWatching: false,
+                rating: 8.5,
+                review: 'Great show!'
+            });
+
         expect(res.status).not.toBe(400);
     });
 });

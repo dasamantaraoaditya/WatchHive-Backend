@@ -3,8 +3,8 @@ import multer from 'multer';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware.js';
 
 import { db } from '../db/index.js';
-import { users, follows, entries, lists, listItems, followRequests, blockedUsers, episodeWatches, comments } from '../db/schema.js';
-import { eq, or, and, ilike, not, count, exists, desc, sql } from 'drizzle-orm';
+import { users, follows, entries, lists, listItems, followRequests, blockedUsers, episodeWatches, comments, entryWatchBuddies } from '../db/schema.js';
+import { eq, or, and, ilike, not, count, exists, desc, asc, inArray, sql } from 'drizzle-orm';
 import { AppError } from '../middleware/error.middleware.js';
 import { friendRecommendationService } from '../services/friend-recommendation.service.js';
 import { getFullAuthUser } from '../services/auth.service.js';
@@ -26,7 +26,7 @@ const s3 = new S3Client({
     forcePathStyle: true, // Often required for S3-compatible providers
 });
 
-import { resolveAvatarUrl } from '../utils/avatar.util.js';
+import { resolveAvatarUrl, formatUserWithAvatar } from '../utils/avatar.util.js';
 
 // Helper to generate a permanent URL for an avatar
 const getAvatarUrl = async (key: string | null): Promise<string | null> => {
@@ -545,6 +545,116 @@ router.get('/me/export', authMiddleware, async (req: Request, res: Response, nex
     }
 });
 
+
+/**
+ * @openapi
+ * /api/v1/users/taggable-friends:
+ *   get:
+ *     tags: [User]
+ *     summary: Search or list taggable friends / watch buddies
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of taggable users with avatar and username
+ */
+router.get('/taggable-friends', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+    try {
+        const currentUserId = req.user!.userId;
+        const rawQuery = (req.query.q as string) || '';
+        const query = rawQuery.trim().replace(/^@/, '');
+        const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 15, 1), 50);
+
+        // When query is empty: return top recent watch buddies + followed friends
+        if (!query) {
+            // 1. Recent watch buddies
+            const recentBuddies = await db.select({
+                buddyId: entryWatchBuddies.userId,
+                cnt: count(),
+            })
+            .from(entryWatchBuddies)
+            .innerJoin(entries, eq(entryWatchBuddies.entryId, entries.id))
+            .where(eq(entries.userId, currentUserId))
+            .groupBy(entryWatchBuddies.userId)
+            .orderBy(desc(count()))
+            .limit(limit);
+
+            const recentBuddyIds = recentBuddies.map(b => b.buddyId);
+
+            // 2. Followed users
+            const followed = await db.select({
+                followingId: follows.followingId,
+            })
+            .from(follows)
+            .where(eq(follows.followerId, currentUserId))
+            .limit(limit);
+
+            const followedIds = followed.map(f => f.followingId);
+
+            const candidateIds = Array.from(new Set([...recentBuddyIds, ...followedIds])).filter(id => id !== currentUserId);
+
+            if (candidateIds.length === 0) {
+                return res.json({ users: [] });
+            }
+
+            const friendUsers = await db.select({
+                id: users.id,
+                username: users.username,
+                displayName: users.displayName,
+                profilePictureUrl: users.profilePictureUrl,
+            })
+            .from(users)
+            .where(inArray(users.id, candidateIds))
+            .limit(limit);
+
+            friendUsers.sort((a, b) => {
+                const idxA = candidateIds.indexOf(a.id);
+                const idxB = candidateIds.indexOf(b.id);
+                return idxA - idxB;
+            });
+
+            return res.json({ users: friendUsers.map(u => formatUserWithAvatar(u)) });
+        }
+
+        // When query is provided: search matching users, prioritizing followed users
+        const matchingUsers = await db.select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            profilePictureUrl: users.profilePictureUrl,
+        })
+        .from(users)
+        .where(
+            and(
+                or(
+                    ilike(users.username, `%${query}%`),
+                    ilike(users.displayName, `%${query}%`)
+                ),
+                not(eq(users.id, currentUserId))
+            )
+        )
+        .orderBy(
+            desc(
+                exists(
+                    db.select()
+                        .from(follows)
+                        .where(and(eq(follows.followerId, currentUserId), eq(follows.followingId, users.id)))
+                )
+            ),
+            asc(users.username)
+        )
+        .limit(limit);
+
+        res.json({ users: matchingUsers.map(u => formatUserWithAvatar(u)) });
+    } catch (error) {
+        next(error);
+    }
+});
 
 /**
  * @openapi
