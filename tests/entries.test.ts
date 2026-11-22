@@ -271,6 +271,17 @@ describe('PUT /api/v1/entries/:id — param & body validation', () => {
 
         expect(res.status).toBe(400);
     });
+
+    it('accepts nullable fields (watchedAt: null, rating: null, review: null) on update', async () => {
+        const REAL_UUID = 'c7b5a886-3538-4e1b-b72e-d0a473216834';
+        const res = await request(app)
+            .put(`/api/v1/entries/${REAL_UUID}`)
+            .set('Authorization', authHeader)
+            .send({ watchedAt: null, rating: null, review: null, tags: null });
+
+        // Status 404 means validation passed and handler proceeded to db lookup (mocked db has no entry)
+        expect(res.status).not.toBe(400);
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -275,19 +275,22 @@ router.post(
                         return e.currentSeason === resolvedCurrentSeason || e.currentSeason === null;
                     }
                     return true;
-                });
+                }) || existingEntriesList.find(e => e.isWatching);
+
                 const placeholderEntry = existingEntriesList.find(e => {
                     if (e.rating !== null || e.review) return false;
                     if (type === 'TV_SHOW' && resolvedCurrentSeason !== null) {
                         return e.currentSeason === resolvedCurrentSeason || e.currentSeason === null;
                     }
                     return true;
-                });
+                }) || existingEntriesList.find(e => e.rating === null && !e.review);
+
                 const targetExisting = activeWatchingEntry || placeholderEntry;
 
                 // Check if user already has a completed watch entry for this title (or season)
+                // Note: Entries without a rating and review created by episode tracking are placeholders, not completed reviews
                 const completedWatch = existingEntriesList.find(e => {
-                    if (e.isWatching || (e.rating === null && e.review === null && e.completedAt === null)) {
+                    if (e.isWatching || (e.rating === null && e.review === null)) {
                         return false;
                     }
                     if (type === 'TV_SHOW' && resolvedCurrentSeason !== null) {
@@ -324,8 +327,8 @@ router.post(
                             title: resolvedTitle,
                             type: type as any,
                             watchedAt: resolvedWatchedAt,
-                            rating: rating ? rating.toString() : targetExisting.rating,
-                            review: review !== undefined ? (review || null) : targetExisting.review,
+                            rating: rating !== undefined && rating !== null ? (Number(rating) > 0 ? rating.toString() : null) : targetExisting.rating,
+                            review: review !== undefined ? (review ? review.trim() : null) : targetExisting.review,
                             tags: entryTags.length > 0 ? entryTags : targetExisting.tags,
                             isRewatch: isRewatch !== undefined ? isRewatch : targetExisting.isRewatch,
                             isWatching: finalIsWatching,
@@ -1412,16 +1415,16 @@ router.put(
     [
         body('title').optional().trim().notEmpty().withMessage('Title cannot be empty'),
         body('type').optional().isIn(['MOVIE', 'TV_SHOW', 'EPISODE']).withMessage('Invalid entry type'),
-        body('watchedAt').optional().isISO8601().withMessage('Invalid date format'),
-        body('rating').optional().isFloat({ min: 0, max: 10 }).withMessage('Rating must be between 0 and 10'),
-        body('review').optional().trim(),
-        body('tags').optional().isArray().withMessage('Tags must be an array'),
-        body('isRewatch').optional().isBoolean().withMessage('isRewatch must be boolean'),
-        body('isWatching').optional().isBoolean().withMessage('isWatching must be boolean'),
+        body('watchedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
+        body('rating').optional({ nullable: true }).isFloat({ min: 0, max: 10 }).withMessage('Rating must be between 0 and 10'),
+        body('review').optional({ nullable: true }).trim().isLength({ max: 5000 }).withMessage('Review cannot exceed 5000 characters'),
+        body('tags').optional({ nullable: true }).isArray({ max: 20 }).withMessage('Tags must be an array with max 20 items'),
+        body('isRewatch').optional({ nullable: true }).isBoolean().withMessage('isRewatch must be boolean'),
+        body('isWatching').optional({ nullable: true }).isBoolean().withMessage('isWatching must be boolean'),
         body('startedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
         body('completedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
-        body('watchLocation').optional().trim(),
-        body('postToFeed').optional().isBoolean().withMessage('postToFeed must be boolean'),
+        body('watchLocation').optional({ nullable: true }).trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
+        body('postToFeed').optional({ nullable: true }).isBoolean().withMessage('postToFeed must be boolean'),
         body('currentSeason').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentSeason must be a positive integer'),
         body('seasons').optional({ nullable: true }).isArray().withMessage('seasons must be an array of integers'),
         body('currentEpisode').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentEpisode must be a positive integer'),
@@ -1480,7 +1483,12 @@ router.put(
                     updateData.completedAt = updateData.watchedAt;
                 }
             }
-            if (updateData.rating) updateData.rating = updateData.rating.toString();
+            if (updateData.rating !== undefined) {
+                updateData.rating = updateData.rating !== null && Number(updateData.rating) > 0 ? updateData.rating.toString() : null;
+            }
+            if (updateData.review !== undefined) {
+                updateData.review = updateData.review ? updateData.review.trim() : null;
+            }
             if (updateData.postToFeed !== undefined) updateData.postToFeed = Boolean(updateData.postToFeed);
             if (updateData.currentSeason !== undefined) {
                 updateData.currentSeason = updateData.currentSeason !== null ? Number(updateData.currentSeason) : null;
@@ -1499,9 +1507,24 @@ router.put(
                 updateData.currentEpisode = updateData.currentEpisode !== null ? Number(updateData.currentEpisode) : null;
             }
 
+            const allowedColumns = [
+                'title', 'type', 'watchedAt', 'rating', 'review', 'tags',
+                'isRewatch', 'isWatching', 'startedAt', 'completedAt',
+                'watchLocation', 'suggestedByUserId', 'posterPath',
+                'backdropPath', 'postToFeed', 'currentSeason', 'seasons',
+                'currentEpisode', 'totalEpisodesWatched', 'totalEpisodesCount'
+            ];
+            const cleanUpdateData: any = {};
+            for (const col of allowedColumns) {
+                if (col in updateData) {
+                    cleanUpdateData[col] = updateData[col];
+                }
+            }
+            cleanUpdateData.updatedAt = now;
+
             await db
                 .update(entries)
-                .set({ ...updateData, updatedAt: now })
+                .set(cleanUpdateData)
                 .where(eq(entries.id, id));
 
             // Fetch fully populated updated entry
