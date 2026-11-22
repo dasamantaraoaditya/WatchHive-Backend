@@ -426,7 +426,7 @@ router.post(
                             tmdbId: tmdbId,
                             mediaType: type,
                             isWatching: Boolean(isWatching),
-                            message: `tagged you in ${Boolean(isWatching) ? 'watching' : 'their watch of'} ${resolvedTitle}`
+                            message: `tagged you in ${isWatching ? 'watching' : 'their watch of'} ${resolvedTitle}`
                         }
                     }).catch(notifErr => console.error('[Notification] Error creating watch buddy notification:', notifErr));
                 }
