@@ -82,6 +82,16 @@ try {
         );
         CREATE INDEX IF NOT EXISTS "episode_watches_user_tmdb_idx" ON "episode_watches"("user_id", "tmdb_id");
         CREATE INDEX IF NOT EXISTS "episode_watches_user_watched_idx" ON "episode_watches"("user_id", "watched_at");
+
+        CREATE TABLE IF NOT EXISTS "entry_watch_buddies" (
+            "id" text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+            "entry_id" text NOT NULL REFERENCES "entries"("id") ON DELETE CASCADE,
+            "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+            "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+            CONSTRAINT "entry_watch_buddies_unique_entry_user" UNIQUE ("entry_id", "user_id")
+        );
+        CREATE INDEX IF NOT EXISTS "entry_watch_buddies_entry_id_idx" ON "entry_watch_buddies"("entry_id");
+        CREATE INDEX IF NOT EXISTS "entry_watch_buddies_user_id_idx" ON "entry_watch_buddies"("user_id");
     `);
     console.log('✅ Schema columns verified');
 } catch (schemaErr) {

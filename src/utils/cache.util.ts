@@ -46,6 +46,14 @@ export class MemoryCache<T = any> {
         this.store.delete(key);
     }
 
+    deletePrefix(prefix: string): void {
+        for (const key of this.store.keys()) {
+            if (key.startsWith(prefix)) {
+                this.store.delete(key);
+            }
+        }
+    }
+
     clear(): void {
         this.store.clear();
     }
@@ -57,6 +65,7 @@ export const statsSummaryCache = new MemoryCache<any>(3000);
 export const mindlensCache = new MemoryCache<any>(2000);
 export const feedSuggestionsCache = new MemoryCache<any>(2000);
 export const smartSuggestContextCache = new MemoryCache<any>(2000);
+export const smartSuggestResultCache = new MemoryCache<any>(2000);
 export const tokenVersionCache = new MemoryCache<number>(5000);
 
 /**
@@ -68,5 +77,6 @@ export function invalidateUserCaches(userId: string): void {
     mindlensCache.delete(userId);
     feedSuggestionsCache.delete(userId);
     smartSuggestContextCache.delete(userId);
+    smartSuggestResultCache.deletePrefix(userId);
     tokenVersionCache.delete(userId);
 }

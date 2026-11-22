@@ -159,6 +159,18 @@ export const comments = pgTable('comments', {
     parentIndex: index('comments_parent_comment_id_idx').on(table.parentCommentId),
 }));
 
+// Entry Watch Buddies (Tagged Co-Watchers) Table
+export const entryWatchBuddies = pgTable('entry_watch_buddies', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    entryId: uuid('entry_id').references(() => entries.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+    uniqueEntryUser: unique().on(table.entryId, table.userId),
+    entryIndex: index('entry_watch_buddies_entry_id_idx').on(table.entryId),
+    userIndex: index('entry_watch_buddies_user_id_idx').on(table.userId),
+}));
+
 // Lists Table
 export const lists = pgTable('lists', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -296,6 +308,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     suggestionsReceived: many(suggestions, { relationName: 'receivedSuggestions' }),
     pushSubscriptions: many(pushSubscriptions),
     deviceTokens: many(deviceTokens),
+    watchBuddyEntries: many(entryWatchBuddies),
 }));
 
 export const entriesRelations = relations(entries, ({ one, many }) => ({
@@ -303,6 +316,7 @@ export const entriesRelations = relations(entries, ({ one, many }) => ({
     suggestedByUser: one(users, { fields: [entries.suggestedByUserId], references: [users.id], relationName: 'suggestedEntries' }),
     likes: many(likes),
     comments: many(comments),
+    watchBuddies: many(entryWatchBuddies),
 }));
 
 export const followsRelations = relations(follows, ({ one }) => ({
@@ -353,6 +367,13 @@ export const episodeWatchesRelations = relations(episodeWatches, ({ one }) => ({
     user: one(users, { fields: [episodeWatches.userId], references: [users.id] }),
 }));
 
+export const entryWatchBuddiesRelations = relations(entryWatchBuddies, ({ one }) => ({
+    entry: one(entries, { fields: [entryWatchBuddies.entryId], references: [entries.id] }),
+    user: one(users, { fields: [entryWatchBuddies.userId], references: [users.id] }),
+}));
+
 export type EpisodeWatch = typeof episodeWatches.$inferSelect;
 export type NewEpisodeWatch = typeof episodeWatches.$inferInsert;
+export type EntryWatchBuddy = typeof entryWatchBuddies.$inferSelect;
+export type NewEntryWatchBuddy = typeof entryWatchBuddies.$inferInsert;
 
