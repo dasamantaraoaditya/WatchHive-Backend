@@ -1113,24 +1113,23 @@ export const authService = {
                 emailVerificationExpiresAt: null,
                 failedLoginAttempts: 0,
                 lockoutUntil: null,
-                tokenVersion: sql`${users.tokenVersion} + 1`,
                 updatedAt: new Date(),
             })
             .where(eq(users.id, user.id));
 
-        const nextTokenVersion = (user.tokenVersion ?? 1) + 1;
+        const currentTokenVersion = user.tokenVersion ?? 1;
 
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
-            tokenVersion: nextTokenVersion,
+            tokenVersion: currentTokenVersion,
             isEmailVerified: true,
         });
 
         const refreshToken = generateRefreshToken({
             userId: user.id,
             email: user.email,
-            tokenVersion: nextTokenVersion,
+            tokenVersion: currentTokenVersion,
             isEmailVerified: true,
         });
 

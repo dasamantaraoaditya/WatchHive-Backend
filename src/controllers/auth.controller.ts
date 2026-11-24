@@ -143,15 +143,18 @@ export const authController = {
             // Always clear HttpOnly cookies on logout
             clearAuthCookies(res);
 
-            const refreshToken = req.body?.refreshToken || req.cookies?.jwt_refresh;
-            if (refreshToken) {
-                try {
-                    const payload = verifyRefreshToken(refreshToken);
-                    if (payload.userId) {
-                        await authService.revokeSessions(payload.userId);
+            // Only revoke all devices if explicitly requested (e.g. security action or "Log out of all devices")
+            if (req.body?.allDevices === true) {
+                const refreshToken = req.body?.refreshToken || req.cookies?.jwt_refresh;
+                if (refreshToken) {
+                    try {
+                        const payload = verifyRefreshToken(refreshToken);
+                        if (payload.userId) {
+                            await authService.revokeSessions(payload.userId);
+                        }
+                    } catch {
+                        // Safe to ignore token verification errors on logout
                     }
-                } catch {
-                    // Safe to ignore token verification errors on logout
                 }
             }
         } catch {
