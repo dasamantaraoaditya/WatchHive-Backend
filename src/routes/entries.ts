@@ -79,14 +79,14 @@ const validateEntry = [
     body('tmdbId').isInt().withMessage('TMDb ID must be an integer'),
     body('title').trim().notEmpty().withMessage('Title is required').isLength({ max: 255 }).withMessage('Title cannot exceed 255 characters'),
     body('type').isIn(['MOVIE', 'TV_SHOW', 'EPISODE']).withMessage('Invalid entry type'),
-    body('watchedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
+    body('watchedAt').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid date format'),
     body('rating').optional({ nullable: true }).isFloat({ min: 0, max: 10 }).withMessage('Rating must be between 0 and 10'),
     body('review').optional({ nullable: true }).trim().isLength({ max: 5000 }).withMessage('Review cannot exceed 5000 characters'),
     body('tags').optional({ nullable: true }).isArray({ max: 20 }).withMessage('Tags must be an array with max 20 items'),
     body('isRewatch').optional({ nullable: true }).isBoolean().withMessage('isRewatch must be boolean'),
     body('isWatching').optional({ nullable: true }).isBoolean().withMessage('isWatching must be boolean'),
-    body('startedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
-    body('completedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
+    body('startedAt').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid date format'),
+    body('completedAt').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid date format'),
     body('watchLocation').optional({ nullable: true }).trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
     body('postToFeed').optional({ nullable: true }).isBoolean().withMessage('postToFeed must be boolean'),
     body('currentSeason').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentSeason must be a positive integer'),
@@ -319,10 +319,14 @@ router.post(
                 }
 
                 const isDateOmitted = watchedAt === null || watchedAt === '' || req.body.unspecifiedDate === true;
+                const isStartDateOmitted = startedAt === null || startedAt === '' || req.body.unspecifiedStartDate === true;
                 if (targetExisting && (!isWatching || rating || review)) {
                     const finalIsWatching = isWatching !== undefined ? isWatching : false;
                     const now = new Date();
                     const resolvedWatchedAt = isDateOmitted ? null : (watchedAt !== undefined ? resolveValidDate(watchedAt, now) : targetExisting.watchedAt);
+                    const resolvedStartedAt = isStartDateOmitted
+                        ? null
+                        : (startedAt !== undefined ? resolveValidDate(startedAt, null) : targetExisting.startedAt);
                     await db
                         .update(entries)
                         .set({
@@ -334,6 +338,7 @@ router.post(
                             tags: entryTags.length > 0 ? entryTags : targetExisting.tags,
                             isRewatch: isRewatch !== undefined ? isRewatch : targetExisting.isRewatch,
                             isWatching: finalIsWatching,
+                            startedAt: resolvedStartedAt,
                             completedAt: !finalIsWatching ? resolveValidDate(completedAt, now) : null,
                             watchLocation: watchLocation !== undefined ? (watchLocation || null) : targetExisting.watchLocation,
                             suggestedByUserId: finalSuggestedByUserId || targetExisting.suggestedByUserId,
@@ -363,7 +368,11 @@ router.post(
                 // Create entry
                 const now = new Date();
                 const isDateOmitted = watchedAt === null || watchedAt === '' || req.body.unspecifiedDate === true;
+                const isStartDateOmitted = startedAt === null || startedAt === '' || req.body.unspecifiedStartDate === true;
                 const resolvedWatchedAt = isDateOmitted ? null : (watchedAt !== undefined ? resolveValidDate(watchedAt, now) : now);
+                const resolvedStartedAt = isStartDateOmitted
+                    ? null
+                    : (startedAt !== undefined ? resolveValidDate(startedAt, null) : (isWatching ? now : null));
                 const [newEntry] = await db.insert(entries).values({
                     userId,
                     tmdbId,
@@ -375,7 +384,7 @@ router.post(
                     tags: entryTags,
                     isRewatch: isRewatch || false,
                     isWatching: isWatching || false,
-                    startedAt: isWatching ? resolveValidDate(startedAt, now) : (startedAt ? resolveValidDate(startedAt, null) : null),
+                    startedAt: resolvedStartedAt,
                     completedAt: !isWatching ? resolveValidDate(completedAt, now) : (completedAt ? resolveValidDate(completedAt, null) : null),
                     watchLocation: watchLocation || null,
                     suggestedByUserId: finalSuggestedByUserId,
@@ -1562,8 +1571,9 @@ router.put(
         body('tags').optional({ nullable: true }).isArray({ max: 20 }).withMessage('Tags must be an array with max 20 items'),
         body('isRewatch').optional({ nullable: true }).isBoolean().withMessage('isRewatch must be boolean'),
         body('isWatching').optional({ nullable: true }).isBoolean().withMessage('isWatching must be boolean'),
-        body('startedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
-        body('completedAt').optional({ nullable: true }).isISO8601().withMessage('Invalid date format'),
+        body('watchedAt').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid date format'),
+        body('startedAt').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid date format'),
+        body('completedAt').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid date format'),
         body('watchLocation').optional({ nullable: true }).trim().isLength({ max: 100 }).withMessage('Watch location cannot exceed 100 characters'),
         body('postToFeed').optional({ nullable: true }).isBoolean().withMessage('postToFeed must be boolean'),
         body('currentSeason').optional({ nullable: true }).isInt({ min: 0 }).withMessage('currentSeason must be a positive integer'),
@@ -1597,17 +1607,22 @@ router.put(
             const now = new Date();
 
             // 1. Normalize dates to Date objects FIRST before any db operations
+            const isStartDateOmitted = req.body.startedAt === null || req.body.startedAt === '' || req.body.unspecifiedStartDate === true;
             if (req.body.watchedAt === null || req.body.watchedAt === '' || req.body.unspecifiedDate === true) {
                 updateData.watchedAt = null;
             } else if (updateData.watchedAt) {
                 updateData.watchedAt = resolveValidDate(updateData.watchedAt, now);
             }
-            if (updateData.startedAt) updateData.startedAt = resolveValidDate(updateData.startedAt, null);
+            if (isStartDateOmitted) {
+                updateData.startedAt = null;
+            } else if (updateData.startedAt) {
+                updateData.startedAt = resolveValidDate(updateData.startedAt, null);
+            }
             if (updateData.completedAt) updateData.completedAt = resolveValidDate(updateData.completedAt, null);
 
             if (existingEntry.isWatching && (updateData.isWatching === false || updateData.rating || updateData.review)) {
                 updateData.isWatching = false;
-                if (!existingEntry.startedAt && !updateData.startedAt) {
+                if (!existingEntry.startedAt && !updateData.startedAt && !isStartDateOmitted) {
                     updateData.startedAt = existingEntry.watchedAt || existingEntry.createdAt;
                 }
                 if (!updateData.completedAt) updateData.completedAt = updateData.watchedAt || now;
