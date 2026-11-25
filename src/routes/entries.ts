@@ -229,16 +229,16 @@ router.post(
                     let tmdbTitle: string | null = null;
                     if (type === 'MOVIE') {
                         const details = await tmdbService.getMovieDetails(tmdbId);
-                        genres = details.genres.map(g => g.name);
-                        tmdbTitle = details.title || (details as any).original_title || null;
-                        tmdbPoster = details.poster_path;
-                        tmdbBackdrop = details.backdrop_path;
+                        genres = details?.genres ? details.genres.map(g => g.name) : [];
+                        tmdbTitle = details?.title || (details as any)?.original_title || null;
+                        tmdbPoster = details?.poster_path || null;
+                        tmdbBackdrop = details?.backdrop_path || null;
                     } else if (type === 'TV_SHOW') {
                         const details = await tmdbService.getTVShowDetails(tmdbId);
-                        genres = details.genres.map(g => g.name);
-                        tmdbTitle = (details as any).name || (details as any).original_name || null;
-                        tmdbPoster = details.poster_path;
-                        tmdbBackdrop = details.backdrop_path;
+                        genres = details?.genres ? details.genres.map(g => g.name) : [];
+                        tmdbTitle = (details as any)?.name || (details as any)?.original_name || null;
+                        tmdbPoster = details?.poster_path || null;
+                        tmdbBackdrop = details?.backdrop_path || null;
                     }
                     // Merge and deduplicate
                     entryTags = Array.from(new Set([...entryTags, ...genres]));
@@ -265,10 +265,11 @@ router.post(
 
             if (tmdbId) {
                 // Fetch existing entries for this user and title
-                const existingEntriesList = await db
+                const rawExistingEntriesList = await db
                     .select()
                     .from(entries)
                     .where(and(eq(entries.userId, userId), eq(entries.tmdbId, tmdbId)));
+                const existingEntriesList = Array.isArray(rawExistingEntriesList) ? rawExistingEntriesList : [];
 
                 // Prefer updating an active currently-watching entry or an unrated placeholder
                 const activeWatchingEntry = existingEntriesList.find(e => {
@@ -403,55 +404,59 @@ router.post(
             const rawBuddyIds = Array.isArray(watchBuddyIds) ? watchBuddyIds : [];
             const validBuddyIds: string[] = Array.from(new Set(rawBuddyIds.filter((bId: any): bId is string => typeof bId === 'string' && bId.trim().length > 0 && bId !== userId)));
 
-            if (validBuddyIds.length > 0) {
-                await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, targetEntryId!));
-                await db.insert(entryWatchBuddies).values(
-                    validBuddyIds.map(bId => ({
-                        entryId: targetEntryId!,
-                        userId: bId,
-                    }))
-                ).onConflictDoNothing();
+            try {
+                if (validBuddyIds.length > 0) {
+                    await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, targetEntryId!));
+                    await db.insert(entryWatchBuddies).values(
+                        validBuddyIds.map(bId => ({
+                            entryId: targetEntryId!,
+                            userId: bId,
+                        }))
+                    ).onConflictDoNothing();
 
-                const buddyUsers = await db.select({
-                    id: users.id,
-                    username: users.username,
-                    displayName: users.displayName,
-                    profilePictureUrl: users.profilePictureUrl,
-                }).from(users).where(inArray(users.id, validBuddyIds));
+                    const buddyUsers = await db.select({
+                        id: users.id,
+                        username: users.username,
+                        displayName: users.displayName,
+                        profilePictureUrl: users.profilePictureUrl,
+                    }).from(users).where(inArray(users.id, validBuddyIds));
 
-                savedWatchBuddies = buddyUsers.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+                    savedWatchBuddies = buddyUsers.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
 
-                const actorName = (req as any).user?.displayName || (req as any).user?.username || 'A friend';
-                for (const b of buddyUsers) {
-                    db.insert(notifications).values({
-                        userId: b.id,
-                        type: 'MENTION',
-                        content: {
-                            actorId: userId,
-                            actorName,
-                            actorAvatar: (req as any).user?.profilePictureUrl || null,
-                            entryId: targetEntryId,
-                            title: resolvedTitle,
-                            tmdbId: tmdbId,
-                            mediaType: type,
-                            isWatching: Boolean(isWatching),
-                            message: `tagged you in ${isWatching ? 'watching' : 'their watch of'} ${resolvedTitle}`
-                        }
-                    }).catch(notifErr => console.error('[Notification] Error creating watch buddy notification:', notifErr));
+                    const actorName = (req as any).user?.displayName || (req as any).user?.username || 'A friend';
+                    for (const b of buddyUsers) {
+                        db.insert(notifications).values({
+                            userId: b.id,
+                            type: 'MENTION',
+                            content: {
+                                actorId: userId,
+                                actorName,
+                                actorAvatar: (req as any).user?.profilePictureUrl || null,
+                                entryId: targetEntryId,
+                                title: resolvedTitle,
+                                tmdbId: tmdbId,
+                                mediaType: type,
+                                isWatching: Boolean(isWatching),
+                                message: `tagged you in ${isWatching ? 'watching' : 'their watch of'} ${resolvedTitle}`
+                            }
+                        }).catch(notifErr => console.error('[Notification] Error creating watch buddy notification:', notifErr));
+                    }
+                } else if (watchBuddyIds !== undefined) {
+                    await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, targetEntryId!));
+                } else if (targetEntryId) {
+                    const existingBuddies = await db.select({
+                        id: users.id,
+                        username: users.username,
+                        displayName: users.displayName,
+                        profilePictureUrl: users.profilePictureUrl,
+                    })
+                    .from(entryWatchBuddies)
+                    .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
+                    .where(eq(entryWatchBuddies.entryId, targetEntryId));
+                    savedWatchBuddies = existingBuddies.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
                 }
-            } else if (watchBuddyIds !== undefined) {
-                await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, targetEntryId!));
-            } else if (targetEntryId) {
-                const existingBuddies = await db.select({
-                    id: users.id,
-                    username: users.username,
-                    displayName: users.displayName,
-                    profilePictureUrl: users.profilePictureUrl,
-                })
-                .from(entryWatchBuddies)
-                .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
-                .where(eq(entryWatchBuddies.entryId, targetEntryId));
-                savedWatchBuddies = existingBuddies.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+            } catch (buddyErr) {
+                console.warn('[Entries] Non-blocking watch buddies sync failed:', buddyErr);
             }
 
             // Fetch fully populated entry for response
@@ -478,10 +483,12 @@ router.post(
             });
 
             // Need to manually add counts due to Drizzle _count limitation in findFirst
-            const [[{ likesCount }], [{ commentsCount }]] = await Promise.all([
+            const [likesRows, commentsRows] = await Promise.all([
                 db.select({ likesCount: count() }).from(likes).where(eq(likes.entryId, targetEntryId!)),
                 db.select({ commentsCount: count() }).from(comments).where(eq(comments.entryId, targetEntryId!))
             ]);
+            const likesCount = (Array.isArray(likesRows) && likesRows[0]?.likesCount != null) ? Number(likesRows[0].likesCount) : 0;
+            const commentsCount = (Array.isArray(commentsRows) && commentsRows[0]?.commentsCount != null) ? Number(commentsRows[0].commentsCount) : 0;
 
             // Award XP to the user
             await xpService.awardXp(userId, XpAction.LOG_WATCH);
@@ -1055,14 +1062,18 @@ router.get(
             ]);
 
             const blockedSet = new Set<string>();
-            blocks.forEach(b => {
-                if (b.blockerId === currentUserId) blockedSet.add(b.blockedId);
-                if (b.blockedId === currentUserId) blockedSet.add(b.blockerId);
-            });
+            if (Array.isArray(blocks)) {
+                blocks.forEach(b => {
+                    if (b.blockerId === currentUserId) blockedSet.add(b.blockedId);
+                    if (b.blockedId === currentUserId) blockedSet.add(b.blockerId);
+                });
+            }
 
-            const followedIds = followList
-                .map(f => f.followingId)
-                .filter(id => !blockedSet.has(id));
+            const followedIds = Array.isArray(followList)
+                ? followList
+                    .map(f => f.followingId)
+                    .filter(id => !blockedSet.has(id))
+                : [];
 
             const friendsEntries: any[] = [];
             if (followedIds.length > 0) {
@@ -1145,23 +1156,27 @@ router.get(
             ];
             const socialBuddiesMap: Record<string, Array<{ id: string; username: string; displayName: string | null; profilePictureUrl: string | null }>> = {};
             if (allSocialEntryIds.length > 0) {
-                const buddies = await db.select({
-                    entryId: entryWatchBuddies.entryId,
-                    user: {
-                        id: users.id,
-                        username: users.username,
-                        displayName: users.displayName,
-                        profilePictureUrl: users.profilePictureUrl,
-                    }
-                })
-                .from(entryWatchBuddies)
-                .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
-                .where(inArray(entryWatchBuddies.entryId, allSocialEntryIds));
+                try {
+                    const buddies = await db.select({
+                        entryId: entryWatchBuddies.entryId,
+                        user: {
+                            id: users.id,
+                            username: users.username,
+                            displayName: users.displayName,
+                            profilePictureUrl: users.profilePictureUrl,
+                        }
+                    })
+                    .from(entryWatchBuddies)
+                    .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
+                    .where(inArray(entryWatchBuddies.entryId, allSocialEntryIds));
 
-                for (const b of buddies) {
-                    if (!socialBuddiesMap[b.entryId]) socialBuddiesMap[b.entryId] = [];
-                    const formatted = formatUserWithAvatar(b.user);
-                    if (formatted) socialBuddiesMap[b.entryId].push(formatted);
+                    for (const b of buddies) {
+                        if (!socialBuddiesMap[b.entryId]) socialBuddiesMap[b.entryId] = [];
+                        const formatted = formatUserWithAvatar(b.user);
+                        if (formatted) socialBuddiesMap[b.entryId].push(formatted);
+                    }
+                } catch (buddiesErr) {
+                    console.warn('[Social Entries] Non-blocking watch buddies query warning:', buddiesErr);
                 }
             }
 
@@ -1690,38 +1705,42 @@ router.put(
 
             // Sync watch buddies if provided
             let savedWatchBuddies: Array<{ id: string; username: string; displayName: string | null; profilePictureUrl: string | null }> = [];
-            if (req.body.watchBuddyIds !== undefined) {
-                const rawBuddyIds = Array.isArray(req.body.watchBuddyIds) ? req.body.watchBuddyIds : [];
-                const validBuddyIds: string[] = Array.from(new Set(rawBuddyIds.filter((bId: any): bId is string => typeof bId === 'string' && bId.trim().length > 0 && bId !== userId)));
-                await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, id));
-                if (validBuddyIds.length > 0) {
-                    await db.insert(entryWatchBuddies).values(
-                        validBuddyIds.map(bId => ({
-                            entryId: id,
-                            userId: bId,
-                        }))
-                    ).onConflictDoNothing();
+            try {
+                if (req.body.watchBuddyIds !== undefined) {
+                    const rawBuddyIds = Array.isArray(req.body.watchBuddyIds) ? req.body.watchBuddyIds : [];
+                    const validBuddyIds: string[] = Array.from(new Set(rawBuddyIds.filter((bId: any): bId is string => typeof bId === 'string' && bId.trim().length > 0 && bId !== userId)));
+                    await db.delete(entryWatchBuddies).where(eq(entryWatchBuddies.entryId, id));
+                    if (validBuddyIds.length > 0) {
+                        await db.insert(entryWatchBuddies).values(
+                            validBuddyIds.map(bId => ({
+                                entryId: id,
+                                userId: bId,
+                            }))
+                        ).onConflictDoNothing();
 
-                    const buddyUsers = await db.select({
+                        const buddyUsers = await db.select({
+                            id: users.id,
+                            username: users.username,
+                            displayName: users.displayName,
+                            profilePictureUrl: users.profilePictureUrl,
+                        }).from(users).where(inArray(users.id, validBuddyIds));
+
+                        savedWatchBuddies = buddyUsers.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+                    }
+                } else {
+                    const existingBuddies = await db.select({
                         id: users.id,
                         username: users.username,
                         displayName: users.displayName,
                         profilePictureUrl: users.profilePictureUrl,
-                    }).from(users).where(inArray(users.id, validBuddyIds));
-
-                    savedWatchBuddies = buddyUsers.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+                    })
+                    .from(entryWatchBuddies)
+                    .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
+                    .where(eq(entryWatchBuddies.entryId, id));
+                    savedWatchBuddies = existingBuddies.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
                 }
-            } else {
-                const existingBuddies = await db.select({
-                    id: users.id,
-                    username: users.username,
-                    displayName: users.displayName,
-                    profilePictureUrl: users.profilePictureUrl,
-                })
-                .from(entryWatchBuddies)
-                .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
-                .where(eq(entryWatchBuddies.entryId, id));
-                savedWatchBuddies = existingBuddies.map(b => formatUserWithAvatar(b)).filter((b): b is NonNullable<typeof b> => b !== null);
+            } catch (buddyErr) {
+                console.warn('[Entries PUT] Non-blocking watch buddies update warning:', buddyErr);
             }
 
             // Fetch fully populated updated entry

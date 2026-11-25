@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { users, entries, follows, blockedUsers } from '../db/schema.js';
+import { users, entries, follows, blockedUsers, entryWatchBuddies } from '../db/schema.js';
 import { eq, desc, sql, inArray, and, or, not, aliasedTable } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import tmdbService from '../services/tmdb.service.js';
@@ -517,6 +517,33 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
         const feedItems: any[] = [];
         let suggestionIndex = (page - 1) * 3;
 
+        const feedEntryIds = (sortedEntries as any[]).map(e => e.id).filter((id): id is string => typeof id === 'string');
+        const feedBuddiesMap: Record<string, Array<{ id: string; username: string; displayName: string | null; profilePictureUrl: string | null }>> = {};
+        if (feedEntryIds.length > 0) {
+            try {
+                const buddies = await db.select({
+                    entryId: entryWatchBuddies.entryId,
+                    user: {
+                        id: users.id,
+                        username: users.username,
+                        displayName: users.displayName,
+                        profilePictureUrl: users.profilePictureUrl,
+                    }
+                })
+                .from(entryWatchBuddies)
+                .innerJoin(users, eq(entryWatchBuddies.userId, users.id))
+                .where(inArray(entryWatchBuddies.entryId, feedEntryIds));
+
+                for (const b of buddies) {
+                    if (!feedBuddiesMap[b.entryId]) feedBuddiesMap[b.entryId] = [];
+                    const formatted = formatUserWithAvatar(b.user);
+                    if (formatted) feedBuddiesMap[b.entryId].push(formatted);
+                }
+            } catch (buddiesErr) {
+                console.warn('[Feed] Non-blocking watch buddies query warning:', buddiesErr);
+            }
+        }
+
         const mappedEntries = (sortedEntries as any[]).map(entry => {
             // Guard: sanitize any future timestamps that might have been saved in the past
             const now = new Date();
@@ -555,6 +582,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
                     rating: sanitizedEntry.rating ? parseFloat(sanitizedEntry.rating) : null,
                     user: sanitizedEntry.user ? formatUserWithAvatar(sanitizedEntry.user) : sanitizedEntry.user,
                     suggestedByUser: sanitizedEntry.suggestedByUser && sanitizedEntry.suggestedByUser.id ? formatUserWithAvatar(sanitizedEntry.suggestedByUser) : null,
+                    watchBuddies: feedBuddiesMap[sanitizedEntry.id] || [],
                     _count: { likes: sanitizedEntry.likesCount, comments: sanitizedEntry.commentsCount },
                     isLiked: sanitizedEntry.isLiked,
                     isCommented: sanitizedEntry.isCommented,

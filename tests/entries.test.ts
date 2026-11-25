@@ -41,6 +41,7 @@ await jest.unstable_mockModule('../src/db/index.js', () => ({
         set: jest.fn().mockReturnThis(),
         delete: jest.fn().mockReturnThis(),
         query: { entries: { findFirst: jest.fn() } },
+        then: (resolve: any) => Promise.resolve([]).then(resolve),
     },
     checkDbHealth: mockCheckDb,
 }));
@@ -48,7 +49,10 @@ await jest.unstable_mockModule('../src/db/index.js', () => ({
 await jest.unstable_mockModule('../src/config/swagger.js', () => ({ default: {} }));
 
 await jest.unstable_mockModule('../src/services/xp.service.js', () => ({
-    xpService: { awardXp: mockAwardXp },
+    xpService: {
+        awardXp: mockAwardXp,
+        updateStreakAndCheckBadges: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+    },
     XpAction: { LOG_WATCH: 'LOG_WATCH', WRITE_REVIEW: 'WRITE_REVIEW' },
 }));
 
@@ -352,6 +356,32 @@ describe('GET /api/v1/entries/media/:tmdbId/social — validation & auth', () =>
 
         expect(res.status).toBe(400);
         expect(res.body.error).toMatch(/Invalid TMDb ID/i);
+    });
+
+    it('200 — returns userEntry and friendsEntries structure successfully', async () => {
+        const res = await request(app)
+            .get('/api/v1/entries/media/550/social')
+            .set('Authorization', authHeader);
+
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveProperty('userEntry');
+        expect(res.body).toHaveProperty('friendsEntries');
+        expect(Array.isArray(res.body.friendsEntries)).toBe(true);
+    });
+
+    it('accepts watchBuddyIds on entry creation without crashing', async () => {
+        const res = await request(app)
+            .post('/api/v1/entries')
+            .set('Authorization', authHeader)
+            .send({
+                tmdbId: 550,
+                title: 'Fight Club',
+                type: 'MOVIE',
+                rating: 9,
+                watchBuddyIds: ['550e8400-e29b-41d4-a716-446655440001']
+            });
+
+        expect(res.status).not.toBe(500);
     });
 
     afterAll(async () => {

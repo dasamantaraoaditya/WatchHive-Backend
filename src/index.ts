@@ -84,9 +84,9 @@ try {
         CREATE INDEX IF NOT EXISTS "episode_watches_user_watched_idx" ON "episode_watches"("user_id", "watched_at");
 
         CREATE TABLE IF NOT EXISTS "entry_watch_buddies" (
-            "id" text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-            "entry_id" text NOT NULL REFERENCES "entries"("id") ON DELETE CASCADE,
-            "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+            "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            "entry_id" uuid NOT NULL REFERENCES "entries"("id") ON DELETE CASCADE,
+            "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
             "created_at" timestamp with time zone DEFAULT now() NOT NULL,
             CONSTRAINT "entry_watch_buddies_unique_entry_user" UNIQUE ("entry_id", "user_id")
         );
