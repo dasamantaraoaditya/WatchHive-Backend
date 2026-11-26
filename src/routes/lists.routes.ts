@@ -486,7 +486,8 @@ router.delete('/:listId/items/:tmdbId', authMiddleware, async (req: Request, res
             .returning();
 
         if (result.length === 0) {
-            res.status(404).json({ error: 'Item not found in list' });
+            // Idempotent DELETE: item is already not in the list
+            res.json({ message: 'Removed' });
             return;
         }
 
