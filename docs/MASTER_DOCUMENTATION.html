@@ -666,6 +666,7 @@
                 <a href="#feature-logging" class="nav-item">Watch Logging & Rewatches</a>
                 <a href="#feature-shelf" class="nav-item">Currently Watching Shelf</a>
                 <a href="#feature-episodes" class="nav-item">TV Seasons & Episode Catch-Up</a>
+                <a href="#feature-buddies" class="nav-item">Social Co-Watching & Buddies</a>
                 <a href="#feature-stacks" class="nav-item">Ranked Stacks (Report Card)</a>
                 <a href="#feature-watchlists" class="nav-item">Attributed Watchlists</a>
                 <a href="#feature-suggestions" class="nav-item">Peer Suggestions & Gratitude</a>
@@ -676,6 +677,7 @@
                 <a href="#feature-preferences" class="nav-item">Unified Watch Preferences</a>
                 <a href="#feature-gamification" class="nav-item">XP, Streaks & Badges</a>
                 <a href="#feature-qr" class="nav-item">QR Codes & Universal Links</a>
+                <a href="#feature-reactive" class="nav-item">Reactive Real-Time State Sync</a>
             </div>
         </div>
 
@@ -941,16 +943,17 @@ flowchart TD
             </p>
             <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
                 <li><strong>Dual Watch Modes:</strong> Finished (<code>WATCHED</code>) vs Currently Watching (<code>WATCHING</code>).</li>
+                <li><strong>Accurate Timing Engine:</strong> Dual timestamp capture (<code>startedAt</code> and <code>watchedAt</code>). Includes an <em>"I don't remember when I started"</em> toggle for historical entries without forcing inaccurate guesses. Clamped time pickers enforce temporal bounds.</li>
                 <li><strong>10-Point Rating Parity:</strong> 0.5 to 10.0 scale, mapped to 5 honey stars with half-star increments.</li>
-                <li><strong>Viewing Context Tags:</strong> Cinema, Home, Netflix, Prime Video, Disney+ Hotstar, Apple TV+, etc.</li>
+                <li><strong>Viewing Context Tags:</strong> Cinema, Home, Netflix, Prime Video, Disney+ Hotstar, Apple TV+, Crunchyroll, Physical Media, etc.</li>
                 <li><strong>Spoiler Masking:</strong> User reviews flagged with spoilers are blurred by default with explicit click-to-reveal.</li>
-                <li><strong>Duplicate Watch Detection:</strong> Automatically identifies repeat viewings, prompting between logging a fresh <strong>Rewatch</strong> or modifying the earlier log.</li>
+                <li><strong>Duplicate Watch Detection & Transition:</strong> Repeat viewings prompt between a fresh <strong>Rewatch</strong> or updating an earlier log. Finishing an active TV show smoothly completes the entry without duplicate conflict errors.</li>
             </ul>
 
             <!-- 4.2 SHELF -->
             <h3 id="feature-shelf" class="subsection-title">4.2 Currently Watching Shelf</h3>
             <p>
-                Surfaced prominently at the top of user profiles and library screens. Features an atomic <strong>Move-to-Watched</strong> action that pre-fills viewing start time, sets completion timestamp, and opens rating without re-entering details.
+                Surfaced prominently at the top of user profiles, feed screens, and entry tabs. Features an atomic <strong>Move-to-Watched</strong> action that pre-fills viewing start time from the session commencement, sets completion timestamp to now, and opens rating without re-entering details.
             </p>
 
             <!-- 4.3 EPISODES -->
@@ -961,8 +964,22 @@ flowchart TD
             <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
                 <li><strong>Episode Checklist:</strong> Expandable seasons listing every episode with thumbnail, overview, and instant check-off toggle.</li>
                 <li><strong>One-Tap Batch Catch-Up:</strong> Catching up on season 3? Tap one button to mark all prior episodes (S01E01 to S03E05) as watched simultaneously.</li>
-                <li><strong>Continue Watching Tray:</strong> Dynamically displays in-progress shows with the exact next unwatched episode card for single-tap playback resumption.</li>
+                <li><strong>Continue Watching Carousel:</strong> Dynamically displays in-progress shows with the exact next unwatched episode card (<code>nextEpisodeUp</code>) for single-tap playback resumption.</li>
                 <li><strong>Social Friends Progress:</strong> View which friends are currently watching the show and where they are (e.g. <em>"@alex is on S02E08"</em>), avoiding spoilers while coordinating watch parties.</li>
+                <li><strong>Automatic Series Completion:</strong> Checking off the season or series finale automatically prompts the user to log a completed review and rating.</li>
+                <li><strong>Live Feed Broadcast:</strong> Toggling <code>postToFeed</code> immediately pushes episode watches to followed friends' activity feeds.</li>
+            </ul>
+
+            <!-- 4.14 WATCH BUDDIES -->
+            <h3 id="feature-buddies" class="subsection-title">4.14 Social Co-Watching & Watch Buddies</h3>
+            <p>
+                WatchersHive captures shared viewing memories through mutual friend tagging:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Co-Watching Attribution:</strong> Tag one or multiple friends as "Watch Buddies" when logging or editing any finished watch or active viewing session.</li>
+                <li><strong>Automated Notifications:</strong> Tagged buddies instantly receive push notifications: <em>"@username tagged you as a watch buddy for [Movie]"</em>.</li>
+                <li><strong>Feed & Details Badges:</strong> Feed cards and movie details showcase interactive Watch Buddy avatar chips linking directly to friends' profiles.</li>
+                <li><strong>Relational Integrity:</strong> Stored in the <code>entry_watch_buddies</code> table with idempotent join synchronization.</li>
             </ul>
 
             <!-- 4.4 STACKS -->
@@ -970,6 +987,10 @@ flowchart TD
             <p>
                 Numbered, curated collections (e.g., <em>"Top 10 Mind-Benders of All Time"</em>, <em>"Favorite Nolan Films"</em>). Includes tactile drag-and-drop reordering with single-transaction backend synchronization. Stacks can be exported as 9:16 social cards and scanned via QR codes.
             </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>5-Stack Limit:</strong> Users can curate up to 5 custom ranking stacks, encouraging deliberate quality over discarded lists.</li>
+                <li><strong>Guaranteed Stack Selection:</strong> Tapping "Edit" on a specific stack guarantees opening that exact stack for modifications.</li>
+            </ul>
 
             <!-- 4.5 WATCHLISTS -->
             <h3 id="feature-watchlists" class="subsection-title">4.5 Attributed Watchlists</h3>
@@ -980,7 +1001,7 @@ flowchart TD
             <!-- 4.6 SUGGESTIONS -->
             <h3 id="feature-suggestions" class="subsection-title">4.6 Peer Suggestions & Gratitude Loop</h3>
             <p>
-                Send movies or shows directly to friends with a heartfelt note. Grouped inbox clusters recommendations by movie. When watched, the app prompts: <em>"Send a note of thanks to @sarah?"</em>, closing the social gratitude loop.
+                Send movies or shows directly to friends with a heartfelt note. Grouped inbox clusters recommendations by movie. When watched, the app prompts: <em>"Send a note of thanks to @sarah?"</em>, closing the social gratitude loop. Redundant suggest triggers have been removed from the Suggestions tab for a focused inbox and smart discovery experience.
             </p>
 
             <!-- 4.7 SMARTSUGGEST -->
@@ -989,9 +1010,11 @@ flowchart TD
                 Proprietary recommendation algorithm balancing social influence, consensus acclaim, personal taste profile, and binge fatigue avoidance:
             </p>
             <pre><code>Score (S) = (w_friend * F) + (w_critic * C) + (w_taste * T) + B_diversity - P_fatigue</code></pre>
-            <p>
-                <strong>3 Modes:</strong> Hive Mind (Friend focus), Certified Gold (Critic consensus), and Palate Cleanser (Diversity focus).
-            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>3 Non-Overlapping Modes:</strong> <em>Hive Mind</em> (Social & friend suggestions), <em>Certified Gold</em> (Critical acclaim & unwatched watchlist gems), and <em>Explore Mode</em> (World cinema & international discovery matching taste preferences).</li>
+                <li><strong>Strict Watch Exclusion:</strong> Guarantees that zero suggestions belong to titles the user has already watched or is currently watching.</li>
+                <li><strong>Dynamic Seed Regeneration:</strong> Re-querying seeds randomized queries with at least 10 fresh items per batch.</li>
+            </ul>
 
             <!-- 4.8 MINDLENS -->
             <h3 id="feature-mindlens" class="subsection-title">4.8 MindLens 2.0 Behavioral Telemetry</h3>
@@ -1006,7 +1029,7 @@ flowchart TD
             <!-- 4.9 FEED -->
             <h3 id="feature-feed" class="subsection-title">4.9 Social Swarm Feed</h3>
             <p>
-                Chronological community activity feed with cursor pagination, nested comments, likes, and smart "Who to Follow" recommendations based on shared genres and mutual friends.
+                Chronological community activity feed with cursor pagination, nested comments, brand-themed likes (honey gold), and smart "Who to Follow" recommendations based on shared genres and mutual friends.
             </p>
 
             <!-- 4.10 TASTE COMPARE -->
@@ -1024,7 +1047,7 @@ flowchart TD
             <!-- 4.12 GAMIFICATION -->
             <h3 id="feature-gamification" class="subsection-title">4.12 Cinephile XP, Streaks & Honey Badges</h3>
             <p>
-                Constructive gamification: +20 XP for logging, +30 XP for thoughtful reviews (100+ chars), +50 XP for stacks, and +75 XP when friends watch your suggestions. Unlocks 8 collectible Honey Badges.
+                Constructive gamification: +20 XP for logging, +30 XP for thoughtful reviews (100+ chars), +50 XP for stacks, and +75 XP when friends watch your suggestions. Unlocks collectible Honey Badges including Co-Watcher and Marathoner.
             </p>
 
             <!-- 4.13 QR & DEEP LINKS -->
@@ -1032,6 +1055,17 @@ flowchart TD
             <p>
                 Custom scheme <code>watchhive://</code> and Universal Links (<code>https://watchershive.com/</code>) with native fallback. Scanning a QR code opens the exact profile, movie, or stack natively in the app, or surfaces an "Open in App" smart web banner.
             </p>
+
+            <!-- 4.15 REACTIVE REAL-TIME SYNC -->
+            <h3 id="feature-reactive" class="subsection-title">4.15 Reactive Real-Time State Sync Architecture</h3>
+            <p>
+                Full reactive state graph (Riverpod on Mobile, React Context SWR on Web):
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><code>watchlistProvider</code> and synchronous <code>reactiveIsInWatchlistProvider</code> update bookmark states everywhere instantly without network lag.</li>
+                <li><code>continueWatchingProvider</code> and <code>feedProvider</code> reflect episode logs and completed watches immediately.</li>
+                <li>Profile tabs, badges, and counters dynamically synchronize without requiring manual pull-to-refresh.</li>
+            </ul>
         </section>
 
         <!-- 5. DESIGN SYSTEM -->
@@ -1548,9 +1582,14 @@ flowchart TD
                 Under the European GDPR and California CCPA:
             </p>
             <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
-                <li><strong>Right to Access & Portability:</strong> Users can export their full watch history and reviews as JSON/CSV.</li>
-                <li><strong>Right to Erasure ("Right to be Forgotten"):</strong> Users can permanently delete their account and all associated entries, ratings, and comments at any time via Profile Settings.</li>
+                <li><strong>Right to Access & Portability:</strong> Users can export their full watch history, ratings, reviews, and list archives as structured JSON (<code>GET /api/v1/data/export</code>).</li>
+                <li><strong>Right to Erasure ("Right to be Forgotten"):</strong> Users can permanently delete their account and all associated entries, watch buddies, ratings, and comments at any time via Profile Settings > Danger Zone (<code>DELETE /api/v1/users/me</code>).</li>
             </ul>
+
+            <h3 id="legal-nonhosting" class="subsection-title">Non-Hosting & Anti-Piracy Disclaimer</h3>
+            <p>
+                WatchersHive <strong>does not host, stream, upload, or index video content or digital media files</strong>. It is purely an informational, social cataloging, rating, and discussion platform. WatchersHive has no affiliation with unauthorized streaming platforms.
+            </p>
 
             <h3 id="legal-attributions" class="subsection-title">Third-Party Attributions</h3>
             <div class="table-wrapper">
@@ -1578,10 +1617,16 @@ flowchart TD
                 </table>
             </div>
 
-            <h3 id="legal-community" class="subsection-title">Community Standards & Spoilers</h3>
+            <h3 id="legal-community" class="subsection-title">Community Standards, UGC Moderation & Safety</h3>
             <p>
-                WatchersHive enforces a zero-tolerance policy against hate speech, harassment, impersonation, and abusive spam. To protect the community experience, any review discussing pivotal plot twists must have the <strong>Spoiler Flag</strong> checked.
+                To maintain a safe community and comply with Apple App Store Guideline 1.2:
             </p>
+            <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
+                <li><strong>Content & User Reporting:</strong> Users can flag objectionable reviews, abusive comments, or toxic profiles directly through the in-app report modal (<code>POST /api/v1/reports</code>).</li>
+                <li><strong>One-Tap User Blocking:</strong> Users can block any account (<code>POST /api/v1/reports/block</code>), immediately hiding all content and preventing future interaction.</li>
+                <li><strong>Zero-Tolerance Policy:</strong> Hate speech, harassment, impersonation, and abusive spam are subject to immediate administrative takedown and permanent account termination.</li>
+                <li><strong>Spoiler Masking:</strong> Any review discussing pivotal plot twists must have the <strong>Spoiler Flag</strong> checked to protect the viewing experience of others.</li>
+            </ul>
         </section>
 
         <!-- 9. DEVELOPER & TEAM -->

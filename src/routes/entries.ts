@@ -321,7 +321,7 @@ router.post(
 
                 const isDateOmitted = watchedAt === null || watchedAt === '' || req.body.unspecifiedDate === true;
                 const isStartDateOmitted = startedAt === null || startedAt === '' || req.body.unspecifiedStartDate === true;
-                if (targetExisting && (!isWatching || rating || review)) {
+                if (targetExisting) {
                     const finalIsWatching = isWatching !== undefined ? isWatching : false;
                     const now = new Date();
                     const resolvedWatchedAt = isDateOmitted ? null : (watchedAt !== undefined ? resolveValidDate(watchedAt, now) : targetExisting.watchedAt);

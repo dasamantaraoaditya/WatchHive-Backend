@@ -81,43 +81,96 @@ erDiagram
     MOVIES ||--o{ STACK_ITEMS : referenced_in
     MOVIES ||--o{ ENTRIES : target_of
     USERS ||--o{ FOLLOWS : follows
+    USERS ||--o{ FOLLOW_REQUESTS : requests
     USERS ||--o{ SUGGESTIONS : sends
     USERS ||--o{ SUGGESTIONS : receives
     USERS ||--o{ NOTIFICATIONS : receives
     USERS ||--o{ PUSH_TOKENS : registers
+    ENTRIES ||--o{ ENTRY_WATCH_BUDDIES : shares_with
+    USERS ||--o{ ENTRY_WATCH_BUDDIES : participates_in
+    USERS ||--o{ EPISODE_WATCHES : tracks
+    USERS ||--o{ REPORTS : files
+    USERS ||--o{ BLOCKED_USERS : blocks
 
     USERS {
         uuid id PK
         string email UK
         string username UK
-        string password_hash
-        jsonb watch_preferences
+        jsonb preferences
+        integer xp
+        integer level
+        integer watch_streak
+        boolean is_email_verified
+        integer token_version
         timestamp created_at
     }
 
     ENTRIES {
         uuid id PK
         uuid user_id FK
-        string tmdb_id
+        integer tmdb_id
+        string type
         decimal rating
         text review
         boolean is_rewatch
-        timestamp watched_date
+        boolean is_watching
+        timestamp started_at
+        timestamp watched_at
+        boolean post_to_feed
+    }
+
+    ENTRY_WATCH_BUDDIES {
+        uuid id PK
+        uuid entry_id FK
+        uuid user_id FK
+        timestamp created_at
+    }
+
+    EPISODE_WATCHES {
+        uuid id PK
+        uuid user_id FK
+        integer tmdb_id
+        integer season_number
+        integer episode_number
+        string episode_name
+        decimal rating
+        text review
+        timestamp watched_at
     }
 
     STACKS {
         uuid id PK
         uuid user_id FK
-        string title
+        string name
         text description
-        boolean is_public
+        string type
+        string privacy_level
+        timestamp created_at
     }
 
     STACK_ITEMS {
         uuid id PK
-        uuid stack_id FK
-        string tmdb_id FK
-        integer rank_position
+        uuid list_id FK
+        integer tmdb_id
+        integer order_index
+        timestamp created_at
+    }
+
+    REPORTS {
+        uuid id PK
+        uuid reporter_id FK
+        string target_type
+        string target_id
+        string reason
+        string status
+        timestamp created_at
+    }
+
+    BLOCKED_USERS {
+        uuid id PK
+        uuid blocker_id FK
+        uuid blocked_id FK
+        timestamp created_at
     }
 ```
 
@@ -125,17 +178,22 @@ erDiagram
 
 ## 🔐 4. Authentication & Security Architecture
 
-1. **Stateless JWT Rotation**:
-   - Short-lived Access Token (15–60 minutes) delivered via `Authorization: Bearer <token>`.
-   - Long-lived Refresh Token (30 days) stored securely in HTTP-only cookies or native mobile encrypted storage.
-2. **Password Security**:
-   - `bcryptjs` salted hashing ($10+$ rounds).
-   - Secure forgot password flow with cryptographic time-limited tokens and automated email delivery.
-3. **OAuth 2.0 Identity Federation**:
-   - Google Sign-In (`google-auth-library` ID token verification).
+1. **Passwordless 6-Digit Email OTP & Identity Federation**:
+   - Primary login via cryptographically random 6-digit email OTP (10-minute expiry, single-use, auto-verified).
+   - Google Sign-In (`google-auth-library` ID token verification with tokeninfo fallback).
    - Apple Sign-In (`apple-signin-auth` identity token verification).
-4. **Secret Protection**:
-   - Automated git scan (`gitleaks` & `devsecops.yml`) ensuring zero credentials or private keys are ever leaked into client bundles or public commits.
+2. **Stateless JWT Rotation**:
+   - Access Token (7 days) delivered via `Authorization: Bearer <token>` or `jwt_access` cookie.
+   - Refresh Token (90 days) stored securely in HTTP-only cookies or native mobile encrypted storage (`flutter_secure_storage`).
+   - Zero-DB overhead stateless verification with single-flight silent refresh on HTTP 401.
+   - Database `tokenVersion` check at the refresh boundary for global session revocation.
+3. **Multi-Device Support**:
+   - Routine logins and single-device logouts do not invalidate other active devices, supporting simultaneous phone, tablet, and web sessions.
+4. **Secret Protection & Compliance**:
+   - Automated secret scanning (`gitleaks` & `devsecops.yml`).
+   - GDPR Right to Access export (`GET /api/v1/data/export`).
+   - GDPR Right to Erasure cascade account deletion (`DELETE /api/v1/users/me`).
+   - Apple Guideline 1.2 UGC moderation (`/api/v1/reports`, `/api/v1/reports/block`).
 
 ---
 
@@ -146,8 +204,12 @@ erDiagram
   - Computes Russell's Circumplex Affective State coordinates (Valence vs. Arousal).
   - Updates Empirical Bayesian Recommender Trust ($RTS$) based on suggestion acceptance rates.
   - *Full mathematical specification documented in [MINDLENS_SPECIFICATION.md](file:///Users/adityadasamantharao/Documents/Repos/WatchHive-Backend/docs/MINDLENS_SPECIFICATION.md).*
+* **SmartSuggest 3-Mode Recommendation Engine**:
+  - Hybrid scoring balancing peer recommendations, critical consensus, and personal preference.
+  - 3 non-overlapping modes: Hive Mind (Social), Certified Gold (Critic/Acclaimed), and Explore (World Cinema).
+  - Strict exclusion of watched and currently watching titles with dynamic seed-randomized regeneration.
 * **Master Features & Logic Wiki**:
-  - Documents all 14 core system features, scoring algorithms, and database behaviors in [FEATURES_AND_LOGIC_WIKI.md](file:///Users/adityadasamantharao/Documents/Repos/WatchHive-Backend/docs/FEATURES_AND_LOGIC_WIKI.md).
+  - Documents all 19 core platform features, scoring algorithms, and database behaviors in [FEATURES_AND_LOGIC_WIKI.md](file:///Users/adityadasamantharao/Documents/Repos/WatchHive-Backend/docs/FEATURES_AND_LOGIC_WIKI.md).
 
 ---
 
