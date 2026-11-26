@@ -205,7 +205,10 @@ router.post(
 
             const isEntryPostedToFeed = postToFeed !== undefined ? Boolean(postToFeed) : true;
 
-            let finalSuggestedByUserId = suggestedByUserId || null;
+            const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+            let finalSuggestedByUserId: string | null = (typeof suggestedByUserId === 'string' && UUID_REGEX.test(suggestedByUserId.trim()))
+                ? suggestedByUserId.trim()
+                : null;
             if (!finalSuggestedByUserId && tmdbId) {
                 const [matchingSuggestion] = await db
                     .select({ fromUserId: suggestions.fromUserId })
@@ -213,8 +216,20 @@ router.post(
                     .where(and(eq(suggestions.toUserId, userId), eq(suggestions.tmdbId, tmdbId)))
                     .orderBy(desc(suggestions.createdAt))
                     .limit(1);
-                if (matchingSuggestion) {
+                if (matchingSuggestion && matchingSuggestion.fromUserId && UUID_REGEX.test(matchingSuggestion.fromUserId)) {
                     finalSuggestedByUserId = matchingSuggestion.fromUserId;
+                }
+            }
+
+            // Verify suggestedBy user exists in database to prevent foreign key violation
+            if (finalSuggestedByUserId) {
+                const [suggestorExists] = await db
+                    .select({ id: users.id })
+                    .from(users)
+                    .where(eq(users.id, finalSuggestedByUserId))
+                    .limit(1);
+                if (!suggestorExists) {
+                    finalSuggestedByUserId = null;
                 }
             }
 
@@ -490,15 +505,16 @@ router.post(
             const likesCount = (Array.isArray(likesRows) && likesRows[0]?.likesCount != null) ? Number(likesRows[0].likesCount) : 0;
             const commentsCount = (Array.isArray(commentsRows) && commentsRows[0]?.commentsCount != null) ? Number(commentsRows[0].commentsCount) : 0;
 
-            // Award XP to the user
-            await xpService.awardXp(userId, XpAction.LOG_WATCH);
-            // Award additional XP if they wrote a review
-            if (review && review.trim().length > 10) {
-                await xpService.awardXp(userId, XpAction.WRITE_REVIEW);
+            // Award XP to the user & update streak (non-blocking)
+            try {
+                await xpService.awardXp(userId, XpAction.LOG_WATCH);
+                if (review && review.trim().length > 10) {
+                    await xpService.awardXp(userId, XpAction.WRITE_REVIEW);
+                }
+                await xpService.updateStreakAndCheckBadges(userId);
+            } catch (xpErr) {
+                console.error('[Entries] Non-blocking XP/Streak award error:', xpErr);
             }
-
-            // Update watch streak and award streak badges
-            await xpService.updateStreakAndCheckBadges(userId);
 
             // If entry was from a suggestion, mark suggestion as watched and award suggestion badges
             if (finalSuggestedByUserId) {
