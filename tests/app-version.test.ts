@@ -29,6 +29,7 @@ describe('App Version Logic & Endpoint', () => {
                 .get('/api/v1/app/version?platform=ios&currentVersion=1.0.44')
                 .expect(200);
 
+            expect(res.headers['x-api-version']).toBe('1.0');
             expect(res.body).toHaveProperty('platform', 'ios');
             expect(res.body).toHaveProperty('latestVersion');
             expect(res.body).toHaveProperty('minimumVersion');
@@ -53,6 +54,15 @@ describe('App Version Logic & Endpoint', () => {
                 .expect(200);
 
             expect(res.body.forceUpdate).toBe(true);
+        });
+
+        it('supports /api/v2 endpoint with X-API-Version 2.0 header', async () => {
+            const res = await request(app)
+                .get('/api/v2/app/version?platform=android&currentVersion=1.0.0')
+                .expect(200);
+
+            expect(res.headers['x-api-version']).toBe('2.0');
+            expect(res.body).toHaveProperty('latestVersion');
         });
     });
 });
