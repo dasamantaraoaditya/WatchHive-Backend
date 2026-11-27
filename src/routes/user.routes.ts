@@ -599,7 +599,20 @@ router.get('/taggable-friends', authMiddleware, async (req: Request, res: Respon
             const candidateIds = Array.from(new Set([...recentBuddyIds, ...followedIds])).filter(id => id !== currentUserId);
 
             if (candidateIds.length === 0) {
-                return res.json({ users: [] });
+                // If user has no recent buddies and follows no one yet,
+                // suggest platform active users so the list is never empty
+                const fallbackUsers = await db.select({
+                    id: users.id,
+                    username: users.username,
+                    displayName: users.displayName,
+                    profilePictureUrl: users.profilePictureUrl,
+                })
+                .from(users)
+                .where(not(eq(users.id, currentUserId)))
+                .limit(limit);
+
+                const formattedFallback = fallbackUsers.map(u => formatUserWithAvatar(u));
+                return res.json({ users: formattedFallback, data: formattedFallback });
             }
 
             const friendUsers = await db.select({
@@ -618,7 +631,8 @@ router.get('/taggable-friends', authMiddleware, async (req: Request, res: Respon
                 return idxA - idxB;
             });
 
-            return res.json({ users: friendUsers.map(u => formatUserWithAvatar(u)) });
+            const formatted = friendUsers.map(u => formatUserWithAvatar(u));
+            return res.json({ users: formatted, data: formatted });
         }
 
         // When query is provided: search matching users, prioritizing followed users
@@ -650,7 +664,8 @@ router.get('/taggable-friends', authMiddleware, async (req: Request, res: Respon
         )
         .limit(limit);
 
-        res.json({ users: matchingUsers.map(u => formatUserWithAvatar(u)) });
+        const formatted = matchingUsers.map(u => formatUserWithAvatar(u));
+        res.json({ users: formatted, data: formatted });
     } catch (error) {
         next(error);
     }
