@@ -223,10 +223,16 @@ app.use('/api/v1/avatars', avatarRoutes);
 app.use('/api/v1/users/avatar', avatarRoutes);
 app.use('/avatars', avatarRoutes);
 
+// API Versioning & Response Headers Middleware
+app.use('/api/v1', (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader('X-API-Version', '1.0');
+    next();
+});
+
 // General API rate limiting
 app.use('/api/v1', apiLimiter);
 
-// API routes
+// API v1 routes
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/entries', entriesRoutes);
 app.use('/api/v1/tmdb', tmdbRoutes);
@@ -245,6 +251,15 @@ app.use('/api/v1/data', dataRoutes);
 app.use('/api/v1/reports', reportsRoutes);
 app.use('/api/v1/app', appVersionRoutes);
 app.use('/api/v1', episodeRoutes);
+
+// API v2 Scaffolding (Forward-Compatibility Gate)
+const v2Router = express.Router();
+v2Router.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader('X-API-Version', '2.0');
+    next();
+});
+v2Router.use('/app', appVersionRoutes);
+app.use('/api/v2', v2Router);
 
 // 404 handler
 app.use(notFoundHandler);

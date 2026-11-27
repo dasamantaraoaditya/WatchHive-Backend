@@ -98,9 +98,8 @@ router.post('/:entryId', authMiddleware, async (req: Request, res: Response): Pr
             .limit(1);
 
         // Get updated like count
-        const [[{ likeCount }]] = await Promise.all([
-            db.select({ likeCount: count() }).from(likes).where(eq(likes.entryId, entryId))
-        ]);
+        const countRes = await db.select({ likeCount: count() }).from(likes).where(eq(likes.entryId, entryId));
+        const likeCount = countRes?.[0]?.likeCount ?? 0;
 
         // Notify and award XP to the entry owner (if not self-like)
         if (like.entry.userId !== userId) {
@@ -286,10 +285,11 @@ router.get('/:entryId/status', authMiddleware, async (req: Request, res: Respons
         const userId = req.user!.userId;
 
         // Check if liked and get total like count
-        const [[like], [{ likeCount }]] = await Promise.all([
+        const [[like], countRes] = await Promise.all([
             db.select().from(likes).where(and(eq(likes.userId, userId), eq(likes.entryId, entryId))).limit(1),
             db.select({ likeCount: count() }).from(likes).where(eq(likes.entryId, entryId))
         ]);
+        const likeCount = countRes?.[0]?.likeCount ?? 0;
 
         res.json({
             isLiked: !!like,

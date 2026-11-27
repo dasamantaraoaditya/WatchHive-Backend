@@ -120,10 +120,11 @@ router.post(
             }
 
             // Get updated comment count
-            const [{ commentCount }] = await db
+            const countRes = await db
                 .select({ commentCount: count() })
                 .from(comments)
                 .where(eq(comments.entryId, entryId));
+            const commentCount = countRes?.[0]?.commentCount ?? 1;
 
             // --- Send Notifications ---
             const actorName = comment.user.displayName || comment.user.username;
@@ -313,10 +314,11 @@ router.delete('/:commentId', authMiddleware, async (req: Request, res: Response)
         await db.delete(comments).where(eq(comments.parentCommentId, commentId));
         await db.delete(comments).where(eq(comments.id, commentId));
 
-        const [{ commentCount }] = await db
+        const countRes = await db
             .select({ commentCount: count() })
             .from(comments)
             .where(eq(comments.entryId, comment.entryId));
+        const commentCount = countRes?.[0]?.commentCount ?? 0;
 
         res.json({ message: 'Comment deleted', commentCount });
     } catch (error) {
